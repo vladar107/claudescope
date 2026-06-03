@@ -1,0 +1,153 @@
+/**
+ * API contract — request query shapes and response bodies for the server's
+ * `/api/*` routes. Imported by both server (to implement) and web (to consume).
+ */
+
+import type { ModelId } from './events.js';
+import type { SubagentRun, ThreadItem } from './thread.js';
+
+// ---------------------------------------------------------------------------
+// Domain summaries
+// ---------------------------------------------------------------------------
+
+/** Aggregated metadata for a project (a distinct real `cwd`). */
+export interface ProjectMeta {
+  /** Stable id derived from the canonical cwd. */
+  id: string;
+  cwd: string;
+  /** Human-friendly name (typically the last path segment of cwd). */
+  displayName: string;
+  sessionCount: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  /** ISO timestamp of the most recent activity. */
+  lastActive: string;
+}
+
+/** Aggregated metadata for a single session. */
+export interface SessionMeta {
+  id: string;
+  projectId: string;
+  title: string;
+  startedAt: string;
+  endedAt: string;
+  messageCount: number;
+  toolCallCount: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  models: ModelId[];
+  gitBranch?: string;
+  prUrl?: string;
+  sizeBytes: number;
+  /** True when a sidechain/subagent subdirectory accompanies the session. */
+  hasSidechain: boolean;
+}
+
+/** A single full-text search hit. */
+export interface SearchResult {
+  sessionId: string;
+  projectId: string;
+  title: string;
+  /** Snippet with matched terms highlighted (HTML `<mark>`). */
+  snippet: string;
+  /** BM25 relevance score. */
+  score: number;
+  messageUuid: string;
+  role: string;
+}
+
+/** One row of an analytics aggregation, grouped per `groupBy`. */
+export interface AnalyticsRow {
+  /** The group key value (project id, model id, or YYYY-MM-DD day). */
+  key: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  /** cache_read / (cache_read + input), in [0, 1]. */
+  cacheHitRatio: number;
+  messageCount: number;
+}
+
+export interface AnalyticsTotals {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  cacheHitRatio: number;
+  messageCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// Request query parameter shapes
+// ---------------------------------------------------------------------------
+
+export type SessionSort = 'recent' | 'oldest' | 'tokens' | 'cost' | 'messages';
+
+export interface SessionsQuery {
+  project?: string;
+  sort?: SessionSort;
+  q?: string;
+}
+
+export type SearchType = 'user' | 'assistant' | 'all';
+
+export interface SearchQuery {
+  q: string;
+  project?: string;
+  type?: SearchType;
+}
+
+export type AnalyticsGroupBy = 'project' | 'model' | 'day';
+
+export interface AnalyticsQuery {
+  groupBy: AnalyticsGroupBy;
+  /** Inclusive ISO date/time lower bound. */
+  from?: string;
+  /** Inclusive ISO date/time upper bound. */
+  to?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Response bodies
+// ---------------------------------------------------------------------------
+
+/** GET /api/projects */
+export type ProjectsResponse = ProjectMeta[];
+
+/** GET /api/sessions */
+export type SessionsResponse = SessionMeta[];
+
+/** GET /api/sessions/:id */
+export interface SessionDetailResponse {
+  meta: SessionMeta;
+  /** The main transcript thread (subagent turns are NOT inlined here). */
+  thread: ThreadItem[];
+  /** Subagent runs, each linked to its spawn point via `toolUseId`/`spawnUuid`. */
+  subagents: SubagentRun[];
+}
+
+/** GET /api/search */
+export type SearchResponse = SearchResult[];
+
+/** GET /api/analytics */
+export interface AnalyticsResponse {
+  rows: AnalyticsRow[];
+  totals: AnalyticsTotals;
+}
+
+/** POST /api/reindex */
+export interface ReindexResponse {
+  reindexed: number;
+  durationMs: number;
+}
+
+/** GET /api/health */
+export interface HealthResponse {
+  status: 'ok';
+  version: string;
+}
