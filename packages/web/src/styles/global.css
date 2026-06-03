@@ -366,6 +366,70 @@ button {
   margin-top: var(--tv-space-3);
 }
 
+/* File path header above a diff / file content. */
+.tv-tool__file {
+  font-size: var(--tv-fs-sm);
+  margin: 0 0 var(--tv-space-2);
+  word-break: break-all;
+}
+
+/* Plain (unhighlighted) code fallback for large payloads / terminal output. */
+.tv-code-plain {
+  margin: 0;
+  padding: var(--tv-space-2) var(--tv-space-3);
+  overflow-x: auto;
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius-sm);
+  font-family: var(--tv-font-mono);
+  font-size: var(--tv-fs-sm);
+  line-height: 1.5;
+}
+
+/* --------------------------------------------------------------------------
+   Line diff (Edit / MultiEdit changes)
+   -------------------------------------------------------------------------- */
+
+.tv-diff {
+  overflow-x: auto;
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius-sm);
+  background: var(--tv-bg-inset);
+  font-family: var(--tv-font-mono);
+  font-size: var(--tv-fs-sm);
+  line-height: 1.5;
+}
+.tv-diff__line {
+  display: flex;
+  white-space: pre;
+}
+.tv-diff__gutter {
+  flex: 0 0 auto;
+  width: 2ch;
+  text-align: center;
+  opacity: 0.7;
+  user-select: none;
+}
+.tv-diff__text {
+  flex: 1 1 auto;
+  padding-right: var(--tv-space-2);
+}
+.tv-diff__line--add {
+  background: rgba(63, 185, 80, 0.16);
+}
+.tv-diff__line--add .tv-diff__gutter {
+  color: #3fb950;
+}
+.tv-diff__line--del {
+  background: rgba(248, 81, 73, 0.16);
+}
+.tv-diff__line--del .tv-diff__gutter {
+  color: var(--tv-danger);
+}
+.tv-diff__line--context {
+  color: var(--tv-fg-muted);
+}
+
 /* --------------------------------------------------------------------------
    Markdown rendering
    -------------------------------------------------------------------------- */

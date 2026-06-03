@@ -5,7 +5,7 @@
  * to plaintext. All failures are swallowed so the caller can render plain text.
  */
 
-import type { Highlighter } from 'shiki';
+import type { BundledLanguage, Highlighter, SpecialLanguage } from 'shiki';
 
 /** Languages we ship grammars for. Anything else renders as plaintext. */
 const LANGS = [
@@ -66,3 +66,28 @@ export function normalizeLang(lang: string | undefined): string {
 }
 
 export { THEME as SHIKI_THEME };
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Syntax-highlight `code` and return the inner HTML of each line separately, so
+ * a caller (e.g. the diff view) can place each line in its own row. Resolves
+ * null on failure; HTML is built from escaped token text + theme colors.
+ */
+export async function highlightLines(code: string, lang: string | undefined): Promise<string[] | null> {
+  const hl = await getHighlighter();
+  if (!hl) return null;
+  try {
+    const resolved = normalizeLang(lang) as BundledLanguage | SpecialLanguage;
+    const { tokens } = hl.codeToTokens(code, { lang: resolved, theme: THEME });
+    return tokens.map((line) =>
+      line
+        .map((t) => `<span style="color:${t.color ?? 'inherit'}">${escapeHtml(t.content)}</span>`)
+        .join(''),
+    );
+  } catch {
+    return null;
+  }
+}
