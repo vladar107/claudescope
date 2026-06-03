@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ContentBlock, ToolInteraction } from '@claudescope/shared';
 import { Collapsible } from './Collapsible.js';
 import { Markdown } from './Markdown.js';
@@ -7,6 +8,8 @@ export interface ToolBlockProps {
   tool: ToolInteraction;
   /** Open by default. Default false (collapsed for dense reading). */
   defaultOpen?: boolean;
+  /** Force the block open (e.g. it contains an in-session search match). */
+  forceOpen?: boolean;
 }
 
 /** Pretty-print a tool's `input` (unknown JSON) for display. */
@@ -43,14 +46,16 @@ function renderResultBlocks(blocks: ContentBlock[]) {
  * header, the input JSON, and the (optional) result. Feature agents can use
  * this as-is or compose around the underlying {@link Collapsible}.
  */
-export function ToolBlock({ tool, defaultOpen = false }: ToolBlockProps) {
+export function ToolBlock({ tool, defaultOpen = false, forceOpen = false }: ToolBlockProps) {
   const isError = tool.result?.isError === true;
   const className = isError ? 'tv-collapsible--tool tv-collapsible--error' : 'tv-collapsible--tool';
+  const [userOpen, setUserOpen] = useState(defaultOpen);
 
   return (
     <Collapsible
       className={className}
-      defaultOpen={defaultOpen}
+      open={userOpen || forceOpen}
+      onToggle={setUserOpen}
       icon="⚙"
       title={tool.name}
       subtitle={tool.id}

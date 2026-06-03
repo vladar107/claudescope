@@ -1,9 +1,11 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useContext, useEffect, useRef, useState } from 'react';
 import type { SubagentRun, ThreadItem } from '@claudescope/shared';
 import { Collapsible, TokenChips } from '../../components';
 import { formatDateTime, shortModel } from '../browse/format.js';
 import { ThreadBlockView, hasRenderableContent } from './blocks.js';
 import { classifySystemText } from './text.js';
+import { SessionSearchContext } from './SearchContext.js';
+import { blockRevealId } from './search.js';
 
 /** DOM id for a subagent block, used as the jump-menu / deep-link anchor. */
 export function subagentAnchor(agentId: string): string {
@@ -62,6 +64,7 @@ function Turn({
   const systemLabel = item.role === 'user' ? classifySystemTurn(item) : null;
   if (systemLabel) return <SystemTurn item={item} label={systemLabel} />;
 
+  const { blockIds } = useContext(SessionSearchContext);
   const roleClass = item.role === 'user' ? 'tv-turn--user' : 'tv-turn--assistant';
   const sidechainClass = item.isSidechain ? ' tv-turn--sidechain' : '';
 
@@ -91,9 +94,12 @@ function Turn({
           {item.blocks.map((block, i) => {
             const runs =
               block.kind === 'tool' ? subagentsByToolUseId?.get(block.id) : undefined;
+            const blockId = blockRevealId(item.uuid, i);
             return (
               <Fragment key={i}>
-                <ThreadBlockView block={block} />
+                <div className="tv-block" data-block-id={blockId}>
+                  <ThreadBlockView block={block} forceOpen={blockIds.has(blockId)} />
+                </div>
                 {runs?.map((run) => (
                   <SubagentBlock key={run.agentId} run={run} hashTarget={hashTarget} />
                 ))}
@@ -154,6 +160,8 @@ function SystemTurn({ item, label }: { item: ThreadItem; label: string }) {
  */
 export function SubagentBlock({ run, hashTarget }: { run: SubagentRun; hashTarget: string }) {
   const anchor = subagentAnchor(run.agentId);
+  const { subagentIds } = useContext(SessionSearchContext);
+  const forceOpen = subagentIds.has(run.agentId);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -170,7 +178,7 @@ export function SubagentBlock({ run, hashTarget }: { run: SubagentRun; hashTarge
     <div id={anchor} ref={ref} className="tv-subagent">
       <Collapsible
         className="tv-collapsible--subagent"
-        open={open}
+        open={open || forceOpen}
         onToggle={setOpen}
         icon="🧩"
         title={

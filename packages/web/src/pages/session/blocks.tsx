@@ -9,16 +9,23 @@ import { stripImageMarkers } from './text.js';
  * - tool: paired tool_use + tool_result (handles missing result + is_error)
  * - attachment: unknown/rich block (e.g. image) surfaced safely
  */
-export function ThreadBlockView({ block }: { block: ThreadBlock }) {
+export function ThreadBlockView({
+  block,
+  forceOpen = false,
+}: {
+  block: ThreadBlock;
+  /** Force a collapsible block (thinking/tool) open — used by in-session search. */
+  forceOpen?: boolean;
+}) {
   switch (block.kind) {
     case 'text': {
       const text = stripImageMarkers(block.text);
       return text ? <Markdown>{text}</Markdown> : null;
     }
     case 'thinking':
-      return <ThinkingBlock thinking={block.thinking} />;
+      return <ThinkingBlock thinking={block.thinking} forceOpen={forceOpen} />;
     case 'tool':
-      return <ToolBlock tool={block} />;
+      return <ToolBlock tool={block} forceOpen={forceOpen} />;
     case 'attachment':
       return <AttachmentView attachment={block.attachment} />;
   }

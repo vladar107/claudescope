@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { SessionDetailResponse, SubagentRun } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
@@ -6,6 +6,10 @@ import { CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
 import { formatBytes, formatDateTime, shortModel } from '../browse/format.js';
 import { hasRenderableContent } from './blocks.js';
 import { SubagentBlock, SubagentJumpMenu, ThreadList, useHashTarget } from './ThreadView.js';
+import { SessionSearchContext } from './SearchContext.js';
+import { buildMatches, revealForMatch, type RoleFilter } from './search.js';
+import { SessionFinder } from './SessionFinder.js';
+import { highlightMatchInBlock, clearHighlights } from './finderDom.js';
 import './session.css';
 
 /**
@@ -91,6 +95,70 @@ function SessionView({ data }: { data: SessionDetailResponse }) {
   }, [subagents]);
   const orphanSubagents = useMemo(() => subagents.filter((s) => !s.toolUseId), [subagents]);
 
+  // ── In-session finder ────────────────────────────────────────────────────
+  const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
+  const [activeIndex, setActiveIndex] = useState(0);
+  const threadRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Debounce the query and require >= 2 chars, so rapid typing (or a 1-char
+  // query that matches everything) never triggers heavy work on every keystroke.
+  useEffect(() => {
+    const t = window.setTimeout(
+      () => setDebouncedQuery(query.trim().length >= 2 ? query.trim() : ''),
+      200,
+    );
+    return () => window.clearTimeout(t);
+  }, [query]);
+
+  // Ordered match list, computed from data (collapsed content included).
+  const matches = useMemo(
+    () => buildMatches(thread, subagents, subagentsByToolUseId, debouncedQuery, roleFilter),
+    [thread, subagents, subagentsByToolUseId, debouncedQuery, roleFilter],
+  );
+  const count = matches.length;
+
+  // Reset to the first match whenever the result set changes.
+  useEffect(() => setActiveIndex(0), [matches]);
+
+  // Reveal ONLY the active match's block/subagent — never all of them.
+  const activeMatch = count > 0 ? matches[Math.min(activeIndex, count - 1)] : undefined;
+  const reveal = useMemo(() => revealForMatch(activeMatch), [activeMatch]);
+
+  // Highlight the active match within its (now-revealed) block. Scoped to one
+  // block, so it stays cheap. Re-run on a short delay to catch async code blocks.
+  useEffect(() => {
+    const container = threadRef.current;
+    clearHighlights();
+    if (!container || !activeMatch) return;
+    const run = () => highlightMatchInBlock(container, activeMatch, debouncedQuery);
+    run();
+    const t = window.setTimeout(run, 200);
+    return () => window.clearTimeout(t);
+  }, [activeMatch, debouncedQuery]);
+
+  // Clear highlights when leaving the session.
+  useEffect(() => clearHighlights, []);
+
+  // Cmd/Ctrl+F focuses the finder instead of the browser's find.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const step = (delta: number) => {
+    setActiveIndex((i) => (count === 0 ? 0 : (i + delta + count) % count));
+  };
+
   return (
     <div className="tv-session">
       <header className="tv-session__header">
@@ -99,6 +167,17 @@ function SessionView({ data }: { data: SessionDetailResponse }) {
             ← Browse
           </Link>
           <SubagentJumpMenu subagents={subagents} />
+          <SessionFinder
+            query={query}
+            onQuery={setQuery}
+            roleFilter={roleFilter}
+            onRoleFilter={setRoleFilter}
+            count={count}
+            activeIndex={activeIndex}
+            onPrev={() => step(-1)}
+            onNext={() => step(1)}
+            inputRef={inputRef}
+          />
         </div>
         <h1 className="tv-session__title" title={title}>
           {title}
@@ -137,29 +216,31 @@ function SessionView({ data }: { data: SessionDetailResponse }) {
         </div>
       </header>
 
-      <div className="tv-session__thread">
-        {items.length === 0 ? (
-          <p className="tv-muted">This session has no renderable messages.</p>
-        ) : (
-          <ThreadList
-            items={items}
-            subagentsByToolUseId={subagentsByToolUseId}
-            hashTarget={hashTarget}
-          />
-        )}
+      <SessionSearchContext.Provider value={reveal}>
+        <div className="tv-session__thread" ref={threadRef}>
+          {items.length === 0 ? (
+            <p className="tv-muted">This session has no renderable messages.</p>
+          ) : (
+            <ThreadList
+              items={items}
+              subagentsByToolUseId={subagentsByToolUseId}
+              hashTarget={hashTarget}
+            />
+          )}
 
-        {orphanSubagents.length > 0 ? (
-          <section className="tv-session__orphans">
-            <h2 className="tv-session__orphans-title">
-              Other subagents
-              <span className="tv-muted"> (not linked to a tool call)</span>
-            </h2>
-            {orphanSubagents.map((run) => (
-              <SubagentBlock key={run.agentId} run={run} hashTarget={hashTarget} />
-            ))}
-          </section>
-        ) : null}
-      </div>
+          {orphanSubagents.length > 0 ? (
+            <section className="tv-session__orphans">
+              <h2 className="tv-session__orphans-title">
+                Other subagents
+                <span className="tv-muted"> (not linked to a tool call)</span>
+              </h2>
+              {orphanSubagents.map((run) => (
+                <SubagentBlock key={run.agentId} run={run} hashTarget={hashTarget} />
+              ))}
+            </section>
+          ) : null}
+        </div>
+      </SessionSearchContext.Provider>
     </div>
   );
 }

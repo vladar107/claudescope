@@ -9,7 +9,7 @@ A local, **read-only** web app to browse, read, search, and analyze your
 (`~/.claude/projects/**/*.jsonl`).
 
 - **Browse** every session grouped by project — titles, dates, message/tool counts, token totals, cost, git branch, PR links.
-- **Read** a session as a clean threaded conversation: markdown, syntax-highlighted code, collapsible thinking, paired tool calls + results, attachments, sidechain/subagent turns.
+- **Read** a session as a clean threaded conversation: markdown, syntax-highlighted code, collapsible thinking, paired tool calls + results, attachments, sidechain/subagent turns. A built-in **find-in-session** bar (⌘/Ctrl+F) searches the whole transcript — including collapsed thinking, tool, and subagent content — auto-expanding and highlighting matches, with a user/assistant filter.
 - **Search** full-text across all sessions (DuckDB BM25), with highlighted snippets that deep-link to the exact message.
 - **Analyze** token usage and cost over time, by project, and by model — including cache-hit ratio.
 
