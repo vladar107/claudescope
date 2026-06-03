@@ -21,10 +21,11 @@ A local, **read-only** web app to browse, read, search, and analyze your
 
 ## Quick start
 
-**Prerequisites:** [Node.js](https://nodejs.org) **20 or newer** (`node -v`).
+**Prerequisites:** 
+- [Node.js](https://nodejs.org) **20 or newer** (`node -v`)
+- Cloned repo
 
 ```bash
-git clone <your-repo-url> claudescope
 cd claudescope
 npm install      # installs all workspace dependencies
 npm start        # builds on first run, then opens the app in your browser
