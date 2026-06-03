@@ -1,0 +1,91 @@
+/**
+ * DuckDB schema for the index store.
+ *
+ * The index keeps each session's `message` as JSON only transiently (during
+ * load); persisted tables are FULLY FLATTENED so the API layer never has to
+ * re-parse JSON at query time. An `fts` index over {@link events}.textContent
+ * is rebuilt after every load.
+ *
+ * Tables:
+ *  - files:    one row per indexed `*.jsonl` file. Tracks mtime+size so the
+ *              indexer can skip unchanged files (incremental reindex).
+ *  - events:   one row per conversational (user/assistant) event, with usage,
+ *              per-event cost, and extracted plain text for full-text search.
+ *  - sessions: derived per-session metadata (counts, totals, time span, etc).
+ *  - projects: derived per-cwd metadata.
+ *  - pr_links: pr-link events keyed by sessionId.
+ *  - titles:   ai-title events keyed by sessionId (latest wins).
+ */
+
+export const SCHEMA_VERSION = 2;
+
+/** All DDL statements, executed in order at startup. Idempotent. */
+export const SCHEMA_DDL: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS files (
+     path        VARCHAR PRIMARY KEY,
+     mtime_ms    BIGINT  NOT NULL,
+     size_bytes  BIGINT  NOT NULL,
+     session_id  VARCHAR,
+     project_cwd VARCHAR,
+     indexed_at  TIMESTAMP DEFAULT now()
+   )`,
+
+  `CREATE TABLE IF NOT EXISTS events (
+     file_path    VARCHAR NOT NULL,
+     session_id   VARCHAR NOT NULL,
+     uuid         VARCHAR,
+     parent_uuid  VARCHAR,
+     role         VARCHAR,
+     type         VARCHAR NOT NULL,
+     ts           TIMESTAMP,
+     cwd          VARCHAR,
+     git_branch   VARCHAR,
+     model        VARCHAR,
+     input_tokens        BIGINT DEFAULT 0,
+     output_tokens       BIGINT DEFAULT 0,
+     cache_read_tokens   BIGINT DEFAULT 0,
+     cache_write_tokens  BIGINT DEFAULT 0,
+     service_tier VARCHAR,
+     is_sidechain BOOLEAN DEFAULT FALSE,
+     tool_use_count INTEGER DEFAULT 0,
+     cost_usd     DOUBLE DEFAULT 0,
+     text_content VARCHAR
+   )`,
+
+  `CREATE TABLE IF NOT EXISTS sessions (
+     id            VARCHAR PRIMARY KEY,
+     project_cwd   VARCHAR,
+     title         VARCHAR,
+     started_at    TIMESTAMP,
+     ended_at      TIMESTAMP,
+     message_count BIGINT DEFAULT 0,
+     tool_call_count BIGINT DEFAULT 0,
+     total_tokens  BIGINT DEFAULT 0,
+     total_cost_usd DOUBLE DEFAULT 0,
+     input_tokens  BIGINT DEFAULT 0,
+     output_tokens BIGINT DEFAULT 0,
+     cache_read_tokens  BIGINT DEFAULT 0,
+     cache_write_tokens BIGINT DEFAULT 0,
+     models        VARCHAR,
+     git_branch    VARCHAR,
+     pr_url        VARCHAR,
+     size_bytes    BIGINT DEFAULT 0,
+     has_sidechain BOOLEAN DEFAULT FALSE
+   )`,
+
+  `CREATE TABLE IF NOT EXISTS pr_links (
+     session_id  VARCHAR PRIMARY KEY,
+     pr_number   BIGINT,
+     pr_repository VARCHAR,
+     pr_url      VARCHAR
+   )`,
+
+  `CREATE TABLE IF NOT EXISTS titles (
+     session_id VARCHAR PRIMARY KEY,
+     title      VARCHAR
+   )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_events_session ON events (session_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_events_cwd ON events (cwd)`,
+  `CREATE INDEX IF NOT EXISTS idx_events_ts ON events (ts)`,
+];
