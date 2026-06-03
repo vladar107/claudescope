@@ -1,5 +1,7 @@
 # Claudescope
 
+[![CI](https://github.com/vladar107/claudescope/actions/workflows/ci.yml/badge.svg)](https://github.com/vladar107/claudescope/actions/workflows/ci.yml)
+
 *A scope for your Claude Code sessions.*
 
 A local, **read-only** web app to browse, read, search, and analyze your
