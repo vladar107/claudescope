@@ -1,0 +1,14 @@
+node_modules/
+dist/
+packages/server/data/*.duckdb
+packages/server/data/*.duckdb.wal
+packages/server/data/*.duckdb.tmp
+.DS_Store
+*.log
+.env
+.env.local
+.vite/
+*.tsbuildinfo
+coverage/
+.idea/
+.vscode/

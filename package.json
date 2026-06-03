@@ -1,0 +1,30 @@
+{
+  "name": "claudescope",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "start": "node scripts/launch.mjs",
+    "dev": "concurrently -n server,web -c green,cyan \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm -w @claudescope/server run dev",
+    "dev:web": "npm -w @claudescope/web run dev",
+    "build": "npm -w @claudescope/shared run build && npm -w @claudescope/web run build && npm -w @claudescope/server run build",
+    "serve": "npm -w @claudescope/server run start",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.5"
+  }
+}
