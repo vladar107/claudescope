@@ -1,0 +1,101 @@
+/**
+ * Per-day time series: stacked token bars (input/output/cache) with cost drawn
+ * as a line on a secondary axis. Expects rows grouped by day (`key` = YYYY-MM-DD),
+ * which it sorts chronologically before charting.
+ */
+
+import { useMemo } from 'react';
+import type { AnalyticsRow } from '@claudescope/shared';
+import {
+  Bar,
+  CartesianGrid,
+  ComposedChart,
+  Legend,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { AXIS_TICK, COLORS, TooltipCard, formatCost, formatCount } from './chart-common.js';
+
+interface Point {
+  day: string;
+  input: number;
+  output: number;
+  cache: number;
+  cost: number;
+  total: number;
+}
+
+export function TimeSeriesChart({ rows }: { rows: AnalyticsRow[] }) {
+  const data = useMemo<Point[]>(
+    () =>
+      rows
+        .map((r) => ({
+          day: r.key,
+          input: r.inputTokens,
+          output: r.outputTokens,
+          cache: r.cacheCreationTokens + r.cacheReadTokens,
+          cost: r.costUsd,
+          total: r.totalTokens,
+        }))
+        .sort((a, b) => a.day.localeCompare(b.day)),
+    [rows],
+  );
+
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <ComposedChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+        <CartesianGrid stroke={COLORS.grid} vertical={false} />
+        <XAxis dataKey="day" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: COLORS.grid }} minTickGap={24} />
+        <YAxis
+          yAxisId="tokens"
+          tick={AXIS_TICK}
+          tickLine={false}
+          axisLine={{ stroke: COLORS.grid }}
+          tickFormatter={(v: number) => formatCount(v)}
+          width={48}
+        />
+        <YAxis
+          yAxisId="cost"
+          orientation="right"
+          tick={AXIS_TICK}
+          tickLine={false}
+          axisLine={{ stroke: COLORS.grid }}
+          tickFormatter={(v: number) => `$${v < 1 ? v.toFixed(2) : Math.round(v)}`}
+          width={52}
+        />
+        <Tooltip cursor={{ fill: '#ffffff0a' }} content={<SeriesTooltip />} />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        <Bar yAxisId="tokens" dataKey="input" name="Input" stackId="tok" fill={COLORS.input} />
+        <Bar yAxisId="tokens" dataKey="output" name="Output" stackId="tok" fill={COLORS.output} />
+        <Bar yAxisId="tokens" dataKey="cache" name="Cache" stackId="tok" fill={COLORS.cacheWrite} radius={[2, 2, 0, 0]} />
+        <Line yAxisId="cost" type="monotone" dataKey="cost" name="Cost" stroke={COLORS.cost} strokeWidth={2} dot={false} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** Recharts hands the tooltip a loosely-typed payload; narrow it here. */
+function SeriesTooltip(props: {
+  active?: boolean;
+  label?: string | number;
+  payload?: ReadonlyArray<{ payload?: Point }>;
+}) {
+  if (!props.active || !props.payload || props.payload.length === 0) return null;
+  const p = props.payload[0]?.payload;
+  if (!p) return null;
+  return (
+    <TooltipCard
+      title={p.day}
+      rows={[
+        { label: 'Input', value: formatCount(p.input), color: COLORS.input },
+        { label: 'Output', value: formatCount(p.output), color: COLORS.output },
+        { label: 'Cache', value: formatCount(p.cache), color: COLORS.cacheWrite },
+        { label: 'Total tokens', value: formatCount(p.total) },
+        { label: 'Cost', value: formatCost(p.cost), color: COLORS.cost },
+      ]}
+    />
+  );
+}

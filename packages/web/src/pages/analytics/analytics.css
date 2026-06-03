@@ -1,0 +1,176 @@
+/* ===========================================================================
+   Analytics page styles. Scoped under .tv-analytics; relies on the global
+   theme variables/utilities from styles/global.css.
+   =========================================================================== */
+
+.tv-analytics__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--tv-space-4);
+  margin-bottom: var(--tv-space-5);
+}
+
+.tv-analytics__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-1);
+}
+.tv-analytics__field-label {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Segmented group-by toggle */
+.tv-segmented {
+  display: inline-flex;
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+  overflow: hidden;
+  background: var(--tv-bg-elevated);
+}
+.tv-segmented__btn {
+  background: transparent;
+  border: 0;
+  color: var(--tv-fg-muted);
+  padding: var(--tv-space-2) var(--tv-space-4);
+  cursor: pointer;
+  font-size: var(--tv-fs-md);
+}
+.tv-segmented__btn + .tv-segmented__btn {
+  border-left: 1px solid var(--tv-border);
+}
+.tv-segmented__btn:hover {
+  background: var(--tv-bg-hover);
+  color: var(--tv-fg);
+}
+.tv-segmented__btn.is-active {
+  background: var(--tv-accent-muted);
+  color: var(--tv-fg);
+}
+
+.tv-analytics__date {
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius-sm);
+  color: var(--tv-fg);
+  font-family: inherit;
+  font-size: var(--tv-fs-md);
+  padding: var(--tv-space-2) var(--tv-space-3);
+  color-scheme: dark;
+}
+
+.tv-analytics__clear {
+  background: transparent;
+  border: 1px solid var(--tv-border-strong);
+  color: var(--tv-fg-muted);
+  border-radius: var(--tv-radius-sm);
+  padding: var(--tv-space-2) var(--tv-space-3);
+  cursor: pointer;
+  font-size: var(--tv-fs-md);
+}
+.tv-analytics__clear:hover {
+  background: var(--tv-bg-hover);
+  color: var(--tv-fg);
+}
+
+/* Summary cards */
+.tv-analytics__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--tv-space-4);
+  margin-bottom: var(--tv-space-5);
+}
+.tv-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-2);
+}
+.tv-stat-card__label {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tv-stat-card__value {
+  font-size: 26px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.tv-stat-card__sub {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-muted);
+}
+
+/* Chart cards */
+.tv-analytics__charts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-5);
+}
+.tv-chart-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tv-space-3);
+  margin-bottom: var(--tv-space-4);
+}
+.tv-chart-card__title {
+  font-size: var(--tv-fs-lg);
+  font-weight: 600;
+  margin: 0;
+}
+.tv-chart-card__hint {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+}
+
+.tv-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 220px;
+  color: var(--tv-fg-faint);
+  font-size: var(--tv-fs-md);
+}
+
+/* Recharts tooltip surface */
+.tv-chart-tooltip {
+  background: var(--tv-bg-elevated);
+  border: 1px solid var(--tv-border-strong);
+  border-radius: var(--tv-radius);
+  padding: var(--tv-space-2) var(--tv-space-3);
+  font-size: var(--tv-fs-sm);
+  box-shadow: 0 4px 16px #0008;
+  min-width: 160px;
+}
+.tv-chart-tooltip__label {
+  font-weight: 600;
+  margin-bottom: var(--tv-space-1);
+  font-family: var(--tv-font-mono);
+}
+.tv-chart-tooltip__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tv-space-4);
+}
+.tv-chart-tooltip__row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  color: var(--tv-fg-muted);
+}
+.tv-chart-tooltip__swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.tv-chart-tooltip__row-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--tv-fg);
+}

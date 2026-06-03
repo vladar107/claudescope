@@ -1,0 +1,69 @@
+/**
+ * Small presentational helpers shared by the browse + session views.
+ * Kept local to these pages (no shell files touched).
+ */
+
+/** Format an ISO timestamp as a compact local date-time, or "—" when absent. */
+export function formatDateTime(iso: string | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** Format an ISO timestamp as a date only. */
+export function formatDate(iso: string | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+/** Relative "time ago" label for recency (e.g. "3h ago", "2d ago"). */
+export function timeAgo(iso: string | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const ms = d.getTime();
+  if (Number.isNaN(ms)) return '';
+  const diff = Date.now() - ms;
+  if (diff < 0) return 'just now';
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  const mon = Math.floor(day / 30);
+  if (mon < 12) return `${mon}mo ago`;
+  return `${Math.floor(mon / 12)}y ago`;
+}
+
+/** Human-readable byte size (e.g. "1.3 MB"). */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(value < 10 && unit > 0 ? 1 : 0)} ${units[unit]}`;
+}
+
+/** Shorten a model id for chip display (drops the date suffix). */
+export function shortModel(model: string): string {
+  if (model === '<synthetic>') return 'synthetic';
+  // e.g. "claude-opus-4-8-20250101" -> "opus-4-8"
+  const stripped = model.replace(/^claude-/, '');
+  const m = /^([a-z]+-\d+-\d+)/.exec(stripped);
+  return m?.[1] ?? stripped;
+}

@@ -1,0 +1,517 @@
+/* ===========================================================================
+   Transcript Viewer — global theme + layout.
+   Dense, readable, dark-by-default UI tuned for inspecting long transcripts.
+   Feature agents should rely on these CSS variables + the .tv-* utility
+   classes rather than re-deriving colors/spacing.
+   =========================================================================== */
+
+:root {
+  /* Palette (dark) */
+  --tv-bg: #0e1116;
+  --tv-bg-elevated: #161b22;
+  --tv-bg-inset: #1c222b;
+  --tv-bg-hover: #21262d;
+  --tv-border: #2a3038;
+  --tv-border-strong: #3a424d;
+
+  --tv-fg: #e6edf3;
+  --tv-fg-muted: #9aa6b2;
+  --tv-fg-faint: #6b7682;
+
+  --tv-accent: #58a6ff;
+  --tv-accent-muted: #1f6feb33;
+  --tv-success: #3fb950;
+  --tv-warning: #d29922;
+  --tv-danger: #f85149;
+  --tv-danger-bg: #f8514922;
+
+  /* Role accents */
+  --tv-user: #58a6ff;
+  --tv-assistant: #bc8cff;
+  --tv-tool: #d29922;
+  --tv-thinking: #6b7682;
+
+  /* Spacing scale */
+  --tv-space-1: 4px;
+  --tv-space-2: 8px;
+  --tv-space-3: 12px;
+  --tv-space-4: 16px;
+  --tv-space-5: 24px;
+  --tv-space-6: 32px;
+
+  --tv-radius: 6px;
+  --tv-radius-sm: 4px;
+
+  --tv-nav-width: 220px;
+
+  --tv-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  --tv-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
+    monospace;
+
+  --tv-fs-sm: 12px;
+  --tv-fs-base: 13px;
+  --tv-fs-md: 14px;
+  --tv-fs-lg: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--tv-bg);
+  color: var(--tv-fg);
+  font-family: var(--tv-font-sans);
+  font-size: var(--tv-fs-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--tv-accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* --------------------------------------------------------------------------
+   App shell layout
+   -------------------------------------------------------------------------- */
+
+.tv-app {
+  display: grid;
+  grid-template-columns: var(--tv-nav-width) 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.tv-nav {
+  background: var(--tv-bg-elevated);
+  border-right: 1px solid var(--tv-border);
+  display: flex;
+  flex-direction: column;
+  padding: var(--tv-space-4) var(--tv-space-3);
+  gap: var(--tv-space-1);
+  overflow-y: auto;
+}
+
+.tv-nav__brand {
+  font-size: var(--tv-fs-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: var(--tv-space-2) var(--tv-space-3) var(--tv-space-4);
+  color: var(--tv-fg);
+}
+.tv-nav__brand:hover {
+  text-decoration: none;
+}
+
+.tv-nav__link {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  padding: var(--tv-space-2) var(--tv-space-3);
+  border-radius: var(--tv-radius-sm);
+  color: var(--tv-fg-muted);
+  font-size: var(--tv-fs-md);
+}
+.tv-nav__link:hover {
+  background: var(--tv-bg-hover);
+  color: var(--tv-fg);
+  text-decoration: none;
+}
+.tv-nav__link.is-active {
+  background: var(--tv-accent-muted);
+  color: var(--tv-fg);
+}
+
+.tv-nav__spacer {
+  flex: 1;
+}
+
+.tv-nav__footer {
+  padding: var(--tv-space-3);
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+  border-top: 1px solid var(--tv-border);
+}
+
+.tv-main {
+  overflow-y: auto;
+  padding: var(--tv-space-5);
+}
+
+.tv-page-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 var(--tv-space-4);
+}
+
+/* --------------------------------------------------------------------------
+   Chips & badges
+   -------------------------------------------------------------------------- */
+
+.tv-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--tv-space-1);
+  align-items: center;
+}
+
+.tv-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border);
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-muted);
+  white-space: nowrap;
+}
+.tv-chip__label {
+  color: var(--tv-fg-faint);
+}
+.tv-chip__value {
+  color: var(--tv-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.tv-chip--input {
+  border-color: #1f6feb55;
+}
+.tv-chip--output {
+  border-color: #bc8cff55;
+}
+.tv-chip--cache {
+  border-color: #3fb95055;
+}
+
+.tv-cost-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border-strong);
+  font-size: var(--tv-fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--tv-fg);
+  white-space: nowrap;
+}
+.tv-cost-badge--zero {
+  color: var(--tv-fg-faint);
+}
+
+/* --------------------------------------------------------------------------
+   Spinner / loading / error
+   -------------------------------------------------------------------------- */
+
+.tv-spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  color: var(--tv-fg-muted);
+  font-size: var(--tv-fs-md);
+}
+.tv-spinner__circle {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--tv-border-strong);
+  border-top-color: var(--tv-accent);
+  border-radius: 50%;
+  animation: tv-spin 0.7s linear infinite;
+}
+.tv-spinner--lg .tv-spinner__circle {
+  width: 28px;
+  height: 28px;
+  border-width: 3px;
+}
+@keyframes tv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tv-error {
+  border: 1px solid var(--tv-danger);
+  background: var(--tv-danger-bg);
+  color: var(--tv-fg);
+  border-radius: var(--tv-radius);
+  padding: var(--tv-space-3) var(--tv-space-4);
+  font-size: var(--tv-fs-md);
+}
+.tv-error__title {
+  font-weight: 600;
+  color: var(--tv-danger);
+  margin-bottom: var(--tv-space-1);
+}
+.tv-error__detail {
+  color: var(--tv-fg-muted);
+  font-family: var(--tv-font-mono);
+  font-size: var(--tv-fs-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tv-error__retry {
+  margin-top: var(--tv-space-3);
+  background: transparent;
+  border: 1px solid var(--tv-border-strong);
+  color: var(--tv-fg);
+  border-radius: var(--tv-radius-sm);
+  padding: var(--tv-space-1) var(--tv-space-3);
+  cursor: pointer;
+}
+.tv-error__retry:hover {
+  background: var(--tv-bg-hover);
+}
+
+/* --------------------------------------------------------------------------
+   Collapsible blocks (tool / thinking)
+   -------------------------------------------------------------------------- */
+
+.tv-collapsible {
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+  background: var(--tv-bg-elevated);
+  overflow: hidden;
+}
+.tv-collapsible + .tv-collapsible {
+  margin-top: var(--tv-space-2);
+}
+
+.tv-collapsible__header {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--tv-fg);
+  padding: var(--tv-space-2) var(--tv-space-3);
+  cursor: pointer;
+  font-size: var(--tv-fs-md);
+}
+.tv-collapsible__header:hover {
+  background: var(--tv-bg-hover);
+}
+
+.tv-collapsible__chevron {
+  display: inline-block;
+  transition: transform 0.12s ease;
+  color: var(--tv-fg-faint);
+  font-size: 10px;
+}
+.tv-collapsible.is-open .tv-collapsible__chevron {
+  transform: rotate(90deg);
+}
+
+.tv-collapsible__icon {
+  font-size: var(--tv-fs-sm);
+}
+.tv-collapsible__title {
+  font-weight: 600;
+}
+.tv-collapsible__subtitle {
+  color: var(--tv-fg-muted);
+  font-family: var(--tv-font-mono);
+  font-size: var(--tv-fs-sm);
+}
+.tv-collapsible__spacer {
+  flex: 1;
+}
+
+.tv-collapsible__body {
+  border-top: 1px solid var(--tv-border);
+  padding: var(--tv-space-3);
+}
+
+.tv-collapsible--tool .tv-collapsible__icon {
+  color: var(--tv-tool);
+}
+.tv-collapsible--thinking {
+  background: var(--tv-bg-inset);
+}
+.tv-collapsible--thinking .tv-collapsible__title {
+  color: var(--tv-thinking);
+  font-style: italic;
+}
+.tv-collapsible--error {
+  border-color: var(--tv-danger);
+}
+
+.tv-tool__section-label {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--tv-space-1);
+}
+.tv-tool__section + .tv-tool__section {
+  margin-top: var(--tv-space-3);
+}
+
+/* --------------------------------------------------------------------------
+   Markdown rendering
+   -------------------------------------------------------------------------- */
+
+.tv-md {
+  font-size: var(--tv-fs-md);
+  line-height: 1.6;
+  word-break: break-word;
+}
+.tv-md > :first-child {
+  margin-top: 0;
+}
+.tv-md > :last-child {
+  margin-bottom: 0;
+}
+.tv-md p {
+  margin: 0 0 var(--tv-space-3);
+}
+.tv-md h1,
+.tv-md h2,
+.tv-md h3,
+.tv-md h4 {
+  margin: var(--tv-space-4) 0 var(--tv-space-2);
+  line-height: 1.3;
+}
+.tv-md ul,
+.tv-md ol {
+  margin: 0 0 var(--tv-space-3);
+  padding-left: var(--tv-space-5);
+}
+.tv-md li {
+  margin: 2px 0;
+}
+.tv-md blockquote {
+  margin: 0 0 var(--tv-space-3);
+  padding-left: var(--tv-space-3);
+  border-left: 3px solid var(--tv-border-strong);
+  color: var(--tv-fg-muted);
+}
+.tv-md a {
+  color: var(--tv-accent);
+}
+.tv-md code {
+  font-family: var(--tv-font-mono);
+  font-size: 0.92em;
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius-sm);
+  padding: 0.1em 0.35em;
+}
+.tv-md pre {
+  margin: 0 0 var(--tv-space-3);
+  padding: var(--tv-space-3);
+  border-radius: var(--tv-radius);
+  overflow-x: auto;
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border);
+  font-size: var(--tv-fs-base);
+  line-height: 1.5;
+}
+.tv-md pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: inherit;
+}
+/* Shiki output wrapper (.tv-shiki contains a <pre class="shiki">). */
+.tv-shiki {
+  margin: 0 0 var(--tv-space-3);
+}
+.tv-shiki pre,
+.tv-md pre.shiki {
+  margin: 0;
+  padding: var(--tv-space-3);
+  border-radius: var(--tv-radius);
+  border: 1px solid var(--tv-border);
+  overflow-x: auto;
+  font-size: var(--tv-fs-base);
+  line-height: 1.5;
+}
+.tv-shiki code {
+  font-family: var(--tv-font-mono);
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.tv-md table {
+  border-collapse: collapse;
+  margin: 0 0 var(--tv-space-3);
+  font-size: var(--tv-fs-base);
+}
+.tv-md th,
+.tv-md td {
+  border: 1px solid var(--tv-border);
+  padding: var(--tv-space-1) var(--tv-space-2);
+  text-align: left;
+}
+.tv-md th {
+  background: var(--tv-bg-inset);
+}
+.tv-md img {
+  max-width: 100%;
+}
+.tv-md hr {
+  border: 0;
+  border-top: 1px solid var(--tv-border);
+  margin: var(--tv-space-4) 0;
+}
+
+/* Plain (non-markdown) preformatted text fallback. */
+.tv-pre {
+  font-family: var(--tv-font-mono);
+  font-size: var(--tv-fs-base);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+  padding: var(--tv-space-3);
+  overflow-x: auto;
+}
+
+/* Search-result <mark> highlights from server snippets. */
+mark {
+  background: var(--tv-warning);
+  color: #1a1300;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* --------------------------------------------------------------------------
+   Generic surfaces feature agents can reuse
+   -------------------------------------------------------------------------- */
+
+.tv-card {
+  background: var(--tv-bg-elevated);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+  padding: var(--tv-space-4);
+}
+
+.tv-muted {
+  color: var(--tv-fg-muted);
+}
+.tv-mono {
+  font-family: var(--tv-font-mono);
+}

@@ -1,0 +1,304 @@
+/* Session reader — threaded conversation view. Relies on global tokens. */
+
+.tv-session {
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+/* Sticky header: offsets the .tv-main padding via negative margins so it
+   spans full width and pins to the top while scrolling long sessions. */
+.tv-session__header {
+  position: sticky;
+  top: calc(-1 * var(--tv-space-5));
+  z-index: 5;
+  background: var(--tv-bg);
+  margin: calc(-1 * var(--tv-space-5)) calc(-1 * var(--tv-space-5)) var(--tv-space-4);
+  padding: var(--tv-space-3) var(--tv-space-5) var(--tv-space-3);
+  border-bottom: 1px solid var(--tv-border);
+}
+
+.tv-session__crumbs {
+  margin-bottom: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+}
+
+.tv-session__title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 var(--tv-space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  line-height: 1.3;
+}
+
+.tv-session__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+}
+
+/* Thread */
+.tv-session__thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-3);
+  padding-bottom: var(--tv-space-6);
+}
+
+.tv-turn {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: var(--tv-space-3);
+  scroll-margin-top: 120px;
+}
+
+.tv-turn__gutter {
+  display: flex;
+  justify-content: center;
+  padding-top: 6px;
+}
+.tv-turn__role-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 2px;
+}
+.tv-turn--user .tv-turn__role-dot {
+  background: var(--tv-user);
+}
+.tv-turn--assistant .tv-turn__role-dot {
+  background: var(--tv-assistant);
+}
+
+.tv-turn__body {
+  min-width: 0;
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+  background: var(--tv-bg-elevated);
+  padding: var(--tv-space-3) var(--tv-space-4);
+}
+.tv-turn--user .tv-turn__body {
+  border-left: 2px solid var(--tv-user);
+}
+.tv-turn--assistant .tv-turn__body {
+  border-left: 2px solid var(--tv-assistant);
+}
+.tv-turn--sidechain .tv-turn__body {
+  background: var(--tv-bg-inset);
+  border-style: dashed;
+}
+
+.tv-turn__head {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  margin-bottom: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+}
+.tv-turn__role {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  font-size: var(--tv-fs-sm);
+}
+.tv-turn--user .tv-turn__role {
+  color: var(--tv-user);
+}
+.tv-turn--assistant .tv-turn__role {
+  color: var(--tv-assistant);
+}
+.tv-turn__tag {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-warning);
+  border: 1px solid var(--tv-warning);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+.tv-turn__model {
+  color: var(--tv-fg-faint);
+  font-size: var(--tv-fs-sm);
+}
+.tv-turn__spacer {
+  flex: 1;
+}
+.tv-turn__time {
+  font-size: var(--tv-fs-sm);
+  white-space: nowrap;
+}
+.tv-turn__time:hover {
+  color: var(--tv-accent);
+}
+
+.tv-turn__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-2);
+}
+
+/* Deep-link target flash */
+.tv-turn.is-targeted .tv-turn__body {
+  outline: 2px solid var(--tv-accent);
+  outline-offset: 2px;
+  transition: outline-color 0.4s ease;
+}
+
+/* Attachments */
+.tv-attachment {
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+  padding: var(--tv-space-2);
+  background: var(--tv-bg-inset);
+}
+.tv-attachment img {
+  max-width: 100%;
+  border-radius: var(--tv-radius-sm);
+  display: block;
+}
+.tv-attachment figcaption {
+  font-size: var(--tv-fs-sm);
+  margin-top: var(--tv-space-1);
+}
+
+/* ── Subagents ─────────────────────────────────────────────────────────── */
+
+/* Nested subagent run: indented with an accent rail to convey hierarchy. */
+.tv-subagent {
+  margin: var(--tv-space-2) 0 var(--tv-space-2) var(--tv-space-3);
+  border-left: 2px solid var(--tv-accent-muted);
+  padding-left: var(--tv-space-3);
+}
+
+.tv-collapsible--subagent {
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+}
+
+.tv-subagent__stats {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+}
+
+/* The subagent's own thread, slightly inset from the panel chrome. */
+.tv-subagent__thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-3);
+  padding: var(--tv-space-2) 0;
+}
+
+/* Flash the subagent panel when targeted by a jump/deep-link. */
+.tv-subagent.is-targeted .tv-collapsible--subagent {
+  outline: 2px solid var(--tv-accent);
+  outline-offset: 2px;
+}
+
+.tv-session__orphans {
+  margin-top: var(--tv-space-6);
+  padding-top: var(--tv-space-4);
+  border-top: 1px dashed var(--tv-border-strong);
+}
+.tv-session__orphans-title {
+  font-size: var(--tv-fs-md);
+  margin: 0 0 var(--tv-space-3);
+}
+
+/* ── Subagent jump menu (dropdown in the header crumbs) ────────────────── */
+
+.tv-subagent-menu {
+  position: relative;
+  display: inline-block;
+}
+.tv-subagent-menu > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-accent);
+  user-select: none;
+}
+.tv-subagent-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.tv-subagent-menu__count {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--tv-accent-muted);
+  color: var(--tv-accent);
+  text-align: center;
+}
+.tv-subagent-menu__list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--tv-space-1));
+  left: 0;
+  width: 360px;
+  max-height: 420px;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--tv-space-1);
+  list-style: none;
+  background: var(--tv-bg-elevated);
+  border: 1px solid var(--tv-border-strong);
+  border-radius: var(--tv-radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.tv-subagent-menu__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tv-space-2);
+  padding: var(--tv-space-2);
+  border-radius: var(--tv-radius-sm);
+  text-decoration: none;
+  color: inherit;
+}
+.tv-subagent-menu__item:hover {
+  background: var(--tv-bg-inset);
+}
+.tv-subagent-menu__type {
+  flex: 0 0 auto;
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-accent);
+  font-family: var(--tv-font-mono, monospace);
+}
+.tv-subagent-menu__desc {
+  flex: 1 1 auto;
+  font-size: var(--tv-fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tv-subagent-menu__orphan {
+  flex: 0 0 auto;
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-muted);
+  font-style: italic;
+}
+
+/* ── System / harness turns (collapsed by default) ────────────────────── */
+
+.tv-turn--system .tv-turn__role-dot {
+  background: var(--tv-fg-muted);
+  opacity: 0.5;
+}
+.tv-collapsible--system {
+  background: transparent;
+  border: 1px dashed var(--tv-border);
+  border-radius: var(--tv-radius);
+  opacity: 0.85;
+}
+.tv-system-turn__pre {
+  margin: 0;
+  padding: var(--tv-space-2) var(--tv-space-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-muted);
+  font-family: var(--tv-font-mono, monospace);
+}
