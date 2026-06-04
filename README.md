@@ -35,9 +35,10 @@ tool counts, token totals, cost, git branch, and PR links.
 **Read** — a session as a clean threaded conversation: markdown, collapsible
 thinking, **syntax-highlighted red/green diffs** for `Edit`/`MultiEdit`, nested
 **subagent** runs, per-message token chips, and a **find-in-session** bar (⌘/Ctrl+F)
-that auto-expands and highlights matches.
+that auto-expands and highlights matches. **Conversation / Files-changed** tabs and
+an **⤓ Export** (Markdown, optional redaction) sit in the header.
 
-![Session reader with a highlighted diff and the in-session finder](docs/screenshots/session.png)
+![Session reader: tabs, Export, the in-session finder, and a highlighted diff](docs/screenshots/session.png)
 
 **Search** — full-text across every session (DuckDB BM25) with highlighted
 snippets and user/assistant filters; each result deep-links to the exact message.
