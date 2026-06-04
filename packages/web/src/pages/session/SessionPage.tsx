@@ -170,6 +170,40 @@ function SessionView({ data }: { data: SessionDetailResponse }) {
     setActiveIndex((i) => (count === 0 ? 0 : (i + delta + count) % count));
   };
 
+  // Memoize the (expensive) thread subtree so switching tabs — which only
+  // changes `tab` — doesn't re-render hundreds of turns / re-parse markdown.
+  // It recomputes only when the data or the finder's reveal/hash actually change.
+  const threadView = useMemo(
+    () => (
+      <SessionSearchContext.Provider value={reveal}>
+        <div className="tv-session__thread" ref={threadRef}>
+          {items.length === 0 ? (
+            <p className="tv-muted">This session has no renderable messages.</p>
+          ) : (
+            <ThreadList
+              items={items}
+              subagentsByToolUseId={subagentsByToolUseId}
+              hashTarget={hashTarget}
+            />
+          )}
+
+          {orphanSubagents.length > 0 ? (
+            <section className="tv-session__orphans">
+              <h2 className="tv-session__orphans-title">
+                Other subagents
+                <span className="tv-muted"> (not linked to a tool call)</span>
+              </h2>
+              {orphanSubagents.map((run) => (
+                <SubagentBlock key={run.agentId} run={run} hashTarget={hashTarget} />
+              ))}
+            </section>
+          ) : null}
+        </div>
+      </SessionSearchContext.Provider>
+    ),
+    [reveal, items, subagentsByToolUseId, hashTarget, orphanSubagents],
+  );
+
   return (
     <div className="tv-session">
       <header className="tv-session__header">
@@ -251,37 +285,9 @@ function SessionView({ data }: { data: SessionDetailResponse }) {
         </div>
       ) : null}
 
-      {/* Both views stay mounted; we only toggle visibility so switching tabs
-          never re-renders the (potentially huge) conversation thread. */}
-      <SessionSearchContext.Provider value={reveal}>
-        <div
-          className="tv-session__thread"
-          ref={threadRef}
-          style={tab === 'conversation' ? undefined : { display: 'none' }}
-        >
-          {items.length === 0 ? (
-            <p className="tv-muted">This session has no renderable messages.</p>
-          ) : (
-            <ThreadList
-              items={items}
-              subagentsByToolUseId={subagentsByToolUseId}
-              hashTarget={hashTarget}
-            />
-          )}
-
-          {orphanSubagents.length > 0 ? (
-            <section className="tv-session__orphans">
-              <h2 className="tv-session__orphans-title">
-                Other subagents
-                <span className="tv-muted"> (not linked to a tool call)</span>
-              </h2>
-              {orphanSubagents.map((run) => (
-                <SubagentBlock key={run.agentId} run={run} hashTarget={hashTarget} />
-              ))}
-            </section>
-          ) : null}
-        </div>
-      </SessionSearchContext.Provider>
+      {/* Both views stay mounted; we toggle visibility (the thread element is
+          memoized above, so switching tabs doesn't re-render it). */}
+      <div style={tab === 'conversation' ? undefined : { display: 'none' }}>{threadView}</div>
 
       {changes.length > 0 ? (
         <div
