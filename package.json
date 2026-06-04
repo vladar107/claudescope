@@ -16,7 +16,8 @@
     "serve": "npm -w @claudescope/server run start",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "update-pricing": "node scripts/update-pricing.mjs"
   },
   "engines": {
     "node": ">=20"

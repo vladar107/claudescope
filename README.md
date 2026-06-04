@@ -122,6 +122,10 @@ from Anthropic's published API pricing):
 
 - Edit `pricing.json` to update prices or add models, then re-index
   (`POST /api/reindex` or restart) to recompute.
+- Or run **`npm run update-pricing`** to refresh `pricing.json` from Anthropic's
+  published pricing page. There's no official pricing *API*, so this is a
+  best-effort scrape (it validates what it parses and won't write garbage) —
+  review the diff afterwards. Use `--dry-run` to preview without writing.
 - The `opus`/`sonnet`/`haiku` family rules use **current** pricing; the deprecated
   Opus 4 / 4.1 ($15/$75) are pinned via exact `models` entries. Add an exact entry
   to override any specific model.
