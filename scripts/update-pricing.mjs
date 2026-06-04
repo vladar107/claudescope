@@ -12,7 +12,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const PRICING_URL = 'https://platform.claude.com/docs/en/about-claude/pricing';
 const OUT = join(dirname(dirname(fileURLToPath(import.meta.url))), 'packages', 'server', 'pricing.json');
@@ -25,7 +25,7 @@ const dollars = (cell) => {
 };
 
 /** Parse the model-pricing table into { 'Model name': {input, cacheWrite, cacheRead, output} }. */
-function parseTable(html) {
+export function parseTable(html) {
   const rates = {};
   for (const tr of html.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) ?? []) {
     const cells = [...tr.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map((m) => stripTags(m[1]));
@@ -98,7 +98,10 @@ async function main() {
   process.stdout.write(`\nWrote ${OUT}. Review the diff, then re-index (restart or POST /api/reindex).\n`);
 }
 
-main().catch((err) => {
-  process.stderr.write(`update-pricing failed: ${err.message}\n`);
-  process.exit(1);
-});
+// Only run when invoked directly (so the parser can be imported in tests).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    process.stderr.write(`update-pricing failed: ${err.message}\n`);
+    process.exit(1);
+  });
+}
