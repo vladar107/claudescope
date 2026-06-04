@@ -6,6 +6,7 @@ import { CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
 import { formatBytes, formatDateTime, shortModel } from '../browse/format.js';
 import { hasRenderableContent } from './blocks.js';
 import { SubagentBlock, SubagentJumpMenu, ThreadList, useHashTarget } from './ThreadView.js';
+import { Changeset } from './ChangesetPanel.js';
 import { SessionSearchContext } from './SearchContext.js';
 import { buildMatches, revealForMatch, type RoleFilter } from './search.js';
 import { SessionFinder } from './SessionFinder.js';
@@ -217,6 +218,8 @@ function SessionView({ data }: { data: SessionDetailResponse }) {
           ) : null}
         </div>
       </header>
+
+      <Changeset thread={thread} subagents={subagents} />
 
       <SessionSearchContext.Provider value={reveal}>
         <div className="tv-session__thread" ref={threadRef}>

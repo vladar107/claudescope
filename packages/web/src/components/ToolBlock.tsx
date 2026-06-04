@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { ContentBlock, ToolInteraction } from '@claudescope/shared';
 import { Collapsible } from './Collapsible.js';
 import { CodeBlock } from './CodeBlock.js';
 import { Markdown } from './Markdown.js';
-import { highlightLines } from './highlighter.js';
-import { lineDiff } from './diff.js';
+import { LineDiff } from './LineDiff.js';
+import { extOf, MAX_HIGHLIGHT } from './diff.js';
 
 export interface ToolBlockProps {
   /** The parsed tool interaction (tool_use paired with its tool_result). */
@@ -15,21 +15,11 @@ export interface ToolBlockProps {
   forceOpen?: boolean;
 }
 
-// Skip syntax highlighting for very large payloads (Shiki gets slow).
-const MAX_HIGHLIGHT = 60_000;
-
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
 }
 function str(v: unknown): string | undefined {
   return typeof v === 'string' ? v : undefined;
-}
-/** File extension (used as a Shiki language hint) from a path. */
-function extOf(path: string | undefined): string | undefined {
-  if (!path) return undefined;
-  const base = path.split(/[/\\]/).pop() ?? '';
-  const dot = base.lastIndexOf('.');
-  return dot > 0 ? base.slice(dot + 1).toLowerCase() : undefined;
 }
 /** Plain text of a tool result's content blocks. */
 function resultText(result: ToolInteraction['result']): string {
@@ -67,64 +57,6 @@ function FileHeader({ path, note }: { path: string; note?: string }) {
       {path}
       {note ? <span className="tv-muted"> · {note}</span> : null}
     </p>
-  );
-}
-
-/**
- * Red/green line diff between two strings, with Shiki syntax highlighting layered
- * on top. Each side is highlighted as a whole (preserving multi-line context),
- * then lines are placed onto their diff backgrounds. Falls back to plain text
- * until (or unless) highlighting resolves.
- */
-function LineDiff({ oldText, newText, lang }: { oldText: string; newText: string; lang?: string }) {
-  const lines = lineDiff(oldText, newText);
-  const [hl, setHl] = useState<{ old: string[]; neu: string[] } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const big = oldText.length + newText.length > MAX_HIGHLIGHT;
-    if (big) {
-      setHl(null);
-      return;
-    }
-    Promise.all([highlightLines(oldText, lang), highlightLines(newText, lang)])
-      .then(([o, n]) => {
-        if (!cancelled && o && n) setHl({ old: o, neu: n });
-      })
-      .catch(() => {
-        /* keep plain fallback */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [oldText, newText, lang]);
-
-  let oldIdx = 0;
-  let newIdx = 0;
-  return (
-    <div className="tv-diff">
-      {lines.map((l, i) => {
-        const html = l.type === 'del' ? hl?.old[oldIdx] : hl?.neu[newIdx];
-        if (l.type === 'del') oldIdx++;
-        else if (l.type === 'add') newIdx++;
-        else {
-          oldIdx++;
-          newIdx++;
-        }
-        return (
-          <div key={i} className={`tv-diff__line tv-diff__line--${l.type}`}>
-            <span className="tv-diff__gutter" aria-hidden="true">
-              {l.type === 'add' ? '+' : l.type === 'del' ? '-' : ' '}
-            </span>
-            {html != null ? (
-              <span className="tv-diff__text" dangerouslySetInnerHTML={{ __html: html || ' ' }} />
-            ) : (
-              <span className="tv-diff__text">{l.text === '' ? ' ' : l.text}</span>
-            )}
-          </div>
-        );
-      })}
-    </div>
   );
 }
 

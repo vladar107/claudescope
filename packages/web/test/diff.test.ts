@@ -20,10 +20,10 @@ describe('lineDiff', () => {
   });
 
   it('handles pure additions and deletions', () => {
-    expect(lineDiff('', 'x')).toEqual([
-      { type: 'del', text: '' },
-      { type: 'add', text: 'x' },
-    ]);
+    // A wholly-empty side contributes no phantom line.
+    expect(lineDiff('', 'x')).toEqual([{ type: 'add', text: 'x' }]);
+    expect(lineDiff('x', '')).toEqual([{ type: 'del', text: 'x' }]);
+    expect(lineDiff('', '')).toEqual([]);
     expect(lineDiff('keep\ngone', 'keep')).toEqual([
       { type: 'context', text: 'keep' },
       { type: 'del', text: 'gone' },

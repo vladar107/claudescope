@@ -10,12 +10,36 @@ export interface DiffLine {
   text: string;
 }
 
+/** Skip syntax highlighting for payloads larger than this (Shiki gets slow). */
+export const MAX_HIGHLIGHT = 60_000;
+
+/** Count added / removed lines in a diff. */
+export function diffStats(lines: DiffLine[]): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const l of lines) {
+    if (l.type === 'add') additions++;
+    else if (l.type === 'del') deletions++;
+  }
+  return { additions, deletions };
+}
+
+/** File extension (Shiki language hint) from a path; undefined if none. */
+export function extOf(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  const base = path.split(/[/\\]/).pop() ?? '';
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? base.slice(dot + 1).toLowerCase() : undefined;
+}
+
 // Guard against a pathological O(m*n) table for very large inputs.
 const MAX_CELLS = 2_000_000;
 
 export function lineDiff(oldText: string, newText: string): DiffLine[] {
-  const a = oldText.split('\n');
-  const b = newText.split('\n');
+  // Treat a wholly-empty side as zero lines (not one empty line), so a brand-new
+  // file shows as pure additions rather than "+content / -<empty>".
+  const a = oldText === '' ? [] : oldText.split('\n');
+  const b = newText === '' ? [] : newText.split('\n');
 
   if (oldText === newText) return a.map((text) => ({ type: 'context', text }));
 
