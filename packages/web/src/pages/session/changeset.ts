@@ -16,8 +16,18 @@ export interface FileChange {
   path: string;
   lang?: string;
   edits: FileEdit[];
-  additions: number;
-  deletions: number;
+}
+
+/** Added/removed line counts for a file's edits. Computed lazily (runs lineDiff). */
+export function fileStats(edits: FileEdit[]): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const e of edits) {
+    const s = diffStats(lineDiff(e.oldText, e.newText));
+    additions += s.additions;
+    deletions += s.deletions;
+  }
+  return { additions, deletions };
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -55,7 +65,8 @@ function collect(thread: ThreadItem[], byPath: Map<string, FileEdit[]>): void {
 
 /**
  * Build the changeset for a session (main thread + subagents), in the order
- * files were first touched.
+ * files were first touched. Cheap: only groups edits by file — line-level
+ * add/remove stats are computed lazily per file via {@link fileStats}.
  */
 export function buildChangeset(thread: ThreadItem[], subagents: SubagentRun[]): FileChange[] {
   const byPath = new Map<string, FileEdit[]>();
@@ -64,15 +75,8 @@ export function buildChangeset(thread: ThreadItem[], subagents: SubagentRun[]): 
 
   const changes: FileChange[] = [];
   for (const [path, edits] of byPath) {
-    let additions = 0;
-    let deletions = 0;
-    for (const e of edits) {
-      const s = diffStats(lineDiff(e.oldText, e.newText));
-      additions += s.additions;
-      deletions += s.deletions;
-    }
     const lang = extOf(path);
-    changes.push({ path, edits, additions, deletions, ...(lang ? { lang } : {}) });
+    changes.push({ path, edits, ...(lang ? { lang } : {}) });
   }
   return changes;
 }

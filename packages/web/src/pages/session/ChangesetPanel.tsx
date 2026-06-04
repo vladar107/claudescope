@@ -1,56 +1,63 @@
-import { useMemo } from 'react';
-import type { SubagentRun, ThreadItem } from '@claudescope/shared';
-import { Collapsible, LineDiff } from '../../components';
-import { buildChangeset } from './changeset.js';
+import { useMemo, useState } from 'react';
+import { LineDiff } from '../../components';
+import type { FileChange } from './changeset.js';
+import { fileStats } from './changeset.js';
 
 /**
- * A collapsible "Files changed" panel summarizing every Edit/MultiEdit/Write in
- * the session (main thread + subagents), grouped by file with per-file diffs.
- * Renders nothing if the session changed no files.
+ * "Files changed" view (rendered only when its tab is active). Each file is
+ * collapsed by default; its line stats and syntax-highlighted diffs are computed
+ * only when expanded — so opening the tab is instant even for big sessions.
  */
-export function Changeset({ thread, subagents }: { thread: ThreadItem[]; subagents: SubagentRun[] }) {
-  const changes = useMemo(() => buildChangeset(thread, subagents), [thread, subagents]);
-  if (changes.length === 0) return null;
+export function ChangesetPanel({ changes }: { changes: FileChange[] }) {
+  if (changes.length === 0) {
+    return <p className="tv-muted">This session changed no files.</p>;
+  }
+  return (
+    <ul className="tv-changeset__list">
+      {changes.map((c) => (
+        <FileRow key={c.path} change={c} />
+      ))}
+    </ul>
+  );
+}
 
-  const additions = changes.reduce((n, c) => n + c.additions, 0);
-  const deletions = changes.reduce((n, c) => n + c.deletions, 0);
+function FileRow({ change }: { change: FileChange }) {
+  const [open, setOpen] = useState(false);
+  // Stats run lineDiff — compute only once the file is expanded.
+  const stats = useMemo(() => (open ? fileStats(change.edits) : null), [open, change.edits]);
 
   return (
-    <Collapsible
-      className="tv-changeset"
-      icon="📝"
-      title="Files changed"
-      subtitle={`${changes.length} file${changes.length === 1 ? '' : 's'}`}
-      headerExtra={
-        <span className="tv-changeset__totals">
-          <span className="tv-diff-add">+{additions}</span>{' '}
-          <span className="tv-diff-del">−{deletions}</span>
+    <li className="tv-changeset__file">
+      <button
+        type="button"
+        className="tv-changeset__summary"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="tv-changeset__chevron" aria-hidden="true">
+          {open ? '▾' : '▸'}
         </span>
-      }
-    >
-      <ul className="tv-changeset__list">
-        {changes.map((c) => (
-          <li key={c.path}>
-            <details className="tv-changeset__file">
-              <summary>
-                <span className="tv-mono tv-changeset__path">{c.path}</span>
-                <span className="tv-changeset__stat">
-                  <span className="tv-diff-add">+{c.additions}</span>{' '}
-                  <span className="tv-diff-del">−{c.deletions}</span>
-                  {c.edits.length > 1 ? (
-                    <span className="tv-muted"> · {c.edits.length} edits</span>
-                  ) : null}
-                </span>
-              </summary>
-              <div className="tv-changeset__diffs">
-                {c.edits.map((e, i) => (
-                  <LineDiff key={i} oldText={e.oldText} newText={e.newText} lang={c.lang} />
-                ))}
-              </div>
-            </details>
-          </li>
-        ))}
-      </ul>
-    </Collapsible>
+        <span className="tv-mono tv-changeset__path">{change.path}</span>
+        <span className="tv-changeset__stat">
+          {stats ? (
+            <>
+              <span className="tv-diff-add">+{stats.additions}</span>{' '}
+              <span className="tv-diff-del">−{stats.deletions}</span>
+            </>
+          ) : (
+            <span className="tv-muted">
+              {change.edits.length} edit{change.edits.length === 1 ? '' : 's'}
+            </span>
+          )}
+        </span>
+      </button>
+      {open ? (
+        <div className="tv-changeset__diffs">
+          {change.edits.map((e, i) => (
+            <LineDiff key={i} oldText={e.oldText} newText={e.newText} lang={change.lang} />
+          ))}
+        </div>
+      ) : null}
+    </li>
   );
 }

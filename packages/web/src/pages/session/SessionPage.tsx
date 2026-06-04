@@ -6,7 +6,8 @@ import { CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
 import { formatBytes, formatDateTime, shortModel } from '../browse/format.js';
 import { hasRenderableContent } from './blocks.js';
 import { SubagentBlock, SubagentJumpMenu, ThreadList, useHashTarget } from './ThreadView.js';
-import { Changeset } from './ChangesetPanel.js';
+import { ChangesetPanel } from './ChangesetPanel.js';
+import { buildChangeset } from './changeset.js';
 import { SessionSearchContext } from './SearchContext.js';
 import { buildMatches, revealForMatch, type RoleFilter } from './search.js';
 import { SessionFinder } from './SessionFinder.js';
@@ -73,6 +74,7 @@ function SessionView({ data }: { data: SessionDetailResponse }) {
   const { meta, thread, subagents } = data;
   const title = meta.title || 'Untitled session';
   const hashTarget = useHashTarget();
+  const [searchParams] = useSearchParams();
 
   // Only render turns that actually carry visible content.
   const items = useMemo(() => thread.filter((t) => hasRenderableContent(t.blocks)), [thread]);
@@ -96,9 +98,14 @@ function SessionView({ data }: { data: SessionDetailResponse }) {
   }, [subagents]);
   const orphanSubagents = useMemo(() => subagents.filter((s) => !s.toolUseId), [subagents]);
 
+  // Cheap (no diffing): just groups edits by file, for the tab count.
+  const changes = useMemo(() => buildChangeset(thread, subagents), [thread, subagents]);
+  const [tab, setTab] = useState<'conversation' | 'changes'>(() =>
+    searchParams.get('tab') === 'changes' && changes.length > 0 ? 'changes' : 'conversation',
+  );
+
   // ── In-session finder ────────────────────────────────────────────────────
   // Initialize from a `?find=` deep-link (e.g. from a global search result).
-  const [searchParams] = useSearchParams();
   const [query, setQuery] = useState(() => searchParams.get('find') ?? '');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
@@ -219,10 +226,37 @@ function SessionView({ data }: { data: SessionDetailResponse }) {
         </div>
       </header>
 
-      <Changeset thread={thread} subagents={subagents} />
+      {changes.length > 0 ? (
+        <div className="tv-session__tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'conversation'}
+            className={tab === 'conversation' ? 'tv-tab is-active' : 'tv-tab'}
+            onClick={() => setTab('conversation')}
+          >
+            Conversation
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'changes'}
+            className={tab === 'changes' ? 'tv-tab is-active' : 'tv-tab'}
+            onClick={() => setTab('changes')}
+          >
+            Files changed <span className="tv-tab__count">{changes.length}</span>
+          </button>
+        </div>
+      ) : null}
 
+      {/* Both views stay mounted; we only toggle visibility so switching tabs
+          never re-renders the (potentially huge) conversation thread. */}
       <SessionSearchContext.Provider value={reveal}>
-        <div className="tv-session__thread" ref={threadRef}>
+        <div
+          className="tv-session__thread"
+          ref={threadRef}
+          style={tab === 'conversation' ? undefined : { display: 'none' }}
+        >
           {items.length === 0 ? (
             <p className="tv-muted">This session has no renderable messages.</p>
           ) : (
@@ -246,6 +280,15 @@ function SessionView({ data }: { data: SessionDetailResponse }) {
           ) : null}
         </div>
       </SessionSearchContext.Provider>
+
+      {changes.length > 0 ? (
+        <div
+          className="tv-session__changes"
+          style={tab === 'changes' ? undefined : { display: 'none' }}
+        >
+          <ChangesetPanel changes={changes} />
+        </div>
+      ) : null}
     </div>
   );
 }

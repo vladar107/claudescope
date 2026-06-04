@@ -289,15 +289,42 @@
   font-style: italic;
 }
 
-/* ── Changeset (files changed) ────────────────────────────────────────── */
+/* ── Tabs (Conversation / Files changed) ──────────────────────────────── */
 
-.tv-changeset {
+.tv-session__tabs {
+  display: flex;
+  gap: var(--tv-space-1);
   margin-bottom: var(--tv-space-4);
+  border-bottom: 1px solid var(--tv-border);
 }
-.tv-changeset__totals {
-  font-family: var(--tv-font-mono, monospace);
+.tv-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--tv-fg-muted);
+  cursor: pointer;
+  padding: var(--tv-space-2) var(--tv-space-3);
+  font-size: var(--tv-fs-md);
+  margin-bottom: -1px;
+}
+.tv-tab:hover {
+  color: var(--tv-fg);
+}
+.tv-tab.is-active {
+  color: var(--tv-fg);
+  border-bottom-color: var(--tv-accent);
+}
+.tv-tab__count {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--tv-bg-inset);
   font-size: var(--tv-fs-sm);
 }
+
+/* ── Changeset (files changed) ────────────────────────────────────────── */
+
 .tv-diff-add {
   color: #3fb950;
 }
@@ -307,25 +334,33 @@
 .tv-changeset__list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 0 var(--tv-space-6);
   display: flex;
   flex-direction: column;
   gap: var(--tv-space-2);
 }
-.tv-changeset__file > summary {
+.tv-changeset__summary {
+  width: 100%;
   cursor: pointer;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--tv-space-3);
+  align-items: center;
+  gap: var(--tv-space-2);
   padding: var(--tv-space-2);
+  border: 1px solid var(--tv-border);
   border-radius: var(--tv-radius-sm);
   background: var(--tv-bg-inset);
+  color: inherit;
+  text-align: left;
 }
-.tv-changeset__file > summary:hover {
+.tv-changeset__summary:hover {
   background: var(--tv-bg-elevated);
 }
+.tv-changeset__chevron {
+  flex: 0 0 auto;
+  color: var(--tv-fg-muted);
+}
 .tv-changeset__path {
+  flex: 1 1 auto;
   word-break: break-all;
 }
 .tv-changeset__stat {
@@ -337,7 +372,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--tv-space-2);
-  padding: var(--tv-space-2) 0;
+  padding: var(--tv-space-2) 0 var(--tv-space-2) var(--tv-space-3);
 }
 
 /* ── In-session finder ────────────────────────────────────────────────── */
