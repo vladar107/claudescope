@@ -74,9 +74,9 @@ export function BreakdownChart({ rows, groupBy }: { rows: AnalyticsRow[]; groupB
         />
         <Tooltip cursor={{ fill: '#ffffff0a' }} content={<BreakdownTooltip />} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="input" name="Input" stackId="tok" fill={COLORS.input} />
-        <Bar dataKey="output" name="Output" stackId="tok" fill={COLORS.output} />
-        <Bar dataKey="cache" name="Cache" stackId="tok" fill={COLORS.cacheWrite} radius={[0, 2, 2, 0]} />
+        <Bar dataKey="input" name="Input" stackId="tok" fill={COLORS.input} isAnimationActive={false} />
+        <Bar dataKey="output" name="Output" stackId="tok" fill={COLORS.output} isAnimationActive={false} />
+        <Bar dataKey="cache" name="Cache" stackId="tok" fill={COLORS.cacheWrite} radius={[0, 2, 2, 0]} isAnimationActive={false} />
       </BarChart>
     </ResponsiveContainer>
   );

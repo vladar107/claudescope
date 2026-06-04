@@ -94,10 +94,10 @@ export function TimeSeriesChart({ rows }: { rows: AnalyticsRow[] }) {
             );
           }}
         />
-        <Bar yAxisId="tokens" dataKey="input" name="Input" stackId="tok" fill={COLORS.input} hide={hidden.has('input')} />
-        <Bar yAxisId="tokens" dataKey="output" name="Output" stackId="tok" fill={COLORS.output} hide={hidden.has('output')} />
-        <Bar yAxisId="tokens" dataKey="cache" name="Cache" stackId="tok" fill={COLORS.cacheWrite} radius={[2, 2, 0, 0]} hide={hidden.has('cache')} />
-        <Line yAxisId="cost" type="monotone" dataKey="cost" name="Cost" stroke={COLORS.cost} strokeWidth={2} dot={false} hide={hidden.has('cost')} />
+        <Bar yAxisId="tokens" dataKey="input" name="Input" stackId="tok" fill={COLORS.input} hide={hidden.has('input')} isAnimationActive={false} />
+        <Bar yAxisId="tokens" dataKey="output" name="Output" stackId="tok" fill={COLORS.output} hide={hidden.has('output')} isAnimationActive={false} />
+        <Bar yAxisId="tokens" dataKey="cache" name="Cache" stackId="tok" fill={COLORS.cacheWrite} radius={[2, 2, 0, 0]} hide={hidden.has('cache')} isAnimationActive={false} />
+        <Line yAxisId="cost" type="monotone" dataKey="cost" name="Cost" stroke={COLORS.cost} strokeWidth={2} dot={false} hide={hidden.has('cost')} isAnimationActive={false} />
       </ComposedChart>
     </ResponsiveContainer>
   );
