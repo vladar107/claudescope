@@ -90,11 +90,41 @@ OPEN_BROWSER=0 npm start                                   # don't pop a browser
 The startup banner prints the resolved URL and the sessions directory in use, so
 you can always confirm what it's reading.
 
-### Pricing (cost analytics)
+### Cost methodology
 
-Cost figures come from `packages/server/pricing.json` (per-million-token rates by
-model). Edit it to match current rates or add models; unknown models and
-`<synthetic>` are treated as $0. Re-index (below) to recompute.
+Cost is an **estimate computed locally** from token usage — Claudescope has no
+access to your real billing. For every **assistant** event (the events that carry
+`usage`), it sums each token type times its per-million-token rate:
+
+```
+cost = ( input_tokens          × input_rate
+       + output_tokens         × output_rate
+       + cache_creation_tokens × cache_write_rate
+       + cache_read_tokens     × cache_read_rate ) ÷ 1,000,000
+```
+
+The per-event cost is computed once at index time and stored, so analytics is
+just a `SUM` over events; a project/session total is the sum of its events.
+
+Rates live in `packages/server/pricing.json`, keyed by model. The shipped
+defaults are Claude **Opus** list prices (USD per 1M tokens):
+
+| input | output | cache write (5m) | cache read |
+| ----- | ------ | ---------------- | ---------- |
+| $15   | $75    | $18.75           | $1.50      |
+
+- A model with **no entry** falls back to the `default` rates; **`<synthetic>`** is $0.
+- Edit `pricing.json` to match current prices or add models (e.g. Sonnet/Haiku),
+  then re-index (`POST /api/reindex` or restart) to recompute.
+
+> **Caveat:** these are **list-price estimates** — they ignore any discounts,
+> service tier, or batch pricing, and the cache-write rate assumes the 5-minute
+> TTL. Treat totals as approximate and best for *relative* comparison
+> (project vs project, day vs day), not as an invoice.
+
+The **"Input from cache"** stat is a separate metric:
+`cache_read ÷ (cache_read + cache_creation + input)` — the share of prompt tokens
+served from cache (legitimately high for Claude Code, which re-reads cached context each turn).
 
 ---
 
