@@ -106,16 +106,25 @@ cost = ( input_tokens          × input_rate
 The per-event cost is computed once at index time and stored, so analytics is
 just a `SUM` over events; a project/session total is the sum of its events.
 
-Rates live in `packages/server/pricing.json`, keyed by model. The shipped
-defaults are Claude **Opus** list prices (USD per 1M tokens):
+Rates live in `packages/server/pricing.json`. A model id resolves in this order:
+exact `models` entry → **family** match (`opus` / `sonnet` / `haiku` substring) →
+`default`. The family step means version- or date-suffixed ids (e.g.
+`claude-haiku-4-5-20251001`) still price correctly. Shipped rates (USD per 1M tokens,
+from Anthropic's published API pricing):
 
-| input | output | cache write (5m) | cache read |
-| ----- | ------ | ---------------- | ---------- |
-| $15   | $75    | $18.75           | $1.50      |
+| family / model      | input | output | cache write (5m) | cache read |
+| ------------------- | ----- | ------ | ---------------- | ---------- |
+| Opus 4.5–4.8        | $5    | $25    | $6.25            | $0.50      |
+| Opus 4.1 / 4        | $15   | $75    | $18.75           | $1.50      |
+| Sonnet 4.x          | $3    | $15    | $3.75            | $0.30      |
+| Haiku 4.5           | $1    | $5     | $1.25            | $0.10      |
+| `<synthetic>`       | $0    | $0     | $0               | $0         |
 
-- A model with **no entry** falls back to the `default` rates; **`<synthetic>`** is $0.
-- Edit `pricing.json` to match current prices or add models (e.g. Sonnet/Haiku),
-  then re-index (`POST /api/reindex` or restart) to recompute.
+- Edit `pricing.json` to update prices or add models, then re-index
+  (`POST /api/reindex` or restart) to recompute.
+- The `opus`/`sonnet`/`haiku` family rules use **current** pricing; the deprecated
+  Opus 4 / 4.1 ($15/$75) are pinned via exact `models` entries. Add an exact entry
+  to override any specific model.
 
 > **Caveat:** these are **list-price estimates** — they ignore any discounts,
 > service tier, or batch pricing, and the cache-write rate assumes the 5-minute

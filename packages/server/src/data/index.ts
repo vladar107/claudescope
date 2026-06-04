@@ -112,8 +112,15 @@ const TOOL_USE_COUNT_EXPR = `
 function buildCostExpr(pricing: PricingConfig): string {
   const rateExpr = (field: keyof PricingConfig['models'][string]): string => {
     const cases: string[] = [];
+    // Exact model ids win first.
     for (const [model, rates] of Object.entries(pricing.models)) {
       cases.push(`WHEN model = ${sqlString(model)} THEN ${rates[field]}`);
+    }
+    // Then family substring matches (opus/sonnet/haiku), so any version or
+    // date-suffixed id still resolves.
+    for (const [family, rates] of Object.entries(pricing.families ?? {})) {
+      const pat = sqlString(`%${family.toLowerCase()}%`);
+      cases.push(`WHEN lower(model) LIKE ${pat} THEN ${rates[field]}`);
     }
     cases.push(`ELSE ${pricing.default[field]}`);
     return `CASE ${cases.join(' ')} END`;

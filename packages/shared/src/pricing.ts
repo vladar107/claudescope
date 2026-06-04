@@ -15,8 +15,15 @@ export interface ModelRates {
 }
 
 export interface PricingConfig {
-  /** Per-model rate table, keyed by model id. */
+  /** Per-model rate table, keyed by exact model id (highest precedence). */
   models: Record<string, ModelRates>;
-  /** Fallback rates used when a model id is not present in `models`. */
+  /**
+   * Family rates, keyed by a lowercase substring matched against the model id
+   * (e.g. "opus", "sonnet", "haiku"). Used when no exact `models` entry matches,
+   * so any version/date-suffixed id (e.g. `claude-haiku-4-5-20251001`) still
+   * resolves. Checked after `models`, before `default`.
+   */
+  families?: Record<string, ModelRates>;
+  /** Fallback rates used when neither an exact id nor a family matches. */
   default: ModelRates;
 }
