@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { SessionDetailResponse, SubagentRun } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
 import { CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
@@ -96,7 +96,9 @@ function SessionView({ data }: { data: SessionDetailResponse }) {
   const orphanSubagents = useMemo(() => subagents.filter((s) => !s.toolUseId), [subagents]);
 
   // ── In-session finder ────────────────────────────────────────────────────
-  const [query, setQuery] = useState('');
+  // Initialize from a `?find=` deep-link (e.g. from a global search result).
+  const [searchParams] = useSearchParams();
+  const [query, setQuery] = useState(() => searchParams.get('find') ?? '');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [activeIndex, setActiveIndex] = useState(0);
