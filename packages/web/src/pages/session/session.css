@@ -61,6 +61,11 @@
   grid-template-columns: 24px 1fr;
   gap: var(--tv-space-3);
   scroll-margin-top: 120px;
+  /* Containment "virtualization": the browser skips layout & paint for turns
+     that are off-screen (keeping them in the DOM, so anchors, the finder, and
+     jump-to still work). `auto` caches each turn's real height once measured. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 140px;
 }
 
 .tv-turn__gutter {
