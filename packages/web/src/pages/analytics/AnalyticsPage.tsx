@@ -3,13 +3,14 @@
  *
  * Calls `GET /api/analytics` with a group-by toggle (project | model | day) and
  * an optional date range, then renders:
- *   - summary cards (total tokens, total cost, assistant messages, cache-hit ratio)
+ *   - summary cards (total tokens, total cost, assistant messages, input-from-cache)
  *   - a per-day time series of tokens + cost (always fetched on `day`)
  *   - a breakdown bar chart for the active group-by (token + cost)
  *
  * Notes: analytics rows/totals are over ASSISTANT events only (the events that
  * carry usage), per the API contract. `messageCount` here is the assistant
- * message count. `cacheHitRatio = cacheRead / (cacheRead + input)`.
+ * message count. The "input from cache" share is
+ * `cacheRead / (cacheRead + cacheCreation + input)`.
  */
 
 import type { ReactNode } from 'react';
@@ -214,7 +215,7 @@ function SummaryCards({ totals, loading }: { totals: AnalyticsTotals | null; loa
         sub="usage-bearing events"
       />
       <StatCard
-        label="Cache-hit ratio"
+        label="Input from cache"
         value={formatPct(totals.cacheHitRatio)}
         sub={`${formatCount(totals.cacheReadTokens)} read · ${formatCount(totals.cacheCreationTokens)} written`}
       />

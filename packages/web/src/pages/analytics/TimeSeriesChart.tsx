@@ -4,7 +4,7 @@
  * which it sorts chronologically before charting.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { AnalyticsRow } from '@claudescope/shared';
 import {
   Bar,
@@ -44,6 +44,17 @@ export function TimeSeriesChart({ rows }: { rows: AnalyticsRow[] }) {
     [rows],
   );
 
+  // Click a legend item to hide/show that series. Cache reads dwarf input/output,
+  // so hiding "Cache" lets the axis rescale and reveals the smaller bars.
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const toggle = (key: string) =>
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
   return (
     <ResponsiveContainer width="100%" height={300}>
       <ComposedChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
@@ -67,11 +78,26 @@ export function TimeSeriesChart({ rows }: { rows: AnalyticsRow[] }) {
           width={52}
         />
         <Tooltip cursor={{ fill: '#ffffff0a' }} content={<SeriesTooltip />} />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Bar yAxisId="tokens" dataKey="input" name="Input" stackId="tok" fill={COLORS.input} />
-        <Bar yAxisId="tokens" dataKey="output" name="Output" stackId="tok" fill={COLORS.output} />
-        <Bar yAxisId="tokens" dataKey="cache" name="Cache" stackId="tok" fill={COLORS.cacheWrite} radius={[2, 2, 0, 0]} />
-        <Line yAxisId="cost" type="monotone" dataKey="cost" name="Cost" stroke={COLORS.cost} strokeWidth={2} dot={false} />
+        <Legend
+          wrapperStyle={{ fontSize: 12, cursor: 'pointer' }}
+          onClick={(e) => {
+            const key = (e as { dataKey?: unknown }).dataKey;
+            if (typeof key === 'string') toggle(key);
+          }}
+          formatter={(value, entry) => {
+            const key = (entry as { dataKey?: unknown } | undefined)?.dataKey;
+            const off = typeof key === 'string' && hidden.has(key);
+            return (
+              <span style={off ? { color: 'var(--tv-fg-muted)', textDecoration: 'line-through' } : undefined}>
+                {value}
+              </span>
+            );
+          }}
+        />
+        <Bar yAxisId="tokens" dataKey="input" name="Input" stackId="tok" fill={COLORS.input} hide={hidden.has('input')} />
+        <Bar yAxisId="tokens" dataKey="output" name="Output" stackId="tok" fill={COLORS.output} hide={hidden.has('output')} />
+        <Bar yAxisId="tokens" dataKey="cache" name="Cache" stackId="tok" fill={COLORS.cacheWrite} radius={[2, 2, 0, 0]} hide={hidden.has('cache')} />
+        <Line yAxisId="cost" type="monotone" dataKey="cost" name="Cost" stroke={COLORS.cost} strokeWidth={2} dot={false} hide={hidden.has('cost')} />
       </ComposedChart>
     </ResponsiveContainer>
   );

@@ -38,8 +38,14 @@ function groupSource(groupBy: AnalyticsGroupBy): { keyExpr: string; fromSql: str
   }
 }
 
-function cacheHitRatio(cacheRead: number, input: number): number {
-  const denom = cacheRead + input;
+/**
+ * Fraction of prompt tokens served from cache:
+ *   cache_read / (cache_read + cache_creation + input)
+ * Cache-creation (writes) and uncached input are both freshly processed, so
+ * they belong in the denominator — otherwise the ratio pins at ~100%.
+ */
+function cacheHitRatio(cacheRead: number, cacheWrite: number, input: number): number {
+  const denom = cacheRead + cacheWrite + input;
   return denom > 0 ? cacheRead / denom : 0;
 }
 
@@ -90,7 +96,7 @@ export async function registerAnalyticsRoute(app: FastifyInstance): Promise<void
         cacheReadTokens: cacheRead,
         totalTokens: input + output + cacheWrite + cacheRead,
         costUsd: Number(r.cost_usd ?? 0),
-        cacheHitRatio: cacheHitRatio(cacheRead, input),
+        cacheHitRatio: cacheHitRatio(cacheRead, cacheWrite, input),
         messageCount: Number(r.message_count ?? 0),
       };
     });
@@ -117,7 +123,11 @@ export async function registerAnalyticsRoute(app: FastifyInstance): Promise<void
         messageCount: 0,
       },
     );
-    totals.cacheHitRatio = cacheHitRatio(totals.cacheReadTokens, totals.inputTokens);
+    totals.cacheHitRatio = cacheHitRatio(
+      totals.cacheReadTokens,
+      totals.cacheCreationTokens,
+      totals.inputTokens,
+    );
 
     return { rows: resultRows, totals };
   });
