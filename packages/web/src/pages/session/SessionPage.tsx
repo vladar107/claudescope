@@ -8,6 +8,7 @@ import { hasRenderableContent } from './blocks.js';
 import { SubagentBlock, SubagentJumpMenu, ThreadList, useHashTarget } from './ThreadView.js';
 import { ChangesetPanel } from './ChangesetPanel.js';
 import { buildChangeset } from './changeset.js';
+import { ExportMenu } from './ExportMenu.js';
 import { SessionSearchContext } from './SearchContext.js';
 import { buildMatches, revealForMatch, type RoleFilter } from './search.js';
 import { SessionFinder } from './SessionFinder.js';
@@ -177,6 +178,7 @@ function SessionView({ data }: { data: SessionDetailResponse }) {
             ← Browse
           </Link>
           <SubagentJumpMenu subagents={subagents} />
+          <ExportMenu data={data} />
           <SessionFinder
             query={query}
             onQuery={setQuery}

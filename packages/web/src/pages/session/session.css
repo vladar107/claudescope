@@ -375,6 +375,49 @@
   padding: var(--tv-space-2) 0 var(--tv-space-2) var(--tv-space-3);
 }
 
+/* ── Export menu ──────────────────────────────────────────────────────── */
+
+.tv-export {
+  position: relative;
+  display: inline-block;
+}
+.tv-export > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-accent);
+  user-select: none;
+}
+.tv-export > summary::-webkit-details-marker {
+  display: none;
+}
+.tv-export__menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--tv-space-1));
+  left: 0;
+  width: 220px;
+  padding: var(--tv-space-2);
+  background: var(--tv-bg-elevated);
+  border: 1px solid var(--tv-border-strong);
+  border-radius: var(--tv-radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.tv-export__opt {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+  cursor: pointer;
+  margin-bottom: var(--tv-space-2);
+}
+.tv-export__actions {
+  display: flex;
+  gap: var(--tv-space-3);
+  border-top: 1px solid var(--tv-border);
+  padding-top: var(--tv-space-2);
+}
+
 /* ── In-session finder ────────────────────────────────────────────────── */
 
 .tv-finder {
