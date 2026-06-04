@@ -19,6 +19,36 @@ A local, **read-only** web app to browse, read, search, and analyze your
 
 ---
 
+## Screenshots
+
+> The screenshots below use **synthetic demo data** — every project name, path,
+> and message is fabricated. Reproduce it locally with:
+> `node scripts/demo-seed.mjs && CLAUDE_PROJECTS_DIR=.demo/projects npm start`.
+
+**Browse** — every project and its sessions at a glance: titles, dates, message &
+tool counts, token totals, cost, git branch, and PR links.
+
+![Browse projects and sessions](docs/screenshots/browse.png)
+
+**Read** — a session as a clean threaded conversation: markdown, collapsible
+thinking, **syntax-highlighted red/green diffs** for `Edit`/`MultiEdit`, nested
+**subagent** runs, per-message token chips, and a **find-in-session** bar (⌘/Ctrl+F)
+that auto-expands and highlights matches.
+
+![Session reader with a highlighted diff and the in-session finder](docs/screenshots/session.png)
+
+**Search** — full-text across every session (DuckDB BM25) with highlighted
+snippets and user/assistant filters; each result deep-links to the exact message.
+
+![Full-text search across sessions](docs/screenshots/search.png)
+
+**Analyze** — token & cost analytics over time, by project, and by model, with a
+cache-read breakdown. Click a chart legend to toggle a series.
+
+![Token and cost analytics dashboard](docs/screenshots/analytics.png)
+
+---
+
 ## Quick start
 
 **Prerequisites:** 

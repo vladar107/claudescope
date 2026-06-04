@@ -12,3 +12,4 @@ packages/server/data/*.duckdb.tmp
 coverage/
 .idea/
 .vscode/
+.demo/
