@@ -1,0 +1,67 @@
+name: Performance
+
+# Same-runner A/B perf gate. On each PR, bench the PR head and the target branch
+# back-to-back on the SAME VM, then compare medians — this cancels most runner
+# variance, which a stored baseline across different VMs cannot. Fails if a
+# headline metric regresses beyond the threshold. PR-only: the A/B needs both
+# sides, and there is no diff to gate on a plain push to main.
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: perf-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          path: pr
+
+      - name: Checkout base (${{ github.base_ref }})
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          path: base
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: pr/package-lock.json
+
+      - name: Bench candidate (PR head)
+        working-directory: pr
+        run: |
+          npm ci
+          npm run bench -- --out "$GITHUB_WORKSPACE/candidate.json"
+
+      - name: Bench base (target branch)
+        working-directory: base
+        run: |
+          npm ci
+          # --if-present: on the PR that introduces the suite, base has no bench
+          # script yet → no base file → compare no-ops (bootstrap).
+          npm run bench --if-present -- --out "$GITHUB_WORKSPACE/base.json"
+
+      - name: Compare (fail on >10% headline regression)
+        working-directory: pr
+        run: npm run bench:compare -- --base "$GITHUB_WORKSPACE/base.json" --candidate "$GITHUB_WORKSPACE/candidate.json" --threshold 10
+
+      - name: Upload perf results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-results
+          path: |
+            candidate.json
+            base.json
+          if-no-files-found: ignore

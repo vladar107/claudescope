@@ -11,6 +11,7 @@ packages/server/data/*.duckdb.tmp
 .vite/
 *.tsbuildinfo
 coverage/
+perf-result.json
 .idea/
 .vscode/
 .demo/
