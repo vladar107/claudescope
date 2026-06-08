@@ -245,7 +245,8 @@ git push --follow-tags   # the tag triggers .github/workflows/release.yml → np
 ```
 
 The release workflow verifies the tag matches `package.json`, runs the tests,
-bundles, and publishes with `--provenance`. It needs an `NPM_TOKEN` repo secret.
+bundles, and publishes. Auth uses npm **Trusted Publishing** (OIDC) — no
+`NPM_TOKEN` secret — and provenance is attached automatically.
 
 ---
 
