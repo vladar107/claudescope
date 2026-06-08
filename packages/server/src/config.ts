@@ -89,7 +89,14 @@ export const WEB_DIST_DIR =
     join(PACKAGE_ROOT, '..', 'web', 'dist'),
   );
 
-export const APP_VERSION = '0.1.0';
+/**
+ * App version. Injected at bundle time via esbuild `define` so it always tracks
+ * the published package version (and the CLI's update check stays correct).
+ * `typeof` keeps this safe in the dev build, where the define isn't applied.
+ */
+declare const __CLAUDESCOPE_VERSION__: string | undefined;
+export const APP_VERSION =
+  typeof __CLAUDESCOPE_VERSION__ !== 'undefined' ? __CLAUDESCOPE_VERSION__ : '0.0.0-dev';
 
 /**
  * Create the state directory and seed the user-editable pricing file from the

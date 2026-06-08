@@ -16,8 +16,10 @@ A local, **read-only** web app to browse, read, search, and analyze your
 - **Analyze** token usage and cost over time, by project, and by model — including cache-hit ratio.
 
 > **Privacy:** Everything runs locally on `127.0.0.1`. The app **never** writes to
-> `~/.claude` and makes no network calls. Its only persistent state is a DuckDB
-> index it owns at `packages/server/data/index.duckdb` (safe to delete anytime).
+> `~/.claude`. Its only persistent state lives in `~/.claudescope/` — a DuckDB
+> index and a copy of the pricing file, both safe to delete anytime. The sole
+> outbound request is an optional daily check for a newer published version
+> (`claudescope update`); nothing about your transcripts ever leaves your machine.
 
 ---
 
@@ -54,20 +56,53 @@ cache-read breakdown. Click a chart legend to toggle a series.
 
 ## Quick start
 
-**Prerequisites:** 
-- [Node.js](https://nodejs.org) **20 or newer** (`node -v`)
-- Cloned repo
+**Prerequisite:** [Node.js](https://nodejs.org) **20 or newer** (`node -v`).
+
+### Install (recommended)
 
 ```bash
-cd claudescope
-npm install      # installs all workspace dependencies
-npm start        # builds on first run, then opens the app in your browser
+npm install -g @vladar107/claudescope
+claudescope            # starts the app in the background and opens your browser
 ```
 
-That's it. `npm start` serves the whole app (UI + API) from a single port
-(**http://localhost:4317** by default) and opens your browser automatically.
+`claudescope` serves the whole app (UI + API) from a single port
+(**http://localhost:4317** by default), runs in the **background**, and opens
+your browser. Run it once and forget it; new sessions appear automatically.
 
-Press `Ctrl-C` to stop.
+Try it without installing:
+
+```bash
+npx @vladar107/claudescope
+```
+
+### Commands
+
+```bash
+claudescope            # = claudescope start
+claudescope start      # start in the background (idempotent), open the browser
+claudescope stop       # stop the background server
+claudescope restart    # restart it
+claudescope status     # is it running? is an update available?
+claudescope open       # open the running app in your browser
+claudescope logs -f    # tail the server log
+claudescope update     # upgrade to the latest published version and restart
+claudescope help       # full usage
+
+# options: --port <n>   (default 4317, or $PORT)
+#          --no-open    (don't open the browser on start)
+```
+
+Updating later is just `claudescope update` (or `npm i -g @vladar107/claudescope@latest`).
+
+### Run from source
+
+```bash
+git clone https://github.com/vladar107/claudescope && cd claudescope
+npm install      # installs all workspace dependencies
+npm start        # builds on first run, then serves the app in the foreground
+```
+
+`npm start` runs in the foreground (`Ctrl-C` to stop) — handy for development.
 
 ---
 
@@ -77,17 +112,17 @@ All optional — set via environment variables.
 
 | Variable              | Default                | Description                                                            |
 | --------------------- | ---------------------- | ---------------------------------------------------------------------- |
-| `PORT`                | `4317`                 | Port the app listens on.                                               |
+| `PORT`                | `4317`                 | Port the app listens on (or `--port <n>`).                             |
 | `CLAUDE_PROJECTS_DIR` | `~/.claude/projects`   | Where to read session transcripts from. A leading `~` is expanded.     |
-| `OPEN_BROWSER`        | `1` (via `npm start`)  | Set to `0` to not auto-open the browser.                               |
+| `CLAUDESCOPE_HOME`    | `~/.claudescope`       | Where the app keeps its own state (index, pricing copy, logs, PID).    |
 | `REINDEX_INTERVAL_MS` | `15000`                | How often to auto-pick-up new/updated sessions. Set `0` to disable.    |
 
 Examples:
 
 ```bash
-PORT=8080 npm start                                        # custom port
-CLAUDE_PROJECTS_DIR=/path/to/exported/projects npm start   # view someone else's transcripts
-OPEN_BROWSER=0 npm start                                   # don't pop a browser tab
+claudescope --port 8080                                  # custom port
+CLAUDE_PROJECTS_DIR=/path/to/exported/projects claudescope  # view someone else's transcripts
+claudescope --no-open                                    # don't pop a browser tab
 ```
 
 The startup banner prints the resolved URL and the sessions directory in use, so
@@ -109,7 +144,9 @@ cost = ( input_tokens          × input_rate
 The per-event cost is computed once at index time and stored, so analytics is
 just a `SUM` over events; a project/session total is the sum of its events.
 
-Rates live in `packages/server/pricing.json`. A model id resolves in this order:
+Rates live in `~/.claudescope/pricing.json` (seeded on first run from the copy
+shipped with the package; when running from source, `packages/server/pricing.json`).
+A model id resolves in this order:
 exact `models` entry → **family** match (`opus` / `sonnet` / `haiku` substring) →
 `default`. The family step means version- or date-suffixed ids (e.g.
 `claude-haiku-4-5-20251001`) still price correctly. Shipped rates (USD per 1M tokens,
@@ -123,8 +160,8 @@ from Anthropic's published API pricing):
 | Haiku 4.5           | $1    | $5     | $1.25            | $0.10      |
 | `<synthetic>`       | $0    | $0     | $0               | $0         |
 
-- Edit `pricing.json` to update prices or add models, then re-index
-  (`POST /api/reindex` or restart) to recompute.
+- Edit `~/.claudescope/pricing.json` to update prices or add models, then re-index
+  (`POST /api/reindex` or `claudescope restart`) to recompute.
 - Or run **`npm run update-pricing`** to refresh `pricing.json` from Anthropic's
   published pricing page. There's no official pricing *API*, so this is a
   best-effort scrape (it validates what it parses and won't write garbage) —
@@ -195,16 +232,31 @@ touched) and exercises every API endpoint end-to-end via Fastify `inject()`.
 In dev, open the **Vite** URL (http://localhost:5317); it proxies `/api` to the
 server.
 
+### Releasing
+
+The published package is a single bundle assembled by `npm run bundle` (esbuild
+inlines the server + shared lib; the web build and a default pricing file are
+copied alongside; only `@duckdb/node-api` stays an external native dependency).
+Releases are **tag-only** — never published from a laptop:
+
+```bash
+npm version patch        # bumps package.json + creates the vX.Y.Z tag
+git push --follow-tags   # the tag triggers .github/workflows/release.yml → npm publish
+```
+
+The release workflow verifies the tag matches `package.json`, runs the tests,
+bundles, and publishes with `--provenance`. It needs an `NPM_TOKEN` repo secret.
+
 ---
 
 ## Troubleshooting
 
 - **App is empty / "sessions directory not found"** — `CLAUDE_PROJECTS_DIR`
   doesn't point at real transcripts. Check the banner and set it correctly.
-- **`Error: listen EADDRINUSE :4317`** — the port is taken; run with `PORT=...`.
+- **`Error: listen EADDRINUSE :4317`** — the port is taken; run `claudescope --port <n>`.
 - **Node version errors** — you need Node ≥ 20 (`node -v`).
-- **Stale or wrong data** — delete `packages/server/data/index.duckdb*` and
-  restart to rebuild the index from scratch.
+- **Stale or wrong data** — delete `~/.claudescope/index.duckdb*` and
+  `claudescope restart` to rebuild the index from scratch.
 - **`@duckdb/node-api` install issues** — it ships prebuilt native binaries;
   re-run `npm install` on a supported platform (macOS, Linux, Windows x64/arm64).
 

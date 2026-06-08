@@ -72,6 +72,9 @@ await build({
   minify: true,
   sourcemap: false,
   legalComments: 'none',
+  // Bake the real package version into the bundle so APP_VERSION (banner +
+  // CLI update check) always matches what was published.
+  define: { __CLAUDESCOPE_VERSION__: JSON.stringify(rootPkg.version) },
   // Shebang so the CLI bundle doubles as the bin, plus a createRequire shim:
   // several runtime deps (fastify/avvio) are CommonJS and call require()
   // internally. In an ESM bundle esbuild's require shim throws unless a real
