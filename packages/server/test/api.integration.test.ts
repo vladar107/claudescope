@@ -21,6 +21,7 @@ const dbPath = join(work, 'index.duckdb');
 
 process.env.CLAUDE_PROJECTS_DIR = projectsDir;
 process.env.DUCKDB_PATH = dbPath;
+process.env.CLAUDESCOPE_HOME = join(work, 'home');
 process.env.REINDEX_INTERVAL_MS = '0';
 
 const jsonl = (events: unknown[]): string => events.map((e) => JSON.stringify(e)).join('\n') + '\n';

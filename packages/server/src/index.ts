@@ -14,6 +14,7 @@ import {
   PORT,
   REINDEX_INTERVAL_MS,
   WEB_DIST_DIR,
+  ensureStateDir,
 } from './config.js';
 import { registerRoutes } from './routes/index.js';
 import { reindex } from './data/index.js';
@@ -30,6 +31,10 @@ function openBrowser(url: string): void {
 }
 
 async function main(): Promise<void> {
+  // Create ~/.claudescope and seed the user-editable pricing file before any
+  // module touches the index or pricing.
+  ensureStateDir();
+
   const app = Fastify({ logger: true });
 
   await registerRoutes(app);
