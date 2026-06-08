@@ -1,0 +1,64 @@
+name: Bug report
+description: Something isn't working as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Claudescope is **local and read-only** — it never
+        writes to `~/.claude`, so it's safe to share what you see. Please don't
+        paste transcript content you consider private.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected instead.
+      placeholder: When I open a session with…, the thread shows… but I expected…
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `claudescope`
+        2. Open a session / go to Search / …
+        3. See the error
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Claudescope version
+      description: Output of `claudescope version`.
+      placeholder: "0.1.1"
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      description: Output of `node -v`.
+      placeholder: "v20.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Output of `claudescope logs` (or the browser console). This is
+        automatically formatted as code, so no backticks needed.
+      render: shell
+    validations:
+      required: false

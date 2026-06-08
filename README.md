@@ -1,6 +1,9 @@
 # Claudescope
 
 [![CI](https://github.com/vladar107/claudescope/actions/workflows/ci.yml/badge.svg)](https://github.com/vladar107/claudescope/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/@vladar107/claudescope)](https://www.npmjs.com/package/@vladar107/claudescope)
+[![node](https://img.shields.io/node/v/@vladar107/claudescope)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/@vladar107/claudescope)](./LICENSE)
 
 *A scope for your Claude Code sessions.*
 
