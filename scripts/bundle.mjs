@@ -66,6 +66,12 @@ await build({
   format: 'esm',
   target: 'node20',
   external: ['@duckdb/node-api'],
+  // Ship a compact, non-source-mapped bundle: smaller, and it doesn't expose
+  // readable source. No .map files are emitted (sourcemap defaults off; set
+  // here for intent), and license/banner comments from deps are stripped.
+  minify: true,
+  sourcemap: false,
+  legalComments: 'none',
   // Shebang so the CLI bundle doubles as the bin, plus a createRequire shim:
   // several runtime deps (fastify/avvio) are CommonJS and call require()
   // internally. In an ESM bundle esbuild's require shim throws unless a real
