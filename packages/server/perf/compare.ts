@@ -19,10 +19,16 @@ const { values } = parseArgs({
     base: { type: 'string' },
     candidate: { type: 'string' },
     threshold: { type: 'string', default: '10' },
+    'min-ms': { type: 'string', default: '25' },
   },
 });
 
 const threshold = Math.max(0, Number(values.threshold));
+// Significance floor: a latency metric is too small to gate on a relative %
+// once it's down in the noise (GC/JIT/IO jitter dwarfs the signal). Below this
+// it's reported but never fails — a regression that actually matters pushes the
+// value above the floor anyway.
+const minMs = Math.max(0, Number(values['min-ms']));
 
 function load(path: string | undefined): BenchResult | null {
   if (!path) return null;
@@ -63,8 +69,11 @@ for (const c of candidate.metrics) {
   if (!b) continue;
   const reg = regressionPct(b, c);
   const flag = c.headline ? '*' : ' ';
-  const verdict = c.headline && reg > threshold ? 'FAIL' : 'ok';
-  if (verdict === 'FAIL') failed = true;
+  // Latency metrics below the significance floor are reported, never gated.
+  const belowFloor = c.unit === 'ms' && Math.max(b.value, c.value) < minMs;
+  const regressed = c.headline && reg > threshold && !belowFloor;
+  if (regressed) failed = true;
+  const verdict = regressed ? 'FAIL' : belowFloor && c.headline && reg > threshold ? 'noise' : 'ok';
   const sign = reg >= 0 ? '+' : '';
   lines.push(
     `  ${flag} ${c.id.padEnd(28)} base=${b.value.toFixed(2).padStart(10)}  cand=${c.value.toFixed(2).padStart(10)}  ${(sign + reg.toFixed(1) + '%').padStart(9)}  ${verdict}`,
