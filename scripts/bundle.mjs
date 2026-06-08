@@ -51,30 +51,32 @@ console.log('› Building shared + web…');
 run(['-w', '@claudescope/shared', 'run', 'build']);
 run(['-w', '@claudescope/web', 'run', 'build']);
 
-// Bundle the server entrypoint into a single ESM file with a shebang so it can
-// double as the package bin. The native DuckDB client stays external.
-console.log('› Bundling server…');
+// Bundle two entrypoints: the server (the long-lived daemon) and the CLI (the
+// package bin that supervises it). `cli` → cli.js, `server` → server.js. The
+// native DuckDB client stays external on both.
+console.log('› Bundling server + CLI…');
 await build({
-  entryPoints: [join(repoRoot, 'packages', 'server', 'src', 'index.ts')],
-  outfile: join(distDir, 'server.js'),
+  entryPoints: {
+    server: join(repoRoot, 'packages', 'server', 'src', 'index.ts'),
+    cli: join(repoRoot, 'packages', 'server', 'src', 'cli.ts'),
+  },
+  outdir: distDir,
   bundle: true,
   platform: 'node',
   format: 'esm',
   target: 'node20',
   external: ['@duckdb/node-api'],
-  // Shebang so the bundle doubles as the bin, plus a createRequire shim: several
-  // runtime deps (fastify/avvio) are CommonJS and call require() internally. In
-  // an ESM bundle esbuild's require shim throws unless a real `require` exists
-  // in scope, so we define one (and the __dirname/__filename it implies).
+  // Shebang so the CLI bundle doubles as the bin, plus a createRequire shim:
+  // several runtime deps (fastify/avvio) are CommonJS and call require()
+  // internally. In an ESM bundle esbuild's require shim throws unless a real
+  // `require` exists in scope, so we define one. (__dirname/__filename are not
+  // injected here — each entry module derives its own from import.meta.url, and
+  // a banner declaration would collide with that.)
   banner: {
     js: [
       '#!/usr/bin/env node',
       "import { createRequire as __cr } from 'node:module';",
-      "import { fileURLToPath as __ftp } from 'node:url';",
-      "import { dirname as __dn } from 'node:path';",
       'const require = __cr(import.meta.url);',
-      'const __filename = __ftp(import.meta.url);',
-      'const __dirname = __dn(__filename);',
     ].join('\n'),
   },
   logLevel: 'info',
@@ -95,8 +97,8 @@ const pkg = {
   description: 'Local viewer for Claude Code session transcripts.',
   license: rootPkg.license ?? 'MIT',
   type: 'module',
-  bin: { claudescope: 'server.js' },
-  files: ['server.js', 'web', 'pricing.default.json'],
+  bin: { claudescope: 'cli.js' },
+  files: ['cli.js', 'server.js', 'web', 'pricing.default.json'],
   engines: rootPkg.engines,
   dependencies: {
     '@duckdb/node-api': serverPkg.dependencies['@duckdb/node-api'],

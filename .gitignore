@@ -1,5 +1,6 @@
 node_modules/
 dist/
+*.tgz
 packages/server/data/*.duckdb
 packages/server/data/*.duckdb.wal
 packages/server/data/*.duckdb.tmp
