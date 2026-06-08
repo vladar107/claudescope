@@ -1,6 +1,6 @@
 {
   "name": "claudescope",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Local, read-only web app to browse, read, search, and analyze your Claude Code session transcripts.",
   "keywords": [
