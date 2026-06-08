@@ -2,6 +2,24 @@
   "name": "claudescope",
   "version": "0.1.0",
   "private": true,
+  "description": "Local, read-only web app to browse, read, search, and analyze your Claude Code session transcripts.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "anthropic",
+    "transcripts",
+    "sessions",
+    "viewer",
+    "cli",
+    "duckdb"
+  ],
+  "homepage": "https://github.com/vladar107/claudescope#readme",
+  "bugs": "https://github.com/vladar107/claudescope/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vladar107/claudescope.git"
+  },
+  "author": "Vladislav Ramazaev",
   "license": "MIT",
   "type": "module",
   "workspaces": [

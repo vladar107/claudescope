@@ -91,23 +91,31 @@ await build({
   logLevel: 'info',
 });
 
-console.log('› Copying web assets + pricing default…');
+console.log('› Copying web assets + pricing default + README…');
 cpSync(join(repoRoot, 'packages', 'web', 'dist'), join(distDir, 'web'), { recursive: true });
 cpSync(
   join(repoRoot, 'packages', 'server', 'pricing.json'),
   join(distDir, 'pricing.default.json'),
 );
+// Ship the README so it renders on the npm package page.
+cpSync(join(repoRoot, 'README.md'), join(distDir, 'README.md'));
 
-// A self-contained manifest for the published package. Keeps only the runtime
-// dependency (native DuckDB); everything else is inlined by the bundle.
+// A self-contained manifest for the published package. Metadata is sourced from
+// the root package.json (single source of truth); the only runtime dependency
+// is the native DuckDB client — everything else is inlined by the bundle.
 const pkg = {
   name: '@vladar107/claudescope',
   version: rootPkg.version,
-  description: 'Local viewer for Claude Code session transcripts.',
+  description: rootPkg.description,
+  keywords: rootPkg.keywords,
+  homepage: rootPkg.homepage,
+  bugs: rootPkg.bugs,
+  repository: rootPkg.repository,
+  author: rootPkg.author,
   license: rootPkg.license ?? 'MIT',
   type: 'module',
   bin: { claudescope: 'cli.js' },
-  files: ['cli.js', 'server.js', 'web', 'pricing.default.json'],
+  files: ['cli.js', 'server.js', 'web', 'pricing.default.json', 'README.md'],
   engines: rootPkg.engines,
   dependencies: {
     '@duckdb/node-api': serverPkg.dependencies['@duckdb/node-api'],
