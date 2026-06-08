@@ -13,6 +13,7 @@
     "dev:server": "npm -w @claudescope/server run dev",
     "dev:web": "npm -w @claudescope/web run dev",
     "build": "npm -w @claudescope/shared run build && npm -w @claudescope/web run build && npm -w @claudescope/server run build",
+    "bundle": "node scripts/bundle.mjs",
     "serve": "npm -w @claudescope/server run start",
     "typecheck": "tsc -b",
     "test": "vitest run",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
+    "esbuild": "^0.24.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^3.0.5"
