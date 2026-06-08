@@ -23,6 +23,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { APP_VERSION, CLAUDE_PROJECTS_DIR, CLAUDESCOPE_HOME, PORT as DEFAULT_PORT } from './config.js';
@@ -199,9 +200,41 @@ function logs(follow: boolean): void {
   }
 }
 
-/** Upgrade the global install to the latest published version and restart. */
-function update(): void {
-  console.log(`› Updating ${PKG} to the latest version…`);
+/** Ask a yes/no question on the terminal. Returns `defaultYes` on a bare Enter
+ *  or when stdin isn't interactive (so piped/CI invocations don't hang). */
+async function confirm(question: string, defaultYes: boolean): Promise<boolean> {
+  if (!process.stdin.isTTY) return defaultYes;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question(`${question} ${defaultYes ? '[Y/n]' : '[y/N]'} `))
+      .trim()
+      .toLowerCase();
+    if (!answer) return defaultYes;
+    return answer === 'y' || answer === 'yes';
+  } finally {
+    rl.close();
+  }
+}
+
+/** Upgrade the global install to the latest published version and restart.
+ *  Resolves the target version and confirms before installing; `--yes` (or a
+ *  non-interactive stdin) skips the prompt. Installs the hardcoded package only. */
+async function update(skipConfirm: boolean): Promise<void> {
+  const latest = await getLatestVersion(true);
+  if (latest && !isNewer(latest, APP_VERSION)) {
+    console.log(`✓ Already on the latest version (v${APP_VERSION}).`);
+    return;
+  }
+  if (!latest) {
+    console.log('⚠ Could not reach the npm registry to confirm the latest version.');
+  }
+  const target = latest ? `v${APP_VERSION} → v${latest}` : `v${APP_VERSION} → latest`;
+  console.log(`› Will run: npm install -g ${PKG}@latest  (${target})`);
+  if (!skipConfirm && !(await confirm('Proceed?', true))) {
+    console.log('Aborted.');
+    return;
+  }
+  console.log(`› Updating ${PKG}…`);
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   const res = spawnSync(npm, ['install', '-g', `${PKG}@latest`], { stdio: 'inherit' });
   if (res.status !== 0) {
@@ -280,13 +313,14 @@ Commands:
   status           Show whether the server is running and if an update exists
   open             Open the running app in your browser
   logs [-f]        Print the server log (-f / --follow to tail it)
-  update           Upgrade to the latest published version and restart
+  update [-y]      Upgrade to the latest published version and restart
   help             Show this help
   version          Print the installed version
 
 Options:
   --port <n>       Port to listen on (default ${DEFAULT_PORT}, or $PORT)
   --no-open        Don't open the browser on start
+  -y, --yes        Skip the confirmation prompt (for \`update\`)
 
 State (index, pricing, logs, PID) lives in ${CLAUDESCOPE_HOME}
 (override with $CLAUDESCOPE_HOME). Sessions are read from
@@ -301,6 +335,7 @@ async function main(): Promise<void> {
       follow: { type: 'boolean', short: 'f' },
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
+      yes: { type: 'boolean', short: 'y' },
       // parseArgs has no built-in negation, so the flag is literally `no-open`.
       'no-open': { type: 'boolean' },
     },
@@ -333,7 +368,7 @@ async function main(): Promise<void> {
       logs(Boolean(values.follow));
       break;
     case 'update':
-      update();
+      await update(Boolean(values.yes));
       break;
     case 'version':
       console.log(APP_VERSION);

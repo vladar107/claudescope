@@ -189,8 +189,9 @@ served from cache (legitimately high for Claude Code, which re-reads cached cont
 - **New sessions appear automatically.** The app re-scans on an interval
   (`REINDEX_INTERVAL_MS`, default 15s) and incrementally picks up new or updated
   transcripts — including the session you're currently running — without a
-  restart. Reload the page to see the latest. Each scan is near-free when nothing
-  changed; you can also force one with `POST /api/reindex`.
+  restart. In an open session, hit **⟳ Refresh** (or ⌘R / Ctrl+R) to pull the
+  latest messages in place without losing your scroll position. Each scan is
+  near-free when nothing changed; you can also force one with `POST /api/reindex`.
 - **Thinking blocks** appear empty because Claude Code stores only a signature,
   not the reasoning text — the app notes this explicitly. (Not a bug.)
 
@@ -247,6 +248,16 @@ git push --follow-tags   # the tag triggers .github/workflows/release.yml → np
 The release workflow verifies the tag matches `package.json`, runs the tests,
 bundles, and publishes. Auth uses npm **Trusted Publishing** (OIDC) — no
 `NPM_TOKEN` secret — and provenance is attached automatically.
+
+---
+
+## Security & privacy
+
+Claudescope runs entirely on your machine. It treats `~/.claude` as **read-only**,
+**binds to `127.0.0.1` only**, sends **no telemetry**, and its sole outbound
+request is a cached npm-registry version check for the update notice. See
+[`SECURITY.md`](./SECURITY.md) for the full breakdown of filesystem, network,
+shell, and self-update behavior — and how to report a vulnerability.
 
 ---
 
