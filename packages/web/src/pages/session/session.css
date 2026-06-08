@@ -24,6 +24,13 @@
   margin-bottom: var(--tv-space-2);
   font-size: var(--tv-fs-sm);
 }
+.tv-session__crumbs .tv-linkbtn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.tv-session__crumbs .tv-linkbtn:disabled:hover {
+  text-decoration: none;
+}
 
 /* Per-block wrapper used as the in-session-search highlight scope. */
 .tv-block {

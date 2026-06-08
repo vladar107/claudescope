@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { SessionDetailResponse, SubagentRun } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
@@ -27,6 +27,8 @@ export function SessionPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshController = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -49,9 +51,55 @@ export function SessionPage() {
     return () => controller.abort();
   }, [id, reloadKey]);
 
-  // Scroll to the #<uuid> anchor once the thread has rendered (deep-link).
+  // Cancel any in-flight refresh when the session changes or the page unmounts.
+  useEffect(() => () => refreshController.current?.abort(), [id]);
+
+  // Soft refresh: re-fetch the thread and swap it in place without unmounting
+  // the view, so the scroll position is preserved (turns are keyed by uuid and
+  // new turns append at the end). Header `meta` stats may lag until a reindex.
+  const refresh = useCallback(() => {
+    if (!id || loading || refreshing) return;
+    refreshController.current?.abort();
+    const controller = new AbortController();
+    refreshController.current = controller;
+    setRefreshing(true);
+    api
+      .getSession(id, controller.signal)
+      .then((res) => {
+        setData(res);
+        setRefreshing(false);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        if (err instanceof ApiError && err.status === 0) return;
+        // Keep the current content on a failed refresh; just stop the spinner.
+        console.error('Session refresh failed', err);
+        setRefreshing(false);
+      });
+  }, [id, loading, refreshing]);
+
+  // ⌘R / Ctrl+R does an in-place soft refresh instead of a full browser reload
+  // (which would lose scroll position). ⌘⇧R still falls through to the browser's
+  // hard reload as an escape hatch.
   useEffect(() => {
-    if (!data) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        refresh();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [refresh]);
+
+  // Scroll to the #<uuid> anchor once the thread has rendered (deep-link). Only
+  // fire on the first load for a given session — a soft refresh swaps `data` but
+  // must not yank a deep-linked reader away from their place.
+  const hashScrolledForId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!data || !id) return;
+    if (hashScrolledForId.current === id) return;
+    hashScrolledForId.current = id;
     const hash = window.location.hash.slice(1);
     if (!hash) return;
     const el = document.getElementById(hash);
@@ -61,17 +109,25 @@ export function SessionPage() {
       const timer = window.setTimeout(() => el.classList.remove('is-targeted'), 2400);
       return () => window.clearTimeout(timer);
     }
-  }, [data]);
+  }, [data, id]);
 
   if (!id) return <ErrorBox error="Missing session id" />;
   if (loading) return <Spinner size="lg" label="Loading session…" />;
   if (error) return <ErrorBox error={error} onRetry={() => setReloadKey((k) => k + 1)} />;
   if (!data) return null;
 
-  return <SessionView data={data} />;
+  return <SessionView data={data} onRefresh={refresh} refreshing={refreshing} />;
 }
 
-function SessionView({ data }: { data: SessionDetailResponse }) {
+function SessionView({
+  data,
+  onRefresh,
+  refreshing,
+}: {
+  data: SessionDetailResponse;
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
   const { meta, thread, subagents } = data;
   const title = meta.title || 'Untitled session';
   const hashTarget = useHashTarget();
@@ -213,6 +269,19 @@ function SessionView({ data }: { data: SessionDetailResponse }) {
           </Link>
           <SubagentJumpMenu subagents={subagents} />
           <ExportMenu data={data} />
+          <button
+            type="button"
+            className="tv-linkbtn"
+            onClick={onRefresh}
+            disabled={refreshing}
+            title="Reload the latest messages without losing your place (⌘R)"
+          >
+            {refreshing ? (
+              <Spinner size="sm" label="Refreshing…" />
+            ) : (
+              <>⟳ Refresh</>
+            )}
+          </button>
           <SessionFinder
             query={query}
             onQuery={setQuery}
