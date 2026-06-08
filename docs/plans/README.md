@@ -26,3 +26,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | #    | Title                                            | Status |
 | ---- | ------------------------------------------------ | ------ |
 | 0001 | [npm distribution](./0001-npm-distribution.md)   | done   |
+| 0002 | [in-place session refresh](./0002-session-refresh.md) | done |

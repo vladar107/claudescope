@@ -69,8 +69,13 @@ it. Publish metadata (keywords, repo, etc.) is sourced from the **root**
   co-author / "Generated with" trailers** — keep history clean and human-authored.
 - **Linear history:** rebase onto `main`; no merge commits. PRs land via
   fast-forward / rebase / squash.
-- **Plans:** when an agent does non-trivial work, **commit the plan** under
-  `docs/plans/` and link it in the PR. See `docs/plans/README.md`.
+- **Plans:** when an agent does non-trivial work, **save the plan directly into
+  the repo** as `docs/plans/NNNN-kebab-title.md` (next sequential number) from
+  [`TEMPLATE.md`](./docs/plans/TEMPLATE.md), set its `Status`, add a row to the
+  index table, and link it in the PR. If you planned via `/plan` (plan mode), the
+  plan was written to **ephemeral** storage outside the repo (e.g.
+  `~/.claude/plans/<name>.md`) — check there and copy it in, otherwise it's lost.
+  See `docs/plans/README.md`.
 
 ## Gotchas
 
