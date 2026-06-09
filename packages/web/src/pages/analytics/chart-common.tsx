@@ -1,10 +1,27 @@
 /** Shared chart constants + a themed tooltip for the analytics charts. */
 
 import type { ReactNode } from 'react';
+import type { ResolvedTheme } from '../../theme/ThemeProvider.js';
 import { formatCost, formatCount } from './format.js';
 
-/** Palette pulled from the global theme tokens (kept in sync manually). */
-export const COLORS = {
+export interface ChartColors {
+  input: string;
+  output: string;
+  cacheWrite: string;
+  cacheRead: string;
+  cost: string;
+  grid: string;
+  axis: string;
+  /** Hover cursor fill — a faint overlay tuned to the surface luminance. */
+  cursor: string;
+}
+
+/**
+ * Chart palette per resolved theme. Series hues mirror the global role-accent
+ * tokens for each theme (--tv-user/assistant/success/warning); grid/axis/cursor
+ * track the surface so charts read correctly on both backgrounds.
+ */
+const DARK_COLORS: ChartColors = {
   input: '#58a6ff', // --tv-accent / user
   output: '#bc8cff', // assistant
   cacheWrite: '#3fb950', // success
@@ -12,10 +29,28 @@ export const COLORS = {
   cost: '#d29922', // warning / tool
   grid: '#2a3038', // --tv-border
   axis: '#9aa6b2', // --tv-fg-muted
-} as const;
+  cursor: '#ffffff0a',
+};
+const LIGHT_COLORS: ChartColors = {
+  input: '#0969da',
+  output: '#8250df',
+  cacheWrite: '#1a7f37',
+  cacheRead: '#2da44e',
+  cost: '#9a6700',
+  grid: '#d0d7de',
+  axis: '#656d76',
+  cursor: '#0000000a',
+};
 
-/** Axis tick styling reused across charts. */
-export const AXIS_TICK = { fill: COLORS.axis, fontSize: 11 } as const;
+/** Resolve the chart palette for the active theme. */
+export function getChartColors(theme: ResolvedTheme): ChartColors {
+  return theme === 'light' ? LIGHT_COLORS : DARK_COLORS;
+}
+
+/** Axis tick styling for a given palette. */
+export function axisTick(colors: ChartColors): { fill: string; fontSize: number } {
+  return { fill: colors.axis, fontSize: 11 };
+}
 
 export interface TooltipDatum {
   label: string;

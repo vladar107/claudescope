@@ -67,8 +67,20 @@ export interface ToolResultBlock {
   is_error?: boolean;
 }
 
+/**
+ * An image block. Claude emits these inline; the Codex connector maps its
+ * `input_image` items here too. The frontend renders a `base64` or `url` source
+ * (a data URL counts as a `url`).
+ */
+export interface ImageBlock {
+  type: 'image';
+  source:
+    | { type: 'base64'; media_type: string; data: string }
+    | { type: 'url'; url: string };
+}
+
 /** Any block that can appear inside an array-valued `message.content`. */
-export type ContentBlock = TextBlock | ThinkingBlock | ToolUseBlock | ToolResultBlock;
+export type ContentBlock = TextBlock | ThinkingBlock | ToolUseBlock | ToolResultBlock | ImageBlock;
 
 /** `message.content` is either a plain string or an array of blocks. */
 export type MessageContent = string | ContentBlock[];

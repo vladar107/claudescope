@@ -17,9 +17,12 @@
  *  - titles:   ai-title events keyed by sessionId (latest wins).
  */
 
-// Bump when a persisted table shape changes. On a version mismatch the index
+// Bump when a persisted table shape changes — OR when derivation logic changes
+// the persisted derived values (e.g. how a title or the FTS text is computed),
+// so existing indexes pick up the new output. On a version mismatch the index
 // (a derived cache) is discarded and rebuilt from source — see db/duckdb.ts.
-export const SCHEMA_VERSION = 4;
+// v5: Codex title fallback (first user message) + `<image …>` placeholder strip.
+export const SCHEMA_VERSION = 5;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [

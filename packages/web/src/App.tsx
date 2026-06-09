@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { NavLink, Route, Routes } from 'react-router-dom';
 import type { SourceInfo } from '@claudescope/shared';
 import { api } from './api/client.js';
+import { useTheme, type ThemeChoice } from './theme/ThemeProvider.js';
 import { BrowsePage } from './pages/browse/BrowsePage.js';
+import { SessionListPage } from './pages/browse/SessionList.js';
 import { SessionPage } from './pages/session/SessionPage.js';
 import { SearchPage } from './pages/search/SearchPage.js';
 import { AnalyticsPage } from './pages/analytics/AnalyticsPage.js';
@@ -20,6 +22,33 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/search', label: 'Search', icon: '🔍' },
   { to: '/analytics', label: 'Analytics', icon: '📊' },
 ];
+
+const THEME_OPTIONS: { value: ThemeChoice; label: string; icon: string }[] = [
+  { value: 'system', label: 'System', icon: '🖥' },
+  { value: 'light', label: 'Light', icon: '☀' },
+  { value: 'dark', label: 'Dark', icon: '🌙' },
+];
+
+/** Segmented System / Light / Dark theme control. */
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme();
+  return (
+    <div className="tv-theme-toggle" role="group" aria-label="Theme">
+      {THEME_OPTIONS.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          className={theme === o.value ? 'tv-theme-toggle__btn is-active' : 'tv-theme-toggle__btn'}
+          onClick={() => setTheme(o.value)}
+          title={`${o.label} theme`}
+          aria-pressed={theme === o.value}
+        >
+          <span aria-hidden="true">{o.icon}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /** Left navigation sidebar. */
 function Sidebar() {
@@ -52,6 +81,7 @@ function Sidebar() {
         </NavLink>
       ))}
       <div className="tv-nav__spacer" />
+      <ThemeToggle />
       <div className="tv-nav__footer">
         <span className="tv-nav__footer-label">Read-only sources</span>
         {sources.map((s) => (
@@ -72,6 +102,7 @@ export function App() {
       <main className="tv-main">
         <Routes>
           <Route path="/" element={<BrowsePage />} />
+          <Route path="/projects/:projectId" element={<SessionListPage />} />
           <Route path="/sessions/:id" element={<SessionPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />

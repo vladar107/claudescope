@@ -1,14 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import type { ProjectMeta, SessionMeta, SessionSort } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { AgentBadge, CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
+import { AgentBadge, agentLabel, CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
 import { formatBytes, formatDateTime, shortModel, timeAgo } from './format.js';
-
-interface SessionListProps {
-  project: ProjectMeta;
-  onBack: () => void;
-}
 
 const SORT_OPTIONS: { value: SessionSort; label: string }[] = [
   { value: 'recent', label: 'Most recent' },
@@ -18,36 +13,64 @@ const SORT_OPTIONS: { value: SessionSort; label: string }[] = [
   { value: 'messages', label: 'Most messages' },
 ];
 
+/** Ignore aborted/offline fetch errors that are not user-actionable. */
+function isBenignError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  if (err instanceof ApiError && err.status === 0) return true;
+  return false;
+}
+
 /**
- * Sessions for a single project. Sort is server-driven (re-fetches on change);
- * the text filter is applied client-side against title / branch / id.
+ * Sessions for a single project, addressed by `/projects/:projectId`. Sort and
+ * agent filter are server-driven (re-fetch on change); the text filter is
+ * applied client-side against title / branch / id. Breadcrumbs link back to the
+ * project grid, so deep-links and the browser back button both work.
  */
-export function SessionList({ project, onBack }: SessionListProps) {
+export function SessionListPage() {
+  const { projectId = '' } = useParams<{ projectId: string }>();
+
+  const [project, setProject] = useState<ProjectMeta | null>(null);
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [sort, setSort] = useState<SessionSort>('recent');
   const [filter, setFilter] = useState('');
+  const [agent, setAgent] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [reloadKey, setReloadKey] = useState(0);
+
+  // Project meta (name, cwd, per-agent breakdown). Refetched only when the
+  // project changes; the breakdown drives the agent filter chips.
+  useEffect(() => {
+    const controller = new AbortController();
+    api
+      .listProjects(controller.signal)
+      .then((projects) => {
+        setProject(projects.find((p) => p.id === projectId) ?? null);
+      })
+      .catch((err: unknown) => {
+        if (isBenignError(err)) return;
+        setError(err);
+      });
+    return () => controller.abort();
+  }, [projectId]);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
     api
-      .listSessions({ project: project.id, sort }, controller.signal)
+      .listSessions({ project: projectId, sort, agent }, controller.signal)
       .then((data) => {
         setSessions(data);
         setLoading(false);
       })
       .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === 'AbortError') return;
-        if (err instanceof ApiError && err.status === 0) return;
+        if (isBenignError(err)) return;
         setError(err);
         setLoading(false);
       });
     return () => controller.abort();
-  }, [project.id, sort, reloadKey]);
+  }, [projectId, sort, agent, reloadKey]);
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -60,24 +83,29 @@ export function SessionList({ project, onBack }: SessionListProps) {
     });
   }, [sessions, filter]);
 
+  const displayName = project?.displayName ?? sessions[0]?.projectDisplayName ?? projectId;
+  const agents = project?.agents ?? [];
+
   return (
     <section>
       <div className="tv-browse__crumbs">
-        <button type="button" className="tv-linkbtn" onClick={onBack}>
+        <Link to="/" className="tv-linkbtn">
           ← Projects
-        </button>
+        </Link>
         <span className="tv-muted"> / </span>
-        <span className="tv-mono">{project.displayName}</span>
+        <span className="tv-mono">{displayName}</span>
       </div>
 
       <header className="tv-browse__header">
         <div>
           <h1 className="tv-page-title" style={{ marginBottom: 4 }}>
-            {project.displayName}
+            {displayName}
           </h1>
-          <div className="tv-muted tv-mono" style={{ fontSize: 'var(--tv-fs-sm)' }}>
-            {project.cwd}
-          </div>
+          {project ? (
+            <div className="tv-muted tv-mono" style={{ fontSize: 'var(--tv-fs-sm)' }}>
+              {project.cwd}
+            </div>
+          ) : null}
         </div>
         <div className="tv-browse__controls">
           <input
@@ -102,12 +130,40 @@ export function SessionList({ project, onBack }: SessionListProps) {
         </div>
       </header>
 
+      {/* Agent filter — only meaningful when the project spans 2+ agents. */}
+      {agents.length > 1 ? (
+        <div className="tv-agent-filter" role="group" aria-label="Filter by agent">
+          <button
+            type="button"
+            className={agent === undefined ? 'tv-agent-filter__btn is-active' : 'tv-agent-filter__btn'}
+            onClick={() => setAgent(undefined)}
+          >
+            All
+          </button>
+          {agents.map((a) => (
+            <button
+              key={a.connectorId}
+              type="button"
+              className={
+                agent === a.connectorId ? 'tv-agent-filter__btn is-active' : 'tv-agent-filter__btn'
+              }
+              onClick={() => setAgent(a.connectorId)}
+            >
+              {agentLabel(a.connectorId)}
+              <span className="tv-agent-filter__count">{a.sessionCount}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {loading ? (
         <Spinner size="lg" label="Loading sessions…" />
       ) : error ? (
         <ErrorBox error={error} onRetry={() => setReloadKey((k) => k + 1)} />
       ) : filtered.length === 0 ? (
-        <p className="tv-muted">{sessions.length === 0 ? 'No sessions.' : 'No sessions match the filter.'}</p>
+        <p className="tv-muted">
+          {sessions.length === 0 ? 'No sessions.' : 'No sessions match the filter.'}
+        </p>
       ) : (
         <>
           <div className="tv-muted" style={{ marginBottom: 'var(--tv-space-3)' }}>

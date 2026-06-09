@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTheme } from '../theme/ThemeProvider.js';
 import { lineDiff, MAX_HIGHLIGHT } from './diff.js';
 import { highlightLines } from './highlighter.js';
 
@@ -18,6 +19,7 @@ export interface LineDiffProps {
 export function LineDiff({ oldText, newText, lang }: LineDiffProps) {
   const lines = lineDiff(oldText, newText);
   const [hl, setHl] = useState<{ old: string[]; neu: string[] } | null>(null);
+  const { resolvedTheme } = useTheme();
 
   useEffect(() => {
     let cancelled = false;
@@ -25,7 +27,10 @@ export function LineDiff({ oldText, newText, lang }: LineDiffProps) {
       setHl(null);
       return;
     }
-    Promise.all([highlightLines(oldText, lang), highlightLines(newText, lang)])
+    Promise.all([
+      highlightLines(oldText, lang, resolvedTheme),
+      highlightLines(newText, lang, resolvedTheme),
+    ])
       .then(([o, n]) => {
         if (!cancelled && o && n) setHl({ old: o, neu: n });
       })
@@ -35,7 +40,7 @@ export function LineDiff({ oldText, newText, lang }: LineDiffProps) {
     return () => {
       cancelled = true;
     };
-  }, [oldText, newText, lang]);
+  }, [oldText, newText, lang, resolvedTheme]);
 
   let oldIdx = 0;
   let newIdx = 0;

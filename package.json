@@ -2,11 +2,13 @@
   "name": "claudescope",
   "version": "0.2.0",
   "private": true,
-  "description": "Local, read-only web app to browse, read, search, and analyze your Claude Code session transcripts.",
+  "description": "Local, read-only web app to browse, read, search, and analyze your AI coding-agent transcripts — Claude Code and OpenAI Codex.",
   "keywords": [
     "claude",
     "claude-code",
     "anthropic",
+    "codex",
+    "openai",
     "transcripts",
     "sessions",
     "viewer",
@@ -38,7 +40,8 @@
     "test:watch": "vitest",
     "bench": "tsx packages/server/perf/run.ts",
     "bench:compare": "tsx packages/server/perf/compare.ts",
-    "update-pricing": "node scripts/update-pricing.mjs"
+    "update-pricing": "node scripts/update-pricing.mjs",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -46,6 +49,7 @@
   "devDependencies": {
     "concurrently": "^9.1.0",
     "esbuild": "^0.24.2",
+    "playwright": "^1.49.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^3.0.5"

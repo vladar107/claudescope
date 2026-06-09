@@ -1,12 +1,19 @@
 /* ===========================================================================
    Transcript Viewer — global theme + layout.
-   Dense, readable, dark-by-default UI tuned for inspecting long transcripts.
-   Feature agents should rely on these CSS variables + the .tv-* utility
-   classes rather than re-deriving colors/spacing.
+   Dense, readable UI tuned for inspecting long transcripts.
+
+   Theming: the dark palette is the `:root` base; `:root[data-theme='light']`
+   below overrides only the colors. A pre-paint script in index.html resolves
+   the stored 'system' | 'light' | 'dark' choice to a concrete `data-theme`
+   attribute (always 'light' or 'dark'), so there's no flash on load and the CSS
+   only needs the two palettes. Feature agents should rely on these CSS
+   variables + the .tv-* utility classes rather than re-deriving colors/spacing.
    =========================================================================== */
 
 :root {
-  /* Palette (dark) */
+  color-scheme: dark;
+
+  /* Palette (dark — the base) */
   --tv-bg: #0e1116;
   --tv-bg-elevated: #161b22;
   --tv-bg-inset: #1c222b;
@@ -31,6 +38,15 @@
   --tv-tool: #d29922;
   --tv-thinking: #6b7682;
 
+  /* Finder (in-session search) highlight — promoted from hardcoded values so
+     the light theme can override them. */
+  --tv-finder-highlight: rgba(210, 153, 34, 0.35);
+  --tv-finder-active-fg: #0b0f14;
+
+  /* Search-result <mark> highlight (BM25 snippets). */
+  --tv-mark-bg: #d29922;
+  --tv-mark-fg: #1a1300;
+
   /* Spacing scale */
   --tv-space-1: 4px;
   --tv-space-2: 8px;
@@ -53,6 +69,42 @@
   --tv-fs-base: 13px;
   --tv-fs-md: 14px;
   --tv-fs-lg: 16px;
+}
+
+/* Light theme — overrides only the color palette (GitHub-light tuned, to pair
+   with the github-light Shiki theme). Spacing/fonts/radii are inherited from
+   the :root base above. */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --tv-bg: #ffffff;
+  --tv-bg-elevated: #f6f8fa;
+  --tv-bg-inset: #eaeef2;
+  --tv-bg-hover: #eef1f4;
+  --tv-border: #d0d7de;
+  --tv-border-strong: #afb8c1;
+
+  --tv-fg: #1f2328;
+  --tv-fg-muted: #656d76;
+  --tv-fg-faint: #8c959f;
+
+  --tv-accent: #0969da;
+  --tv-accent-muted: #0969da1a;
+  --tv-success: #1a7f37;
+  --tv-warning: #9a6700;
+  --tv-danger: #cf222e;
+  --tv-danger-bg: #cf222e1a;
+
+  --tv-user: #0969da;
+  --tv-assistant: #8250df;
+  --tv-tool: #9a6700;
+  --tv-thinking: #8c959f;
+
+  --tv-finder-highlight: rgba(154, 103, 0, 0.28);
+  --tv-finder-active-fg: #ffffff;
+
+  --tv-mark-bg: #fff1b8;
+  --tv-mark-fg: #432c00;
 }
 
 * {
@@ -164,6 +216,41 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Theme toggle — segmented System / Light / Dark control in the nav footer. */
+.tv-theme-toggle {
+  display: flex;
+  gap: 2px;
+  padding: var(--tv-space-1);
+  margin: 0 var(--tv-space-2) var(--tv-space-2);
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+}
+.tv-theme-toggle__btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tv-space-1);
+  padding: var(--tv-space-1) var(--tv-space-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--tv-radius-sm);
+  color: var(--tv-fg-muted);
+  font-size: var(--tv-fs-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.tv-theme-toggle__btn:hover {
+  color: var(--tv-fg);
+}
+.tv-theme-toggle__btn.is-active {
+  background: var(--tv-bg-elevated);
+  color: var(--tv-fg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .tv-main {
@@ -573,8 +660,8 @@ button {
 
 /* Search-result <mark> highlights from server snippets. */
 mark {
-  background: var(--tv-warning);
-  color: #1a1300;
+  background: var(--tv-mark-bg);
+  color: var(--tv-mark-fg);
   border-radius: 2px;
   padding: 0 1px;
 }
@@ -595,4 +682,54 @@ mark {
 }
 .tv-mono {
   font-family: var(--tv-font-mono);
+}
+
+/* --------------------------------------------------------------------------
+   Responsive — desktop-first, adapting down to small laptops. The project /
+   analytics grids already reflow (auto-fill/auto-fit), so this mainly tightens
+   the chrome: a narrower nav and less padding on smaller viewports, then a
+   collapsed icon rail when space is tight.
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 1080px) {
+  :root {
+    --tv-nav-width: 188px;
+  }
+  .tv-main {
+    padding: var(--tv-space-4);
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --tv-nav-width: 56px;
+  }
+  /* Collapse nav items to their icons. `font-size: 0` hides the bare label text
+     node while the icon span re-asserts its own size. */
+  .tv-nav__link {
+    justify-content: center;
+    gap: 0;
+    font-size: 0;
+    padding: var(--tv-space-2);
+  }
+  .tv-nav__link > span[aria-hidden] {
+    font-size: var(--tv-fs-md);
+  }
+  .tv-nav__brand {
+    font-size: 0;
+    padding: var(--tv-space-2) 0 var(--tv-space-4);
+    text-align: center;
+  }
+  .tv-nav__brand::after {
+    content: '◎';
+    font-size: var(--tv-fs-lg);
+  }
+  /* Stack the theme toggle vertically and drop the source paths to fit the rail. */
+  .tv-theme-toggle {
+    flex-direction: column;
+    margin: 0 var(--tv-space-1) var(--tv-space-2);
+  }
+  .tv-nav__footer {
+    display: none;
+  }
 }

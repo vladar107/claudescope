@@ -7,7 +7,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import type { ProjectMeta } from '@claudescope/shared';
+import type { AgentBreakdown, ProjectMeta } from '@claudescope/shared';
 import { getConnection, queryRows } from '../db/duckdb.js';
 import { displayNameFromCwd, projectIdFromCwd } from '../data/project-id.js';
 
@@ -21,18 +21,45 @@ export async function registerProjectsRoute(app: FastifyInstance): Promise<void>
          count(*) AS session_count,
          sum(total_tokens) AS total_tokens,
          sum(total_cost_usd) AS total_cost_usd,
-         max(ended_at) AS last_active,
-         array_to_string(list_distinct(list(connector_id) FILTER (WHERE connector_id IS NOT NULL)), ',') AS connector_ids
+         max(ended_at) AS last_active
        FROM sessions
        WHERE project_cwd IS NOT NULL
        GROUP BY project_cwd
        ORDER BY last_active DESC NULLS LAST`,
     );
 
+    // Per-agent slices, fetched as flat rows and grouped by cwd below (simpler
+    // and more portable than nested struct aggregation).
+    const agentRows = await queryRows(
+      conn,
+      `SELECT
+         project_cwd AS cwd,
+         connector_id,
+         count(*) AS session_count,
+         sum(total_tokens) AS total_tokens,
+         sum(total_cost_usd) AS total_cost_usd
+       FROM sessions
+       WHERE project_cwd IS NOT NULL AND connector_id IS NOT NULL
+       GROUP BY project_cwd, connector_id
+       ORDER BY sum(total_tokens) DESC`,
+    );
+
+    const agentsByCwd = new Map<string, AgentBreakdown[]>();
+    for (const r of agentRows) {
+      const cwd = String(r.cwd);
+      const list = agentsByCwd.get(cwd) ?? [];
+      list.push({
+        connectorId: String(r.connector_id),
+        sessionCount: Number(r.session_count ?? 0),
+        totalTokens: Number(r.total_tokens ?? 0),
+        totalCostUsd: Number(r.total_cost_usd ?? 0),
+      });
+      agentsByCwd.set(cwd, list);
+    }
+
     return rows.map((r): ProjectMeta => {
       const cwd = String(r.cwd);
-      const connectorIdsStr = r.connector_ids != null ? String(r.connector_ids) : '';
-      const connectorIds = connectorIdsStr ? connectorIdsStr.split(',').filter(Boolean) : [];
+      const agents = agentsByCwd.get(cwd) ?? [];
       return {
         id: projectIdFromCwd(cwd),
         cwd,
@@ -41,7 +68,8 @@ export async function registerProjectsRoute(app: FastifyInstance): Promise<void>
         totalTokens: Number(r.total_tokens ?? 0),
         totalCostUsd: Number(r.total_cost_usd ?? 0),
         lastActive: toIso(r.last_active),
-        connectorIds,
+        connectorIds: agents.map((a) => a.connectorId),
+        agents,
       };
     });
   });

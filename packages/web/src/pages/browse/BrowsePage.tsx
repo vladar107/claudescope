@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { ProjectMeta } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
 import { AgentBadge, CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
 import { timeAgo } from './format.js';
-import { SessionList } from './SessionList.js';
 import './browse.css';
 
 type ProjectSort = 'recent' | 'sessions' | 'tokens' | 'cost' | 'name';
@@ -34,15 +34,13 @@ function sortProjects(projects: ProjectMeta[], sort: ProjectSort): ProjectMeta[]
 }
 
 /**
- * Browse view. Top level lists all projects; selecting one drills into its
- * sessions via {@link SessionList}. Selection is kept in component state so the
- * back button restores the project grid without a refetch.
+ * Browse view. Lists all projects; each card links to `/projects/:id` (the
+ * routed session list), so drill-down is URL-driven and deep-linkable.
  */
 export function BrowsePage() {
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-  const [selected, setSelected] = useState<ProjectMeta | null>(null);
   const [sort, setSort] = useState<ProjectSort>('recent');
   const [filter, setFilter] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
@@ -75,10 +73,6 @@ export function BrowsePage() {
       : projects;
     return sortProjects(base, sort);
   }, [projects, filter, sort]);
-
-  if (selected) {
-    return <SessionList project={selected} onBack={() => setSelected(null)} />;
-  }
 
   return (
     <section>
@@ -120,7 +114,7 @@ export function BrowsePage() {
       ) : (
         <div className="tv-project-grid">
           {visible.map((p) => (
-            <ProjectCard key={p.id} project={p} onOpen={() => setSelected(p)} />
+            <ProjectCard key={p.id} project={p} />
           ))}
         </div>
       )}
@@ -128,9 +122,9 @@ export function BrowsePage() {
   );
 }
 
-function ProjectCard({ project, onOpen }: { project: ProjectMeta; onOpen: () => void }) {
+function ProjectCard({ project }: { project: ProjectMeta }) {
   return (
-    <button type="button" className="tv-card tv-project-card" onClick={onOpen}>
+    <Link to={`/projects/${project.id}`} className="tv-card tv-project-card">
       <div className="tv-project-card__name">{project.displayName}</div>
       <div className="tv-project-card__cwd tv-muted tv-mono">{project.cwd}</div>
       <div className="tv-project-card__stats">
@@ -145,6 +139,6 @@ function ProjectCard({ project, onOpen }: { project: ProjectMeta; onOpen: () => 
         <CostBadge usd={project.totalCostUsd} />
       </div>
       <div className="tv-project-card__footer tv-muted">{timeAgo(project.lastActive)}</div>
-    </button>
+    </Link>
   );
 }

@@ -10,6 +10,15 @@ import type { SubagentRun, ThreadItem } from './thread.js';
 // Domain summaries
 // ---------------------------------------------------------------------------
 
+/** Per-agent (connector) slice of a project's totals. */
+export interface AgentBreakdown {
+  /** Agent connector id, e.g. `claude-code` or `codex`. */
+  connectorId: string;
+  sessionCount: number;
+  totalTokens: number;
+  totalCostUsd: number;
+}
+
 /** Aggregated metadata for a project (a distinct real `cwd`). */
 export interface ProjectMeta {
   /** Stable id derived from the canonical cwd. */
@@ -24,12 +33,16 @@ export interface ProjectMeta {
   lastActive: string;
   /** Distinct agent connector ids whose sessions live under this cwd. */
   connectorIds: string[];
+  /** Per-agent breakdown of the project totals, sorted by tokens desc. */
+  agents: AgentBreakdown[];
 }
 
 /** Aggregated metadata for a single session. */
 export interface SessionMeta {
   id: string;
   projectId: string;
+  /** Human-friendly project name (last path segment of the project cwd). */
+  projectDisplayName: string;
   title: string;
   startedAt: string;
   endedAt: string;
@@ -96,6 +109,8 @@ export interface SessionsQuery {
   project?: string;
   sort?: SessionSort;
   q?: string;
+  /** Filter to a single agent connector id, e.g. `codex`. */
+  agent?: string;
 }
 
 export type SearchType = 'user' | 'assistant' | 'all';

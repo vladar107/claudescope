@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getHighlighter, normalizeLang, SHIKI_THEME } from './highlighter.js';
+import { useTheme } from '../theme/ThemeProvider.js';
+import { getHighlighter, normalizeLang, shikiThemeFor } from './highlighter.js';
 
 export interface CodeBlockProps {
   /** Raw source code (already de-fenced). */
@@ -17,13 +18,14 @@ export interface CodeBlockProps {
 export function CodeBlock({ code, lang }: CodeBlockProps) {
   const [html, setHtml] = useState<string | null>(null);
   const resolved = normalizeLang(lang);
+  const { resolvedTheme } = useTheme();
 
   useEffect(() => {
     let cancelled = false;
     getHighlighter()
       .then((hl) => {
         if (cancelled || !hl) return;
-        const out = hl.codeToHtml(code, { lang: resolved, theme: SHIKI_THEME });
+        const out = hl.codeToHtml(code, { lang: resolved, theme: shikiThemeFor(resolvedTheme) });
         if (!cancelled) setHtml(out);
       })
       .catch(() => {
@@ -32,7 +34,7 @@ export function CodeBlock({ code, lang }: CodeBlockProps) {
     return () => {
       cancelled = true;
     };
-  }, [code, resolved]);
+  }, [code, resolved, resolvedTheme]);
 
   if (html) {
     // Shiki output is trusted (we generated it from the code string).

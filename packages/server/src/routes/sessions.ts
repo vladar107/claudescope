@@ -13,7 +13,7 @@ import type {
   SessionSort,
 } from '@claudescope/shared';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
-import { projectIdFromCwd } from '../data/project-id.js';
+import { displayNameFromCwd, projectIdFromCwd } from '../data/project-id.js';
 import { toIso } from './projects.js';
 import { assembleThread, buildSubagentRuns } from '../data/parser.js';
 import { loadSessionData } from '../data/session-loader.js';
@@ -32,6 +32,7 @@ function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
   const meta: SessionMeta = {
     id: String(r.id),
     projectId: cwd ? projectIdFromCwd(cwd) : '',
+    projectDisplayName: cwd ? displayNameFromCwd(cwd) : '',
     title: r.title != null ? String(r.title) : '',
     startedAt: toIso(r.started_at),
     endedAt: toIso(r.ended_at),
@@ -55,12 +56,15 @@ function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
 
 export async function registerSessionsRoutes(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { project?: string; sort?: string; q?: string };
+    Querystring: { project?: string; sort?: string; q?: string; agent?: string };
   }>('/api/sessions', async (req): Promise<SessionMeta[]> => {
     const conn = await getConnection();
-    const { project, sort, q } = req.query;
+    const { project, sort, q, agent } = req.query;
 
     const where: string[] = [];
+    if (agent) {
+      where.push(`connector_id = ${sqlString(agent)}`);
+    }
     if (project) {
       // project is the slug id; match against the slug of project_cwd.
       // We resolve the cwd by scanning distinct cwds (small set).
