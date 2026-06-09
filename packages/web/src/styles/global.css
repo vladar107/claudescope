@@ -143,10 +143,27 @@ button {
 }
 
 .tv-nav__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   padding: var(--tv-space-3);
   font-size: var(--tv-fs-sm);
   color: var(--tv-fg-faint);
   border-top: 1px solid var(--tv-border);
+}
+.tv-nav__footer-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+  color: var(--tv-fg-faint);
+  margin-bottom: 2px;
+}
+.tv-nav__source {
+  font-size: 11px;
+  color: var(--tv-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tv-main {

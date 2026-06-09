@@ -29,3 +29,5 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0002 | [in-place session refresh](./0002-session-refresh.md) | done |
 | 0003 | [performance test suite](./0003-performance-test-suite.md) | done |
 | 0004 | [connector seam](./0004-connector-seam.md) | done |
+| 0005 | [codex connector](./0005-codex-connector.md) | done |
+| 0006 | [multi-agent UX](./0006-multi-agent-ux.md) | done |

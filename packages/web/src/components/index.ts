@@ -10,3 +10,4 @@ export { TokenChips, type TokenChipsProps, formatCount } from './TokenChips.js';
 export { CostBadge, type CostBadgeProps, formatCost } from './CostBadge.js';
 export { Spinner, type SpinnerProps } from './Spinner.js';
 export { ErrorBox, type ErrorBoxProps } from './ErrorBox.js';
+export { AgentBadge, agentLabel, type AgentBadgeProps } from './AgentBadge.js';

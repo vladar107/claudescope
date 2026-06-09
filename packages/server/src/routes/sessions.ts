@@ -42,6 +42,7 @@ function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
     models: modelsStr ? modelsStr.split(',').filter(Boolean) : [],
     sizeBytes: Number(r.size_bytes ?? 0),
     hasSidechain: Boolean(r.has_sidechain),
+    connectorId: r.connector_id != null ? String(r.connector_id) : 'claude-code',
   };
   if (r.git_branch != null && String(r.git_branch).length > 0) {
     meta.gitBranch = String(r.git_branch);

@@ -272,6 +272,8 @@ async function loadSession(sessionId: string, paths: string[]): Promise<SessionD
 
 export const claudeCodeConnector: AgentConnector = {
   id: 'claude-code',
+  label: 'Claude Code',
+  sourceDir: CLAUDE_PROJECTS_DIR,
   discover,
   eventsProjectionSql,
   auxProjections,

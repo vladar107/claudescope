@@ -78,6 +78,8 @@ async function loadFile(
   costExpr: string,
 ): Promise<void> {
   const path = sqlString(file.path);
+  // Formats that can't be projected per-row normalize to a canonical NDJSON first.
+  await connector.prepare?.(file.path);
   await conn.run(`DELETE FROM events WHERE file_path = ${path}`);
 
   await conn.run(`
@@ -116,6 +118,10 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
     INSERT INTO sessions
     WITH file_size AS (
       SELECT session_id, sum(size_bytes) AS size_bytes
+      FROM files WHERE session_id IS NOT NULL GROUP BY session_id
+    ),
+    session_connector AS (
+      SELECT session_id, any_value(connector_id) AS connector_id
       FROM files WHERE session_id IS NOT NULL GROUP BY session_id
     ),
     modal_cwd AS (
@@ -159,12 +165,14 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
       NULL AS git_branch,
       p.pr_url,
       COALESCE(fs.size_bytes, 0) AS size_bytes,
-      a.has_sidechain
+      a.has_sidechain,
+      sc.connector_id
     FROM agg a
     LEFT JOIN modal_cwd mc ON mc.session_id = a.session_id
     LEFT JOIN titles t ON t.session_id = a.session_id
     LEFT JOIN pr_links p ON p.session_id = a.session_id
     LEFT JOIN file_size fs ON fs.session_id = a.session_id
+    LEFT JOIN session_connector sc ON sc.session_id = a.session_id
   `);
 
   // git_branch: most recent non-null branch seen for the session.
@@ -260,10 +268,10 @@ async function doReindex(): Promise<ReindexResponse> {
     const cwd = cwdRows.length > 0 ? String(cwdRows[0]?.cwd ?? '') : null;
 
     await conn.run(`
-      INSERT OR REPLACE INTO files (path, mtime_ms, size_bytes, session_id, project_cwd, indexed_at)
+      INSERT OR REPLACE INTO files (path, mtime_ms, size_bytes, session_id, project_cwd, connector_id, indexed_at)
       VALUES (${sqlString(file.path)}, ${file.mtimeMs}, ${file.size},
               ${sessionId ? sqlString(sessionId) : 'NULL'},
-              ${cwd ? sqlString(cwd) : 'NULL'}, now())
+              ${cwd ? sqlString(cwd) : 'NULL'}, ${sqlString(connector.id)}, now())
     `);
     reindexed += 1;
   }

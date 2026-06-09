@@ -20,6 +20,8 @@ const projectsDir = join(work, 'projects');
 const dbPath = join(work, 'index.duckdb');
 
 process.env.CLAUDE_PROJECTS_DIR = projectsDir;
+// Isolate from the real ~/.codex so this Claude-only suite stays deterministic.
+process.env.CODEX_SESSIONS_DIR = join(work, 'codex-empty');
 process.env.DUCKDB_PATH = dbPath;
 process.env.CLAUDESCOPE_HOME = join(work, 'home');
 process.env.REINDEX_INTERVAL_MS = '0';
@@ -135,7 +137,7 @@ describe('GET /api/sessions', () => {
     const sessions = (await get('/api/sessions')).json();
     expect(sessions.map((s: { id: string }) => s.id).sort()).toEqual(['sessA', 'sessB']);
     const a = sessions.find((s: { id: string }) => s.id === 'sessA');
-    expect(a).toMatchObject({ title: 'Session A', hasSidechain: true, prUrl: 'https://example/pr/7' });
+    expect(a).toMatchObject({ title: 'Session A', hasSidechain: true, prUrl: 'https://example/pr/7', connectorId: 'claude-code' });
   });
 
   it('filters by project id', async () => {

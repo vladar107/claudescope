@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { ProjectMeta, SessionMeta, SessionSort } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
+import { AgentBadge, CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
 import { formatBytes, formatDateTime, shortModel, timeAgo } from './format.js';
 
 interface SessionListProps {
@@ -158,6 +158,7 @@ function SessionRow({ session }: { session: SessionMeta }) {
       </Link>
       <div className="tv-session-row__side">
         <div className="tv-chips">
+          <AgentBadge connectorId={session.connectorId} />
           {session.models.map((m) => (
             <span key={m} className="tv-chip tv-chip--model">
               {shortModel(m)}

@@ -12,6 +12,7 @@ import { registerProjectsRoute } from './projects.js';
 import { registerSessionsRoutes } from './sessions.js';
 import { registerSearchRoute } from './search.js';
 import { registerAnalyticsRoute } from './analytics.js';
+import { registerSourcesRoute } from './sources.js';
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/health', async (): Promise<HealthResponse & { ready: boolean }> => {
@@ -22,6 +23,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await registerSessionsRoutes(app);
   await registerSearchRoute(app);
   await registerAnalyticsRoute(app);
+  await registerSourcesRoute(app);
 
   app.post('/api/reindex', async (): Promise<ReindexResponse> => {
     return reindex();

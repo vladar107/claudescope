@@ -64,12 +64,26 @@ export interface AgentConnector {
   /** Stable id, e.g. `'claude-code'`. */
   id: string;
 
+  /** Human-friendly agent name, e.g. `'Claude Code'`. */
+  label: string;
+
+  /** Read-only source directory this connector reads from. */
+  sourceDir: string;
+
   /** Locate every transcript file this agent owns, with mtime/size for change detection. */
   discover(): DiscoveredFile[];
 
   /**
-   * A `SELECT` projecting the raw file at `filePath` into the canonical event
-   * columns (see {@link CANONICAL_EVENT_COLUMNS}). Executed in DuckDB.
+   * Optional pre-pass run before {@link eventsProjectionSql}, for formats that
+   * can't be projected per-row by DuckDB. The connector normalizes the raw file
+   * in TS (e.g. correlating data spread across record types) and writes a
+   * canonical NDJSON the projection then reads. Flat formats (Claude) omit this.
+   */
+  prepare?(filePath: string): Promise<void>;
+
+  /**
+   * A `SELECT` projecting the (possibly {@link prepare}d) file into the canonical
+   * event columns (see {@link CANONICAL_EVENT_COLUMNS}). Executed in DuckDB.
    */
   eventsProjectionSql(filePath: string): string;
 

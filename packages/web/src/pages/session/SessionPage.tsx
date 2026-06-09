@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { SessionDetailResponse, SubagentRun } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
+import { AgentBadge, CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
 import { formatBytes, formatDateTime, shortModel } from '../browse/format.js';
 import { hasRenderableContent } from './blocks.js';
 import { SubagentBlock, SubagentJumpMenu, ThreadList, useHashTarget } from './ThreadView.js';
@@ -303,6 +303,7 @@ function SessionView({
           ) : null}
         </h1>
         <div className="tv-session__meta">
+          <AgentBadge connectorId={meta.connectorId} />
           <span className="tv-muted">{formatDateTime(meta.startedAt)}</span>
           <span className="tv-muted">→ {formatDateTime(meta.endedAt)}</span>
           <span className="tv-muted">{meta.messageCount} msgs</span>

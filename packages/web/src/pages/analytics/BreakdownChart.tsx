@@ -31,7 +31,15 @@ interface Bucket {
   total: number;
 }
 
-export function BreakdownChart({ rows, groupBy }: { rows: AnalyticsRow[]; groupBy: AnalyticsGroupBy }) {
+export function BreakdownChart({
+  rows,
+  groupBy,
+  showCache,
+}: {
+  rows: AnalyticsRow[];
+  groupBy: AnalyticsGroupBy;
+  showCache: boolean;
+}) {
   const data = useMemo<Bucket[]>(
     () =>
       rows
@@ -75,8 +83,10 @@ export function BreakdownChart({ rows, groupBy }: { rows: AnalyticsRow[]; groupB
         <Tooltip cursor={{ fill: '#ffffff0a' }} content={<BreakdownTooltip />} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Bar dataKey="input" name="Input" stackId="tok" fill={COLORS.input} isAnimationActive={false} />
-        <Bar dataKey="output" name="Output" stackId="tok" fill={COLORS.output} isAnimationActive={false} />
-        <Bar dataKey="cache" name="Cache" stackId="tok" fill={COLORS.cacheWrite} radius={[0, 2, 2, 0]} isAnimationActive={false} />
+        <Bar dataKey="output" name="Output" stackId="tok" fill={COLORS.output} radius={showCache ? undefined : [0, 2, 2, 0]} isAnimationActive={false} />
+        {showCache && (
+          <Bar dataKey="cache" name="Cache" stackId="tok" fill={COLORS.cacheWrite} radius={[0, 2, 2, 0]} isAnimationActive={false} />
+        )}
       </BarChart>
     </ResponsiveContainer>
   );
