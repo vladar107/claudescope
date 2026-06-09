@@ -88,7 +88,33 @@ npm version minor -m "%s
 git push --follow-tags   # the tag triggers .github/workflows/release.yml
 ```
 
-The release workflow verifies the tag matches `package.json`, runs the tests,
-runs `npm run bundle`, publishes `dist/`, and creates a GitHub Release from the
-tag's curated message. We follow [SemVer](https://semver.org). Do not re-tag an
-already-published version (the publish step will fail).
+The release workflow runs as independent jobs: a **`validate`** gate (tag matches
+`package.json` + tests) → **create the GitHub Release** → then the channels. `npm`
+(bundle + publish) and `nix` (flake build) run in parallel; **`brew`** runs after
+`npm` because its formula points at the published npm tarball. Because the channels
+are independent jobs, a failure in one (e.g. a stale Nix hash) does **not** block
+the others — just re-run that job. We follow [SemVer](https://semver.org). Do not
+re-tag an already-published version (the publish step will fail).
+
+### Distribution channels
+
+Homebrew and Nix both **wrap the published npm package** — no separate build
+artifacts. They're kept in sync automatically:
+
+- **Homebrew** — the release job rewrites `Formula/claudescope.rb` in the separate
+  [`vladar107/homebrew-tap`](https://github.com/vladar107/homebrew-tap) repo,
+  pointing it at the new npm tarball + sha256. This cross-repo push needs a
+  fine-grained PAT with `contents: write` on that repo, stored as the
+  **`HOMEBREW_TAP_TOKEN`** secret (`github.token` cannot push to another repo).
+- **Nix** — `flake.nix` lives at the repo root and builds from source, so Nix pins
+  by git commit; there's no URL/hash to bump per release. The one value to maintain
+  is **`npmDepsHash`**, and only **when dependencies change** (a version-only bump
+  doesn't touch it). Refresh it before tagging:
+
+  ```bash
+  nix run nixpkgs#prefetch-npm-deps -- package-lock.json   # prints the new hash
+  ```
+
+  Paste the printed hash into `flake.nix`. A stale hash fails the `nix` job (on
+  PRs and at release), but since channels are independent it only breaks the Nix
+  channel — npm and Homebrew still publish.

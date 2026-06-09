@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 jobs:
-  ci:
+  test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -44,3 +44,23 @@ jobs:
 
       - name: Test
         run: npm test
+
+  # Build the Nix flake so a broken flake or a stale npmDepsHash is caught on PRs,
+  # not first at release time. (Needs npmDepsHash filled in — see CONTRIBUTING.)
+  # Matrix covers the platforms users install on: Linux x64 and macOS arm64
+  # (macos-14). Intel macOS (macos-13) is omitted — GitHub is deprecating Intel
+  # runners (they queue indefinitely), and the darwin-x64 build path is identical
+  # to arm64 bar the binding dir. npmDepsHash is OS-independent, shared by both.
+  nix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+      - name: Build the flake
+        run: nix build .#claudescope -L

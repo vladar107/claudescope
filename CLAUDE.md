@@ -65,6 +65,18 @@ bundle time** via esbuild `define` (`__CLAUDESCOPE_VERSION__`) — never hardcod
 it. Publish metadata (keywords, repo, etc.) is sourced from the **root**
 `package.json`; edit it there, not in `bundle.mjs`.
 
+**Other channels wrap this npm package** — no separate artifacts. **Homebrew**
+(formula in the separate `vladar107/homebrew-tap` repo) and a **Nix flake**
+(`flake.nix` at the repo root, builds from source via `buildNpmPackage`) both
+install `@vladar107/claudescope` under the hood and let npm/Nix resolve the native
+`@duckdb/node-api` binary. `release.yml` runs as independent jobs (validate →
+create release → npm ∥ nix, then brew after npm): it bumps the Homebrew formula
+(needs the `HOMEBREW_TAP_TOKEN` secret) and verifies the flake builds. A failure
+in one channel doesn't block the others. The flake's `npmDepsHash` only changes
+when deps change, not per version.
+The CLI `update` command (`cli.ts`) detects the install method and defers to
+`brew`/`nix` instead of `npm install -g` for those installs. See `CONTRIBUTING.md`.
+
 ## Conventions
 
 - **Code style:** match the surrounding code — TypeScript, ESM, existing naming

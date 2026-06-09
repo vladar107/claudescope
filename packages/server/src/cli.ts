@@ -19,6 +19,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -216,13 +217,49 @@ async function confirm(question: string, defaultYes: boolean): Promise<boolean> 
   }
 }
 
+type InstallMethod = 'brew' | 'nix' | 'npm';
+
+/** Classify how this CLI was installed from where its bundle resides. Homebrew
+ *  symlinks the bin out of the Cellar's libexec (realpath resolves it back); Nix
+ *  installs under /nix/store; everything else (npm global, npx) is treated as npm. */
+function detectInstallMethod(): InstallMethod {
+  let p = __dirname;
+  try {
+    p = realpathSync(__dirname);
+  } catch {
+    /* keep __dirname if the path can't be resolved */
+  }
+  if (p.includes('/nix/store/')) return 'nix';
+  // Match the formula's Cellar dir specifically (…/Cellar/claudescope/<version>/…),
+  // not a generic "homebrew" — a plain `npm i -g` under Homebrew's own Node lives
+  // at …/homebrew/lib/node_modules/… and must NOT be mistaken for a brew install.
+  if (/[\\/]Cellar[\\/]claudescope[\\/]/.test(p)) return 'brew';
+  return 'npm';
+}
+
 /** Upgrade the global install to the latest published version and restart.
  *  Resolves the target version and confirms before installing; `--yes` (or a
- *  non-interactive stdin) skips the prompt. Installs the hardcoded package only. */
+ *  non-interactive stdin) skips the prompt. Installs the hardcoded package only.
+ *  For package-manager-managed installs (brew/nix), defers to that manager. */
 async function update(skipConfirm: boolean): Promise<void> {
   const latest = await getLatestVersion(true);
   if (latest && !isNewer(latest, APP_VERSION)) {
     console.log(`✓ Already on the latest version (v${APP_VERSION}).`);
+    return;
+  }
+
+  // Running `npm install -g` over a brew-/nix-managed install would corrupt it —
+  // defer to the manager's own upgrade command instead.
+  const method = detectInstallMethod();
+  if (method === 'brew') {
+    console.log('claudescope was installed via Homebrew.');
+    console.log('  Run: brew upgrade vladar107/tap/claudescope');
+    return;
+  }
+  if (method === 'nix') {
+    console.log('claudescope was installed via Nix.');
+    console.log('  Run: nix profile upgrade claudescope');
+    console.log('  (flake users: re-run `nix run --refresh github:vladar107/claudescope`)');
     return;
   }
   if (!latest) {

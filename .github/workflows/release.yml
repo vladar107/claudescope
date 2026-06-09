@@ -1,20 +1,78 @@
 name: Release
 
-# Publish to npm when a version tag is pushed. Tags are the only release
-# trigger — never publish from a laptop. Create one with:
+# Publish when a version tag is pushed. Tags are the only release trigger — never
+# publish from a laptop. Create one with:
 #   npm version patch   # bumps package.json + creates the vX.Y.Z tag
 #   git push --follow-tags
+#
+# Flow: validate (gate) → create GitHub Release → publish channels.
+# npm and nix run in parallel; brew runs after npm (its formula points at the
+# published npm tarball). Each channel is an independent job, so a failure in one
+# (e.g. nix) does not block the others — re-run just that job.
 on:
   push:
     tags: ['v*']
 
+# Least privilege by default; jobs widen only what they need.
 permissions:
-  contents: write # create the GitHub Release from the tag
-  id-token: write # OIDC token for npm Trusted Publishing + provenance
+  contents: read
 
 jobs:
-  release:
+  # Gate: the tag must match the package version and the suite must pass before
+  # anything ships. `npm publish` is irreversible, so this guards every channel.
+  validate:
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Guard against a tag that doesn't match the version in package.json, so the
+      # published version always equals the tag.
+      - name: Verify tag matches package version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag v$TAG does not match package.json version $PKG"
+            exit 1
+          fi
+
+      - name: Test
+        run: npm test
+
+  # Mirror the curated, human-written tag annotation (from `npm version -m`) to a
+  # GitHub Release — verbatim, never auto-generated. Runs before the channels.
+  release:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release from the tag
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Create GitHub Release
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-from-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # Channel: npm. Auth comes from the OIDC id-token via npm Trusted Publishing —
+  # no NPM_TOKEN secret; provenance is generated automatically under OIDC.
+  npm:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC token for npm Trusted Publishing + provenance
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -34,32 +92,70 @@ jobs:
       - name: Upgrade npm for trusted publishing
         run: npm install -g npm@latest
 
-      # Guard against a tag that doesn't match the version in package.json, so
-      # the published version always equals the tag.
-      - name: Verify tag matches package version
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          PKG="$(node -p "require('./package.json').version")"
-          if [ "$TAG" != "$PKG" ]; then
-            echo "::error::Tag v$TAG does not match package.json version $PKG"
-            exit 1
-          fi
-
-      - name: Test
-        run: npm test
-
       - name: Assemble the publishable package
         run: npm run bundle
 
-      # Auth comes from the OIDC id-token via npm Trusted Publishing — no
-      # NPM_TOKEN secret. Provenance is generated automatically under OIDC.
       - name: Publish to npm
         run: npm publish --access public
         working-directory: dist
 
-      # Mirror the curated, human-written tag annotation (from `npm version -m`)
-      # to a GitHub Release — verbatim, never auto-generated.
-      - name: Create GitHub Release
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-from-tag
+  # Channel: nix. The flake builds from the tagged source, so this verifies that
+  # `nix run github:vladar107/claudescope` works at this tag (nothing to push —
+  # Nix pins by git commit). Independent of npm; failure here blocks no other
+  # channel. Requires npmDepsHash in flake.nix to be current — see CONTRIBUTING.
+  nix:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Build the flake
+        run: nix build .#claudescope -L
+
+  # Channel: brew. Points the tap at the just-published npm tarball, so it must run
+  # after npm. Pushes to the separate vladar107/homebrew-tap repo, which needs a
+  # cross-repo PAT (github.token can't push elsewhere) — secret HOMEBREW_TAP_TOKEN.
+  brew:
+    needs: npm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Homebrew tap
         env:
-          GH_TOKEN: ${{ github.token }}
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          TARBALL="https://registry.npmjs.org/@vladar107/claudescope/-/claudescope-${VERSION}.tgz"
+          curl -fsSL "$TARBALL" -o pkg.tgz
+          SHA256="$(shasum -a 256 pkg.tgz | cut -d ' ' -f 1)"
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/vladar107/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cat > tap/Formula/claudescope.rb <<EOF
+          class Claudescope < Formula
+            desc "Local, read-only viewer for AI coding-agent transcripts"
+            homepage "https://github.com/vladar107/claudescope"
+            url "${TARBALL}"
+            sha256 "${SHA256}"
+            license "MIT"
+
+            depends_on "node"
+
+            def install
+              system "npm", "install", *std_npm_args
+              bin.install_symlink Dir["#{libexec}/bin/*"]
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/claudescope version")
+            end
+          end
+          EOF
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/claudescope.rb
+          git commit -m "claudescope ${VERSION}"
+          git push
