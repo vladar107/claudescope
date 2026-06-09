@@ -71,11 +71,24 @@ Releases are **maintainer-only** and **tag-triggered** — never published from 
 laptop. Publishing uses npm **Trusted Publishing (OIDC)**; there is no
 `NPM_TOKEN` secret, and provenance is attached automatically.
 
+**Release notes are human-curated.** Write a short, highlight-first changelog and
+embed it in the version commit + annotated tag via `npm version -m` (the first
+line stays `%s` so the version leads). The workflow mirrors that tag message to a
+**GitHub Release** verbatim (`--notes-from-tag`) — notes are never auto-generated.
+
 ```bash
-npm version patch        # or minor / major — bumps package.json + creates vX.Y.Z
-git push --follow-tags   # the tag triggers .github/workflows/release.yml → npm publish
+# 1. Draft the highlights (most-important first), then bump + tag with them:
+npm version minor -m "%s
+
+- <headline change>
+- <another notable change>"
+# (patch / minor / major per SemVer — bumps package.json, commits, annotates the tag)
+
+# 2. Push the bump commit AND the tag:
+git push --follow-tags   # the tag triggers .github/workflows/release.yml
 ```
 
 The release workflow verifies the tag matches `package.json`, runs the tests,
-runs `npm run bundle`, and publishes `dist/`. We follow [SemVer](https://semver.org).
-Do not re-tag an already-published version (the publish step will fail).
+runs `npm run bundle`, publishes `dist/`, and creates a GitHub Release from the
+tag's curated message. We follow [SemVer](https://semver.org). Do not re-tag an
+already-published version (the publish step will fail).
