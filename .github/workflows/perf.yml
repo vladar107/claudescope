@@ -52,9 +52,16 @@ jobs:
           # script yet → no base file → compare no-ops (bootstrap).
           npm run bench --if-present -- --out "$GITHUB_WORKSPACE/base.json"
 
-      - name: Compare (fail on >10% headline regression)
+      - name: Compare (fail on >20% headline regression)
         working-directory: pr
-        run: npm run bench:compare -- --base "$GITHUB_WORKSPACE/base.json" --candidate "$GITHUB_WORKSPACE/candidate.json" --threshold 10
+        # Threshold is 20% here, not the local default of 10%. The two benches run
+        # sequentially, so same-runner A/B cancels fixed hardware differences but
+        # NOT temporal drift — GitHub shared runners routinely vary ~10-15% in the
+        # minute between the two runs (observed: every metric skewing uniformly).
+        # 20% catches real regressions (a non-native ingestion rewrite would be
+        # multiples slower) without flaking on runner noise; use `npm run bench`
+        # locally on a stable machine for fine-grained (~1%) checks.
+        run: npm run bench:compare -- --base "$GITHUB_WORKSPACE/base.json" --candidate "$GITHUB_WORKSPACE/candidate.json" --threshold 20
 
       - name: Upload perf results
         if: always()

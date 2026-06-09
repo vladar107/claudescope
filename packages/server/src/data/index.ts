@@ -1,24 +1,25 @@
 /**
  * Incremental indexer.
  *
- * Scans {@link CLAUDE_PROJECTS_DIR} for `*.jsonl` session files (including the
- * sidechain/subagent subdirectories that may sit beside a session file), and
- * upserts flattened events into DuckDB via `read_ndjson(...)`. Files whose
- * (mtime, size) are unchanged versus the `files` table are skipped, so a
+ * Asks each registered {@link AgentConnector} to discover its transcript files,
+ * then upserts a canonical, format-agnostic `events` row shape into DuckDB via
+ * each connector's projection SQL (executed natively by `read_ndjson`). Files
+ * whose (mtime, size) are unchanged versus the `files` table are skipped, so a
  * reindex only touches what changed.
  *
- * After loading, derived `sessions` / `projects`-input rows are recomputed and
- * the FTS index over `events.text_content` is rebuilt (cheap at this scale).
+ * After loading, derived `sessions` rows are recomputed and the FTS index over
+ * `events.text_content` is rebuilt (cheap at this scale). Everything below the
+ * connector boundary — the canonical schema, cost, derived tables, FTS — is
+ * agent-agnostic.
  *
- * STRICTLY READ-ONLY with respect to ~/.claude — files are only ever read.
+ * STRICTLY READ-ONLY with respect to the source transcripts — files are only read.
  */
 
-import { readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
 import type { DuckDBConnection } from '@duckdb/node-api';
 import type { PricingConfig, ReindexResponse } from '@claudescope/shared';
-import { CLAUDE_PROJECTS_DIR } from '../config.js';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import { connectors } from '../connectors/registry.js';
+import type { AgentConnector, DiscoveredFile } from '../connectors/types.js';
 import { loadPricing } from './pricing.js';
 
 /** Tracks whether the initial index build has finished (server readiness). */
@@ -30,84 +31,11 @@ export function isIndexReady(): boolean {
   return ready;
 }
 
-interface DiscoveredFile {
-  path: string;
-  mtimeMs: number;
-  size: number;
-}
-
-/**
- * Recursively collect every `*.jsonl` file under the projects directory. The
- * top level holds `<encoded-cwd>/<session>.jsonl`; sidechain events live in a
- * `<session-uuid>/` subdirectory beside the file, so we recurse one level.
- */
-function discoverFiles(): DiscoveredFile[] {
-  const out: DiscoveredFile[] = [];
-
-  const walk = (dir: string): void => {
-    let entries: import('node:fs').Dirent[];
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-      } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-        try {
-          const st = statSync(full);
-          out.push({ path: full, mtimeMs: Math.floor(st.mtimeMs), size: st.size });
-        } catch {
-          /* file vanished between readdir and stat; ignore */
-        }
-      }
-    }
-  };
-
-  walk(CLAUDE_PROJECTS_DIR);
-  return out;
-}
-
-/**
- * Build the SQL expression that extracts FTS-searchable plain text from a
- * `message` JSON value. `message.content` is either a plain string or an array
- * of blocks; for arrays we concatenate the `text`/`thinking` block bodies.
- */
-const TEXT_CONTENT_EXPR = `
-  CASE
-    WHEN message IS NULL THEN NULL
-    WHEN json_type(message -> '$.content') = 'VARCHAR'
-      THEN json_extract_string(message, '$.content')
-    ELSE (
-      SELECT string_agg(
-        coalesce(
-          json_extract_string(b.value, '$.text'),
-          json_extract_string(b.value, '$.thinking')
-        ),
-        ' '
-      )
-      FROM json_each(message, '$.content') AS b
-      WHERE json_extract_string(b.value, '$.type') IN ('text', 'thinking')
-    )
-  END`;
-
-/** Count of `tool_use` blocks inside a message's content array (0 for strings). */
-const TOOL_USE_COUNT_EXPR = `
-  CASE
-    WHEN message IS NULL OR json_type(message -> '$.content') = 'VARCHAR' THEN 0
-    ELSE (
-      SELECT count(*)
-      FROM json_each(message, '$.content') AS b
-      WHERE json_extract_string(b.value, '$.type') = 'tool_use'
-    )
-  END`;
-
 /**
  * Build the per-event cost expression (USD) from the pricing config. Costs are
  * computed in SQL via a big CASE over the model id so the value is persisted on
  * each event row and analytics can simply SUM it. Rates are USD per 1M tokens.
+ * Operates on the canonical token columns, so it is agent-agnostic.
  */
 function buildCostExpr(pricing: PricingConfig): string {
   const rateExpr = (field: keyof PricingConfig['models'][string]): string => {
@@ -137,25 +65,21 @@ function buildCostExpr(pricing: PricingConfig): string {
 }
 
 /**
- * Load (or reload) a single file's conversational events into the `events`
- * table. Existing rows for the file are deleted first so re-indexing a changed
- * file is a clean replace.
+ * Load (or reload) a single file's events into the `events` table via the
+ * owning connector's projection. Existing rows for the file are deleted first so
+ * re-indexing a changed file is a clean replace. The canonical column list and
+ * the central cost expression are applied here; only the inner projection (and
+ * the optional aux projections) are agent-specific.
  */
-async function loadFileEvents(
+async function loadFile(
   conn: DuckDBConnection,
+  connector: AgentConnector,
   file: DiscoveredFile,
   costExpr: string,
 ): Promise<void> {
   const path = sqlString(file.path);
-  const readFn = `read_ndjson(${path}, union_by_name=true, format='newline_delimited', maximum_object_size=268435456, columns={
-    type:'VARCHAR', uuid:'VARCHAR', parentUuid:'VARCHAR', sessionId:'VARCHAR',
-    timestamp:'VARCHAR', cwd:'VARCHAR', gitBranch:'VARCHAR', isSidechain:'BOOLEAN',
-    message:'JSON'
-  })`;
-
   await conn.run(`DELETE FROM events WHERE file_path = ${path}`);
 
-  // First materialize the flattened token columns, then derive cost from them.
   await conn.run(`
     INSERT INTO events
     SELECT
@@ -165,59 +89,19 @@ async function loadFileEvents(
       ${costExpr} AS cost_usd,
       text_content
     FROM (
-      SELECT
-        ${path} AS file_path,
-        sessionId AS session_id,
-        uuid,
-        parentUuid AS parent_uuid,
-        json_extract_string(message, '$.role') AS role,
-        type,
-        try_cast(timestamp AS TIMESTAMP) AS ts,
-        cwd,
-        gitBranch AS git_branch,
-        json_extract_string(message, '$.model') AS model,
-        COALESCE(try_cast(json_extract(message, '$.usage.input_tokens') AS BIGINT), 0) AS input_tokens,
-        COALESCE(try_cast(json_extract(message, '$.usage.output_tokens') AS BIGINT), 0) AS output_tokens,
-        COALESCE(try_cast(json_extract(message, '$.usage.cache_read_input_tokens') AS BIGINT), 0) AS cache_read_tokens,
-        COALESCE(try_cast(json_extract(message, '$.usage.cache_creation_input_tokens') AS BIGINT), 0) AS cache_write_tokens,
-        json_extract_string(message, '$.usage.service_tier') AS service_tier,
-        COALESCE(isSidechain, FALSE) AS is_sidechain,
-        ${TOOL_USE_COUNT_EXPR} AS tool_use_count,
-        ${TEXT_CONTENT_EXPR} AS text_content
-      FROM ${readFn}
-      WHERE type IN ('user', 'assistant')
+      ${connector.eventsProjectionSql(file.path)}
     )
   `);
-}
 
-/**
- * Load auxiliary sessionId-keyed events (ai-title, pr-link) for a file. These
- * are not conversational events; they are upserted into their own small tables.
- */
-async function loadAuxEvents(conn: DuckDBConnection, file: DiscoveredFile): Promise<void> {
-  const path = sqlString(file.path);
-  const readFn = `read_ndjson(${path}, union_by_name=true, format='newline_delimited', maximum_object_size=268435456, columns={
-    type:'VARCHAR', sessionId:'VARCHAR', aiTitle:'VARCHAR',
-    prNumber:'BIGINT', prRepository:'VARCHAR', prUrl:'VARCHAR'
-  })`;
-
-  // ai-title: latest non-null title in the file wins.
-  await conn.run(`
-    INSERT OR REPLACE INTO titles (session_id, title)
-    SELECT sessionId, last(aiTitle) AS title
-    FROM ${readFn}
-    WHERE type = 'ai-title' AND sessionId IS NOT NULL AND aiTitle IS NOT NULL
-    GROUP BY sessionId
-  `);
-
-  // pr-link: latest pr per session.
-  await conn.run(`
-    INSERT OR REPLACE INTO pr_links (session_id, pr_number, pr_repository, pr_url)
-    SELECT sessionId, last(prNumber), last(prRepository), last(prUrl)
-    FROM ${readFn}
-    WHERE type = 'pr-link' AND sessionId IS NOT NULL AND prUrl IS NOT NULL
-    GROUP BY sessionId
-  `);
+  const aux = connector.auxProjections(file.path);
+  if (aux.titles) {
+    await conn.run(`INSERT OR REPLACE INTO titles (session_id, title) ${aux.titles}`);
+  }
+  if (aux.prLinks) {
+    await conn.run(
+      `INSERT OR REPLACE INTO pr_links (session_id, pr_number, pr_repository, pr_url) ${aux.prLinks}`,
+    );
+  }
 }
 
 /**
@@ -328,7 +212,11 @@ async function doReindex(): Promise<ReindexResponse> {
   const pricing = loadPricing();
   const costExpr = buildCostExpr(pricing);
 
-  const discovered = discoverFiles();
+  // Discover across every registered connector, tagging each file with its owner.
+  const discovered: { file: DiscoveredFile; connector: AgentConnector }[] = [];
+  for (const connector of connectors) {
+    for (const file of connector.discover()) discovered.push({ file, connector });
+  }
 
   // Build a lookup of already-indexed (path -> mtime,size).
   const existingRows = await queryRows(conn, 'SELECT path, mtime_ms, size_bytes FROM files');
@@ -337,7 +225,7 @@ async function doReindex(): Promise<ReindexResponse> {
     existing.set(String(r.path), { mtime: Number(r.mtime_ms), size: Number(r.size_bytes) });
   }
 
-  const discoveredPaths = new Set(discovered.map((f) => f.path));
+  const discoveredPaths = new Set(discovered.map((d) => d.file.path));
 
   // Drop files that no longer exist on disk (and their events).
   let removed = 0;
@@ -350,14 +238,13 @@ async function doReindex(): Promise<ReindexResponse> {
   }
 
   let reindexed = 0;
-  for (const file of discovered) {
+  for (const { file, connector } of discovered) {
     const prev = existing.get(file.path);
     if (prev && prev.mtime === file.mtimeMs && prev.size === file.size) {
       continue; // unchanged
     }
 
-    await loadFileEvents(conn, file, costExpr);
-    await loadAuxEvents(conn, file);
+    await loadFile(conn, connector, file, costExpr);
 
     // Determine the session id from loaded events (filename usually matches,
     // but the event sessionId is authoritative).
