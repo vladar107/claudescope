@@ -45,6 +45,16 @@ export const CODEX_SESSIONS_DIR = expandHome(
   process.env.CODEX_SESSIONS_DIR ?? join(homedir(), '.codex', 'sessions'),
 );
 
+/**
+ * READ-ONLY source of JetBrains Junie sessions. The app MUST NEVER write here.
+ * Defaults to `~/.junie/sessions` (`session-<id>/events.jsonl`, plus an
+ * `index.jsonl` listing every session). Override with JUNIE_SESSIONS_DIR. A
+ * leading `~` is expanded.
+ */
+export const JUNIE_SESSIONS_DIR = expandHome(
+  process.env.JUNIE_SESSIONS_DIR ?? join(homedir(), '.junie', 'sessions'),
+);
+
 /** Whether to auto-open the default browser on startup (set by the launcher). */
 export const OPEN_BROWSER = process.env.OPEN_BROWSER === '1';
 

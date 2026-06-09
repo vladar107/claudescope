@@ -20,8 +20,10 @@ const projectsDir = join(work, 'projects');
 const dbPath = join(work, 'index.duckdb');
 
 process.env.CLAUDE_PROJECTS_DIR = projectsDir;
-// Isolate from the real ~/.codex so this Claude-only suite stays deterministic.
+// Isolate from the real ~/.codex and ~/.junie so this Claude-only suite stays
+// deterministic.
 process.env.CODEX_SESSIONS_DIR = join(work, 'codex-empty');
+process.env.JUNIE_SESSIONS_DIR = join(work, 'junie-empty');
 process.env.DUCKDB_PATH = dbPath;
 process.env.CLAUDESCOPE_HOME = join(work, 'home');
 process.env.REINDEX_INTERVAL_MS = '0';

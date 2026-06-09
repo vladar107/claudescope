@@ -6,8 +6,9 @@
 import type { AgentConnector } from './types.js';
 import { claudeCodeConnector } from './claude-code.js';
 import { codexConnector } from './codex/codex.js';
+import { junieConnector } from './junie/junie.js';
 
-export const connectors: AgentConnector[] = [claudeCodeConnector, codexConnector];
+export const connectors: AgentConnector[] = [claudeCodeConnector, codexConnector, junieConnector];
 
 /** The connector with the given id, falling back to Claude Code if unknown. */
 export function connectorById(id: string | null | undefined): AgentConnector {

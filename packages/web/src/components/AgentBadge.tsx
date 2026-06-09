@@ -3,6 +3,7 @@
 const AGENT_LABELS: Record<string, string> = {
   'claude-code': 'Claude',
   codex: 'Codex',
+  junie: 'Junie',
 };
 
 /** Human-friendly short label for a connector id. */
