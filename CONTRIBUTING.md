@@ -107,12 +107,12 @@ artifacts. They're kept in sync automatically:
   fine-grained PAT with `contents: write` on that repo, stored as the
   **`HOMEBREW_TAP_TOKEN`** secret (`github.token` cannot push to another repo).
 - **Nix** — `flake.nix` lives at the repo root and builds from source, so Nix pins
-  by git commit (no URL to bump). Its **`npmDepsHash`** is refreshed
-  **automatically**: `fetch-npm-deps` folds `package-lock.json` into the hash, so
-  it changes on every version bump — the npm `version` lifecycle hook
-  (`scripts/refresh-flake-hash.mjs`) recomputes it during `npm version` and folds
-  it into the tagged commit, so releases never break on a stale hash. **Releasing
-  therefore requires Nix on the maintainer's machine.** To refresh by hand:
-  `nix run nixpkgs#prefetch-npm-deps -- package-lock.json`. A genuine build break
-  fails the `nix` job, but since channels are independent it only affects the Nix
-  channel — npm and Homebrew still publish.
+  by git commit (no URL to bump). Its dependency hash is **version-independent**:
+  the flake feeds `fetch-npm-deps` a copy of `package-lock.json` with the project
+  version neutralized (`depsLock`), so a version bump never changes the hash.
+  **Releasing needs no Nix and no hash step** — just `npm version` + push. The hash
+  only changes when dependencies *actually* change (add/remove/upgrade a package),
+  which the CI `nix` job catches on the PR; to update it then, set the hash to
+  `lib.fakeHash`, run `nix build .#claudescope`, and paste the `got:` value back.
+  A genuine build break only fails the `nix` job — since channels are independent,
+  npm and Homebrew still publish.

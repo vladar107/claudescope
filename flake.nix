@@ -25,6 +25,20 @@
           else
             (if pkgs.stdenv.isAarch64 then "linux-arm64" else "linux-x64");
 
+        # fetch-npm-deps folds package-lock.json into npmDepsHash, so a bare
+        # version bump would change the hash and break the build at release time.
+        # Feed the fetcher a copy of the lockfile with the project version
+        # neutralized: the hash then depends only on the real dependency set, so
+        # version bumps never touch it. The actual build below still uses the real
+        # lockfile — the cached tarball set is identical (the workspace packages
+        # aren't fetched from the registry), so `npm ci` is unaffected.
+        depsLock = pkgs.runCommand "claudescope-deps-lock" { nativeBuildInputs = [ pkgs.jq ]; } ''
+          mkdir -p $out
+          jq '.version = "0.0.0" | .packages[""].version = "0.0.0"' \
+            ${self}/package-lock.json > $out/package-lock.json
+          jq '.version = "0.0.0"' ${self}/package.json > $out/package.json
+        '';
+
         claudescope = pkgs.buildNpmPackage {
           pname = "claudescope";
           # Single source of truth: the version comes from the root package.json,
@@ -35,18 +49,29 @@
           # repo root (a subdir flake's `self` can't reach the parent sources).
           src = self;
 
-          # Fixed-output hash of the npm dependency closure. fetch-npm-deps folds
-          # package-lock.json into this hash, so it changes on every version bump
-          # (not just dependency changes). It's refreshed automatically by the
-          # `version` npm lifecycle script (scripts/refresh-flake-hash.mjs) when a
-          # release is cut, so the tagged commit always matches. To recompute by
-          # hand: `nix run nixpkgs#prefetch-npm-deps -- package-lock.json`.
-          npmDepsHash = "sha256-fEHtLtiwGjqsiwSPVcZuLdbwJpU0TSa0CWfrGj24i8M=";
+          # Dependencies fetched from the version-neutralized lockfile (depsLock
+          # above), so this hash is STABLE across version bumps — releases never
+          # refresh it. Update it ONLY when dependencies actually change; run
+          # `nix build .#claudescope` and the mismatch error prints the new value.
+          npmDeps = pkgs.fetchNpmDeps {
+            src = depsLock;
+            hash = "sha256-46pJV4STi+1QBJjbUOoHGxBXVYEzg0Ef7UVTenPhhD4=";
+          };
 
           nodejs = node;
 
           # `npm run bundle` assembles dist/ (server + CLI + web + pricing default).
           npmBuildScript = "bundle";
+
+          # Neutralize the lockfile version to match the cache built from depsLock,
+          # so npmConfigHook's lockfile consistency check passes. package.json is
+          # left untouched, so `npm run bundle` still bakes the real version via
+          # esbuild. Uses the same jq filter as depsLock → byte-identical lockfile.
+          postPatch = ''
+            ${pkgs.jq}/bin/jq '.version = "0.0.0" | .packages[""].version = "0.0.0"' \
+              package-lock.json > package-lock.json.tmp
+            mv package-lock.json.tmp package-lock.json
+          '';
 
           # We install dist/ ourselves rather than the default `npm install` layout.
           dontNpmInstall = true;
