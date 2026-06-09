@@ -45,8 +45,8 @@ jobs:
       - name: Test
         run: npm test
 
-  # Build the Nix flake so a broken flake or a stale npmDepsHash is caught on PRs,
-  # not first at release time. (Needs npmDepsHash filled in — see CONTRIBUTING.)
+  # Build the Nix flake so a broken flake or stale npmDepsHash is caught on PRs,
+  # not first at release time (the hash is auto-refreshed by the `version` hook).
   # Matrix covers the platforms users install on: Linux x64 and macOS arm64
   # (macos-14). Intel macOS (macos-13) is omitted — GitHub is deprecating Intel
   # runners (they queue indefinitely), and the darwin-x64 build path is identical

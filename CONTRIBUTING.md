@@ -107,14 +107,12 @@ artifacts. They're kept in sync automatically:
   fine-grained PAT with `contents: write` on that repo, stored as the
   **`HOMEBREW_TAP_TOKEN`** secret (`github.token` cannot push to another repo).
 - **Nix** — `flake.nix` lives at the repo root and builds from source, so Nix pins
-  by git commit; there's no URL/hash to bump per release. The one value to maintain
-  is **`npmDepsHash`**, and only **when dependencies change** (a version-only bump
-  doesn't touch it). Refresh it before tagging:
-
-  ```bash
-  nix run nixpkgs#prefetch-npm-deps -- package-lock.json   # prints the new hash
-  ```
-
-  Paste the printed hash into `flake.nix`. A stale hash fails the `nix` job (on
-  PRs and at release), but since channels are independent it only breaks the Nix
+  by git commit (no URL to bump). Its **`npmDepsHash`** is refreshed
+  **automatically**: `fetch-npm-deps` folds `package-lock.json` into the hash, so
+  it changes on every version bump — the npm `version` lifecycle hook
+  (`scripts/refresh-flake-hash.mjs`) recomputes it during `npm version` and folds
+  it into the tagged commit, so releases never break on a stale hash. **Releasing
+  therefore requires Nix on the maintainer's machine.** To refresh by hand:
+  `nix run nixpkgs#prefetch-npm-deps -- package-lock.json`. A genuine build break
+  fails the `nix` job, but since channels are independent it only affects the Nix
   channel — npm and Homebrew still publish.

@@ -16,3 +16,6 @@ perf-result.json
 .vscode/
 .junie/
 .demo/
+
+# Nix build output symlink
+/result

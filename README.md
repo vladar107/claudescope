@@ -118,7 +118,8 @@ npx @vladar107/claudescope
 
 ```bash
 # Homebrew (macOS / Linux)
-brew install vladar107/tap/claudescope
+brew tap vladar107/tap
+brew install claudescope
 
 # Nix (any platform) — run without installing, or add to a profile
 nix run github:vladar107/claudescope

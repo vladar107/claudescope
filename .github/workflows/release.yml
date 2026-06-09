@@ -102,7 +102,7 @@ jobs:
   # Channel: nix. The flake builds from the tagged source, so this verifies that
   # `nix run github:vladar107/claudescope` works at this tag (nothing to push —
   # Nix pins by git commit). Independent of npm; failure here blocks no other
-  # channel. Requires npmDepsHash in flake.nix to be current — see CONTRIBUTING.
+  # channel. npmDepsHash is kept current by the `version` lifecycle hook.
   nix:
     needs: release
     runs-on: ubuntu-latest

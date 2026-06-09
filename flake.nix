@@ -35,12 +35,13 @@
           # repo root (a subdir flake's `self` can't reach the parent sources).
           src = self;
 
-          # Fixed-output hash of the npm dependency closure (from package-lock.json).
-          # Refresh after any dependency change with:
-          #   nix run nixpkgs#prefetch-npm-deps -- package-lock.json
-          # A version-only bump does NOT change this. Placeholder = lib.fakeHash:
-          # the first real `nix build` prints the correct value to paste in here.
-          npmDepsHash = "sha256-jQsMvQK4qVuZSL+yB9W0z1Dw9HUt9+Go0QxVwAY5FrU=";
+          # Fixed-output hash of the npm dependency closure. fetch-npm-deps folds
+          # package-lock.json into this hash, so it changes on every version bump
+          # (not just dependency changes). It's refreshed automatically by the
+          # `version` npm lifecycle script (scripts/refresh-flake-hash.mjs) when a
+          # release is cut, so the tagged commit always matches. To recompute by
+          # hand: `nix run nixpkgs#prefetch-npm-deps -- package-lock.json`.
+          npmDepsHash = "sha256-X7DMipMRbdQRaaj1FAazVs3rubmYrvm5RAysBavFL24=";
 
           nodejs = node;
 

@@ -72,8 +72,11 @@ install `@vladar107/claudescope` under the hood and let npm/Nix resolve the nati
 `@duckdb/node-api` binary. `release.yml` runs as independent jobs (validate →
 create release → npm ∥ nix, then brew after npm): it bumps the Homebrew formula
 (needs the `HOMEBREW_TAP_TOKEN` secret) and verifies the flake builds. A failure
-in one channel doesn't block the others. The flake's `npmDepsHash` only changes
-when deps change, not per version.
+in one channel doesn't block the others. The flake's `npmDepsHash` changes on
+every version bump (fetch-npm-deps folds the lockfile in); the `version` npm
+lifecycle hook (`scripts/refresh-flake-hash.mjs`) refreshes it during
+`npm version`, so releases never break on a stale hash (releasing thus needs Nix
+locally).
 The CLI `update` command (`cli.ts`) detects the install method and defers to
 `brew`/`nix` instead of `npm install -g` for those installs. See `CONTRIBUTING.md`.
 
