@@ -114,6 +114,20 @@ Try it without installing:
 npx @vladar107/claudescope
 ```
 
+### Other install methods
+
+```bash
+# Homebrew (macOS / Linux)
+brew install vladar107/tap/claudescope
+
+# Nix (any platform) — run without installing, or add to a profile
+nix run github:vladar107/claudescope
+nix profile install github:vladar107/claudescope
+```
+
+All channels wrap the same package; `claudescope update` detects how you
+installed it and points you at the right upgrade command.
+
 ### Commands
 
 ```bash

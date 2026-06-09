@@ -44,3 +44,15 @@ jobs:
 
       - name: Test
         run: npm test
+
+  # Build the Nix flake so a broken flake or a stale npmDepsHash is caught on PRs,
+  # not first at release time. (Needs npmDepsHash filled in — see CONTRIBUTING.)
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+      - name: Build the flake
+        run: nix build .#claudescope -L
