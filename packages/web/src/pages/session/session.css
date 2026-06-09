@@ -20,9 +20,18 @@
 .tv-session__crumbs {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--tv-space-2);
   margin-bottom: var(--tv-space-2);
   font-size: var(--tv-fs-sm);
+}
+/* Breadcrumb back-link to the project's sessions — set off from the action
+   buttons that share this row. */
+.tv-session__trail {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  margin-right: var(--tv-space-2);
 }
 .tv-session__crumbs .tv-linkbtn:disabled {
   cursor: default;
@@ -499,11 +508,11 @@
 
 /* CSS Custom Highlight API styles for finder matches. */
 ::highlight(cs-find) {
-  background-color: rgba(210, 153, 34, 0.35);
+  background-color: var(--tv-finder-highlight);
 }
 ::highlight(cs-find-active) {
   background-color: var(--tv-accent);
-  color: #0b0f14;
+  color: var(--tv-finder-active-fg);
 }
 
 /* ── System / harness turns (collapsed by default) ────────────────────── */

@@ -17,7 +17,15 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { AXIS_TICK, COLORS, TooltipCard, formatCost, formatCount } from './chart-common.js';
+import { useTheme } from '../../theme/ThemeProvider.js';
+import {
+  axisTick,
+  getChartColors,
+  TooltipCard,
+  formatCost,
+  formatCount,
+  type ChartColors,
+} from './chart-common.js';
 
 interface Point {
   day: string;
@@ -55,29 +63,33 @@ export function TimeSeriesChart({ rows, showCache }: { rows: AnalyticsRow[]; sho
       return next;
     });
 
+  const { resolvedTheme } = useTheme();
+  const colors = getChartColors(resolvedTheme);
+  const tick = axisTick(colors);
+
   return (
     <ResponsiveContainer width="100%" height={300}>
       <ComposedChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-        <CartesianGrid stroke={COLORS.grid} vertical={false} />
-        <XAxis dataKey="day" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: COLORS.grid }} minTickGap={24} />
+        <CartesianGrid stroke={colors.grid} vertical={false} />
+        <XAxis dataKey="day" tick={tick} tickLine={false} axisLine={{ stroke: colors.grid }} minTickGap={24} />
         <YAxis
           yAxisId="tokens"
-          tick={AXIS_TICK}
+          tick={tick}
           tickLine={false}
-          axisLine={{ stroke: COLORS.grid }}
+          axisLine={{ stroke: colors.grid }}
           tickFormatter={(v: number) => formatCount(v)}
           width={48}
         />
         <YAxis
           yAxisId="cost"
           orientation="right"
-          tick={AXIS_TICK}
+          tick={tick}
           tickLine={false}
-          axisLine={{ stroke: COLORS.grid }}
+          axisLine={{ stroke: colors.grid }}
           tickFormatter={(v: number) => `$${v < 1 ? v.toFixed(2) : Math.round(v)}`}
           width={52}
         />
-        <Tooltip cursor={{ fill: '#ffffff0a' }} content={<SeriesTooltip />} />
+        <Tooltip cursor={{ fill: colors.cursor }} content={<SeriesTooltip colors={colors} />} />
         <Legend
           wrapperStyle={{ fontSize: 12, cursor: 'pointer' }}
           onClick={(e) => {
@@ -94,12 +106,12 @@ export function TimeSeriesChart({ rows, showCache }: { rows: AnalyticsRow[]; sho
             );
           }}
         />
-        <Bar yAxisId="tokens" dataKey="input" name="Input" stackId="tok" fill={COLORS.input} hide={hidden.has('input')} isAnimationActive={false} />
-        <Bar yAxisId="tokens" dataKey="output" name="Output" stackId="tok" fill={COLORS.output} hide={hidden.has('output')} isAnimationActive={false} />
+        <Bar yAxisId="tokens" dataKey="input" name="Input" stackId="tok" fill={colors.input} hide={hidden.has('input')} isAnimationActive={false} />
+        <Bar yAxisId="tokens" dataKey="output" name="Output" stackId="tok" fill={colors.output} hide={hidden.has('output')} isAnimationActive={false} />
         {showCache && (
-          <Bar yAxisId="tokens" dataKey="cache" name="Cache" stackId="tok" fill={COLORS.cacheWrite} radius={[2, 2, 0, 0]} hide={hidden.has('cache')} isAnimationActive={false} />
+          <Bar yAxisId="tokens" dataKey="cache" name="Cache" stackId="tok" fill={colors.cacheWrite} radius={[2, 2, 0, 0]} hide={hidden.has('cache')} isAnimationActive={false} />
         )}
-        <Line yAxisId="cost" type="monotone" dataKey="cost" name="Cost" stroke={COLORS.cost} strokeWidth={2} dot={false} hide={hidden.has('cost')} isAnimationActive={false} />
+        <Line yAxisId="cost" type="monotone" dataKey="cost" name="Cost" stroke={colors.cost} strokeWidth={2} dot={false} hide={hidden.has('cost')} isAnimationActive={false} />
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -110,19 +122,21 @@ function SeriesTooltip(props: {
   active?: boolean;
   label?: string | number;
   payload?: ReadonlyArray<{ payload?: Point }>;
+  colors: ChartColors;
 }) {
   if (!props.active || !props.payload || props.payload.length === 0) return null;
   const p = props.payload[0]?.payload;
   if (!p) return null;
+  const { colors } = props;
   return (
     <TooltipCard
       title={p.day}
       rows={[
-        { label: 'Input', value: formatCount(p.input), color: COLORS.input },
-        { label: 'Output', value: formatCount(p.output), color: COLORS.output },
-        { label: 'Cache', value: formatCount(p.cache), color: COLORS.cacheWrite },
+        { label: 'Input', value: formatCount(p.input), color: colors.input },
+        { label: 'Output', value: formatCount(p.output), color: colors.output },
+        { label: 'Cache', value: formatCount(p.cache), color: colors.cacheWrite },
         { label: 'Total tokens', value: formatCount(p.total) },
-        { label: 'Cost', value: formatCost(p.cost), color: COLORS.cost },
+        { label: 'Cost', value: formatCost(p.cost), color: colors.cost },
       ]}
     />
   );

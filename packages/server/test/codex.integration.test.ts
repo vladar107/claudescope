@@ -39,7 +39,13 @@ function writeRollout(): string {
       { type: 'turn_context', timestamp: ts(1), payload: { model: 'gpt-5.4', cwd: '/tmp/codexproj' } },
       // developer (system) message — must be dropped from the transcript.
       { type: 'response_item', timestamp: ts(1), payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'system instructions' }] } },
-      { type: 'response_item', timestamp: ts(2), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'find the needle in this codex haystack' }] } },
+      { type: 'response_item', timestamp: ts(2), payload: { type: 'message', role: 'user', content: [
+        // Codex stores a pasted image as an input_image (base64 data URL) plus a
+        // redundant `<image …>` placeholder text item that must be dropped.
+        { type: 'input_text', text: '<image name=[Image #1] path="/var/tmp/codex-clipboard-xyz.png">' },
+        { type: 'input_image', image_url: 'data:image/png;base64,iVBORw0KGgoAAAANS' },
+        { type: 'input_text', text: 'find the needle in this codex haystack' },
+      ] } },
       { type: 'response_item', timestamp: ts(3), payload: { type: 'reasoning', summary: [], content: null, encrypted_content: 'enc-abc' } },
       { type: 'response_item', timestamp: ts(4), payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"ls -la"}', call_id: 'call_1' } },
       { type: 'response_item', timestamp: ts(5), payload: { type: 'function_call_output', call_id: 'call_1', output: 'file.txt\n' } },
@@ -82,6 +88,8 @@ describe('Codex session indexing', () => {
     expect(sessions.map((s: { id: string }) => s.id)).toEqual(['codex-sess-1']);
     expect(sessions[0].models).toContain('gpt-5.4');
     expect(sessions[0].connectorId).toBe('codex');
+    // Codex has no ai-title, so the title falls back to the first user message.
+    expect(sessions[0].title).toBe('find the needle in this codex haystack');
   });
 
   it('tags the project with its agent and groups analytics by agent', async () => {
@@ -136,5 +144,16 @@ describe('Codex session detail', () => {
     const allText = JSON.stringify(detail.thread);
     expect(allText).not.toContain('system instructions');
     expect(allText).toContain('found it');
+
+    // The pasted image becomes a renderable image block (surfaced as an
+    // attachment), and its `<image …>` placeholder text is stripped.
+    const img = flat.find(
+      (b: Record<string, unknown>) =>
+        b.kind === 'attachment' &&
+        (b.attachment as { type?: string })?.type === 'image',
+    );
+    expect(img).toBeTruthy();
+    expect((img.attachment as { source: { url: string } }).source.url).toMatch(/^data:image\/png;base64,/);
+    expect(allText).not.toContain('codex-clipboard'); // placeholder path dropped
   });
 });

@@ -146,11 +146,24 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
         bool_or(is_sidechain) AS has_sidechain,
         list_distinct(list(model) FILTER (WHERE model IS NOT NULL)) AS model_list
       FROM events GROUP BY session_id
+    ),
+    first_user AS (
+      -- Title fallback: the first user turn's text, whitespace-collapsed and
+      -- clipped. Used when there's no explicit ai-title (e.g. all Codex
+      -- sessions, and Claude sessions that were never auto-titled).
+      SELECT session_id, snippet FROM (
+        SELECT
+          session_id,
+          trim(left(regexp_replace(text_content, '\\s+', ' ', 'g'), 80)) AS snippet,
+          row_number() OVER (PARTITION BY session_id ORDER BY ts ASC NULLS LAST) AS rn
+        FROM events
+        WHERE role = 'user' AND text_content IS NOT NULL AND length(trim(text_content)) > 0
+      ) WHERE rn = 1
     )
     SELECT
       a.session_id AS id,
       mc.cwd AS project_cwd,
-      COALESCE(t.title, '') AS title,
+      COALESCE(NULLIF(t.title, ''), NULLIF(fu.snippet, ''), '') AS title,
       a.started_at,
       a.ended_at,
       a.message_count,
@@ -170,6 +183,7 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
     FROM agg a
     LEFT JOIN modal_cwd mc ON mc.session_id = a.session_id
     LEFT JOIN titles t ON t.session_id = a.session_id
+    LEFT JOIN first_user fu ON fu.session_id = a.session_id
     LEFT JOIN pr_links p ON p.session_id = a.session_id
     LEFT JOIN file_size fs ON fs.session_id = a.session_id
     LEFT JOIN session_connector sc ON sc.session_id = a.session_id

@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 /**
- * Write a synthetic ~/.claude/projects-style dataset for screenshots/demos.
- * All names, paths, and content are fabricated — nothing sensitive. Point the
- * app at it with CLAUDE_PROJECTS_DIR.
+ * Write a synthetic multi-agent dataset for screenshots/demos: a Claude Code
+ * source (`~/.claude/projects`-shaped) and an OpenAI Codex source
+ * (`~/.codex/sessions`-shaped). All names, paths, and content are fabricated —
+ * nothing sensitive. Point the app at both:
  *
- *   node scripts/demo-seed.mjs [targetDir]   # default: ./.demo/projects
+ *   CLAUDE_PROJECTS_DIR=.demo/projects CODEX_SESSIONS_DIR=.demo/codex npm start
+ *
+ *   node scripts/demo-seed.mjs [claudeDir] [codexDir]
+ *     defaults: ./.demo/projects  and  ./.demo/codex
  */
 
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -13,7 +17,9 @@ import { fileURLToPath } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const outDir = process.argv[2] ?? join(root, '.demo', 'projects');
+const codexDir = process.argv[3] ?? join(root, '.demo', 'codex');
 rmSync(outDir, { recursive: true, force: true });
+rmSync(codexDir, { recursive: true, force: true });
 
 const jsonl = (events) => events.map((e) => JSON.stringify(e)).join('\n') + '\n';
 function write(rel, events) {
@@ -233,4 +239,89 @@ for (let d = 0; d < 20; d++) {
   }
 }
 
-console.log(`Demo data written to ${outDir} (${bn} bulk + 3 detailed sessions)`);
+// ── Codex sessions (separate source dir; pointed at by CODEX_SESSIONS_DIR) ──
+// Codex spreads a session across record types under YYYY/MM/DD/rollout-*.jsonl.
+// `acme-web` deliberately shares a cwd with the Claude project above so its card
+// shows BOTH agent tags and the agent filter; `infra-scripts` is Codex-only.
+function writeCodex(datePath, fileName, lines) {
+  const full = join(codexDir, datePath, fileName);
+  mkdirSync(dirname(full), { recursive: true });
+  writeFileSync(full, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+}
+const cx = (type, payload, ts) => ({ type, payload, timestamp: ts });
+const cxMeta = (id, cwd, branch, ts) =>
+  cx('session_meta', { id, cwd, cli_version: '0.122.0', model_provider: 'openai', git: { branch } }, ts);
+const cxModel = (model, cwd, ts) => cx('turn_context', { model, cwd }, ts);
+const cxUser = (text, ts) =>
+  cx('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text }] }, ts);
+const cxAsst = (text, ts) =>
+  cx('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }, ts);
+const cxReason = (ts) => cx('response_item', { type: 'reasoning', summary: [], content: null, encrypted_content: 'enc' }, ts);
+const cxCall = (name, args, callId, ts) =>
+  cx('response_item', { type: 'function_call', name, arguments: args, call_id: callId }, ts);
+const cxOut = (callId, output, ts) =>
+  cx('response_item', { type: 'function_call_output', call_id: callId, output }, ts);
+// token_count attributes to the currently-open assistant turn, so emit it after
+// the assistant's items and before the next user/tool-output flips the side.
+const cxTok = (input, cached, output, ts) =>
+  cx('event_msg', {
+    type: 'token_count',
+    info: {
+      last_token_usage: {
+        input_tokens: input,
+        cached_input_tokens: cached,
+        output_tokens: output,
+        reasoning_output_tokens: 0,
+        total_tokens: input + output,
+      },
+    },
+    rate_limits: {},
+  }, ts);
+
+// Codex session in the shared acme-web project (makes it multi-agent).
+writeCodex('2026/06/03', 'rollout-2026-06-03T11-20-00-019ec000-0000-7000-a000-000000000001.jsonl', [
+  cxMeta('codex-acme-tokens', '/home/dev/acme-web', 'feat/dark-mode', '2026-06-03T11:20:00.000Z'),
+  cxModel('gpt-5.5', '/home/dev/acme-web', '2026-06-03T11:20:01.000Z'),
+  cxUser('Port the theme colors to CSS custom properties and add a light palette.', '2026-06-03T11:20:02.000Z'),
+  cxAsst("I'll move the palette into :root and add a light override block.", '2026-06-03T11:20:06.000Z'),
+  cxReason('2026-06-03T11:20:07.000Z'),
+  cxTok(14000, 9000, 900, '2026-06-03T11:20:08.000Z'),
+  cxCall('shell', '{"command":"grep -rn \\"--tv-\\" src/styles"}', 'c1', '2026-06-03T11:20:09.000Z'),
+  cxOut('c1', 'src/styles/global.css:  --tv-bg: #0e1116;', '2026-06-03T11:20:12.000Z'),
+  cxAsst('Added a `:root[data-theme=light]` block mirroring the dark palette. The toggle now switches both.', '2026-06-03T11:20:18.000Z'),
+  cxTok(3000, 2400, 350, '2026-06-03T11:20:19.000Z'),
+]);
+
+writeCodex('2026/06/04', 'rollout-2026-06-04T09-05-00-019ec000-0000-7000-a000-000000000002.jsonl', [
+  cxMeta('codex-acme-lint', '/home/dev/acme-web', 'main', '2026-06-04T09:05:00.000Z'),
+  cxModel('gpt-5.4', '/home/dev/acme-web', '2026-06-04T09:05:01.000Z'),
+  cxUser('Fix the remaining ESLint errors in the components directory.', '2026-06-04T09:05:02.000Z'),
+  cxAsst('Most are unused imports and missing deps in effects. Fixing them now.', '2026-06-04T09:05:07.000Z'),
+  cxTok(6200, 4000, 520, '2026-06-04T09:05:08.000Z'),
+]);
+
+// Codex-only project.
+writeCodex('2026/06/05', 'rollout-2026-06-05T16-40-00-019ec000-0000-7000-a000-000000000003.jsonl', [
+  cxMeta('codex-infra-tf', '/home/dev/infra-scripts', 'main', '2026-06-05T16:40:00.000Z'),
+  cxModel('gpt-5.5', '/home/dev/infra-scripts', '2026-06-05T16:40:01.000Z'),
+  cxUser('Write a Terraform module for an S3 bucket with versioning and lifecycle rules.', '2026-06-05T16:40:02.000Z'),
+  cxAsst("Here's a module with versioning enabled and a 90-day transition to IA.", '2026-06-05T16:40:08.000Z'),
+  cxReason('2026-06-05T16:40:09.000Z'),
+  cxTok(9000, 5200, 1400, '2026-06-05T16:40:10.000Z'),
+  cxCall('apply_patch', '{"path":"modules/s3/main.tf"}', 'c2', '2026-06-05T16:40:11.000Z'),
+  cxOut('c2', 'modules/s3/main.tf created (42 lines)', '2026-06-05T16:40:14.000Z'),
+  cxAsst('Module written. Run `terraform plan` to review before applying.', '2026-06-05T16:40:20.000Z'),
+  cxTok(2600, 1800, 300, '2026-06-05T16:40:21.000Z'),
+]);
+
+writeCodex('2026/06/06', 'rollout-2026-06-06T13-12-00-019ec000-0000-7000-a000-000000000004.jsonl', [
+  cxMeta('codex-infra-ci', '/home/dev/infra-scripts', 'main', '2026-06-06T13:12:00.000Z'),
+  cxModel('gpt-5.4', '/home/dev/infra-scripts', '2026-06-06T13:12:01.000Z'),
+  cxUser('Add a GitHub Actions workflow that runs terraform fmt and validate on PRs.', '2026-06-06T13:12:02.000Z'),
+  cxAsst('Added `.github/workflows/terraform.yml` gating PRs on fmt + validate.', '2026-06-06T13:12:09.000Z'),
+  cxTok(4800, 3100, 610, '2026-06-06T13:12:10.000Z'),
+]);
+
+console.log(
+  `Demo data written:\n  Claude → ${outDir} (${bn} bulk + 3 detailed sessions)\n  Codex  → ${codexDir} (4 sessions; acme-web is multi-agent)`,
+);

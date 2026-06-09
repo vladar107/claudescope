@@ -66,11 +66,13 @@
   text-align: left;
   cursor: pointer;
   color: var(--tv-fg);
+  text-decoration: none;
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 .tv-project-card:hover {
   border-color: var(--tv-border-strong);
   background: var(--tv-bg-hover);
+  text-decoration: none;
 }
 .tv-project-card__name {
   font-size: var(--tv-fs-lg);
@@ -92,6 +94,41 @@
   font-size: var(--tv-fs-sm);
   margin-top: auto;
   padding-top: var(--tv-space-1);
+}
+
+/* Agent filter — shown inside a project that spans multiple agents. */
+.tv-agent-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tv-space-2);
+  margin-bottom: var(--tv-space-3);
+}
+.tv-agent-filter__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  background: var(--tv-bg-elevated);
+  border: 1px solid var(--tv-border);
+  color: var(--tv-fg-muted);
+  border-radius: var(--tv-radius);
+  padding: var(--tv-space-1) var(--tv-space-3);
+  font-size: var(--tv-fs-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.tv-agent-filter__btn:hover {
+  border-color: var(--tv-border-strong);
+  color: var(--tv-fg);
+}
+.tv-agent-filter__btn.is-active {
+  border-color: var(--tv-accent);
+  color: var(--tv-fg);
+  background: var(--tv-accent-muted);
+}
+.tv-agent-filter__count {
+  color: var(--tv-fg-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Session list */
@@ -188,4 +225,12 @@
   border-color: #10a37f66;
   background: #10a37f1a;
   color: #2cc4a0;
+}
+/* Light theme: keep the brand tints but darken the text so it stays legible on
+   a light surface. */
+:root[data-theme='light'] .tv-chip--agent.tv-agent--claude-code {
+  color: #bf4722;
+}
+:root[data-theme='light'] .tv-chip--agent.tv-agent--codex {
+  color: #0a7a5e;
 }

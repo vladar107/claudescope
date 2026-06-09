@@ -31,3 +31,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0004 | [connector seam](./0004-connector-seam.md) | done |
 | 0005 | [codex connector](./0005-codex-connector.md) | done |
 | 0006 | [multi-agent UX](./0006-multi-agent-ux.md) | done |
+| 0007 | [UI redesign: multi-agent, light/dark, responsive nav](./0007-ui-redesign-multi-agent.md) | done |

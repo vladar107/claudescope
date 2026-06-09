@@ -74,6 +74,7 @@ export interface ListSessionsParams {
   project?: string;
   sort?: SessionSort;
   q?: string;
+  agent?: string;
 }
 
 export interface SearchParams {
@@ -99,10 +100,15 @@ export const api = {
     return request<ProjectsResponse>('/projects', { signal });
   },
 
-  /** GET /api/sessions?project=&sort=&q= */
+  /** GET /api/sessions?project=&sort=&q=&agent= */
   listSessions(params: ListSessionsParams = {}, signal?: AbortSignal): Promise<SessionsResponse> {
     return request<SessionsResponse>(
-      `/sessions${qs({ project: params.project, sort: params.sort, q: params.q })}`,
+      `/sessions${qs({
+        project: params.project,
+        sort: params.sort,
+        q: params.q,
+        agent: params.agent,
+      })}`,
       { signal },
     );
   },

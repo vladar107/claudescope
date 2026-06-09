@@ -29,7 +29,14 @@ const LANGS = [
   'toml',
 ] as const;
 
-const THEME = 'github-dark';
+/** Resolved app theme → Shiki bundled theme name. */
+export type ResolvedTheme = 'light' | 'dark';
+const THEMES = ['github-dark', 'github-light'] as const;
+
+/** Map the app's resolved theme to the Shiki theme to render with. */
+export function shikiThemeFor(theme: ResolvedTheme): string {
+  return theme === 'light' ? 'github-light' : 'github-dark';
+}
 
 let highlighterPromise: Promise<Highlighter | null> | null = null;
 
@@ -38,7 +45,7 @@ export function getHighlighter(): Promise<Highlighter | null> {
   if (!highlighterPromise) {
     highlighterPromise = import('shiki')
       .then(({ createHighlighter }) =>
-        createHighlighter({ themes: [THEME], langs: [...LANGS] }),
+        createHighlighter({ themes: [...THEMES], langs: [...LANGS] }),
       )
       .catch(() => null);
   }
@@ -65,8 +72,6 @@ export function normalizeLang(lang: string | undefined): string {
   return (LANGS as readonly string[]).includes(resolved) ? resolved : 'text';
 }
 
-export { THEME as SHIKI_THEME };
-
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -76,12 +81,16 @@ function escapeHtml(s: string): string {
  * a caller (e.g. the diff view) can place each line in its own row. Resolves
  * null on failure; HTML is built from escaped token text + theme colors.
  */
-export async function highlightLines(code: string, lang: string | undefined): Promise<string[] | null> {
+export async function highlightLines(
+  code: string,
+  lang: string | undefined,
+  theme: ResolvedTheme = 'dark',
+): Promise<string[] | null> {
   const hl = await getHighlighter();
   if (!hl) return null;
   try {
     const resolved = normalizeLang(lang) as BundledLanguage | SpecialLanguage;
-    const { tokens } = hl.codeToTokens(code, { lang: resolved, theme: THEME });
+    const { tokens } = hl.codeToTokens(code, { lang: resolved, theme: shikiThemeFor(theme) });
     return tokens.map((line) =>
       line
         .map((t) => `<span style="color:${t.color ?? 'inherit'}">${escapeHtml(t.content)}</span>`)

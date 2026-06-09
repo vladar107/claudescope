@@ -48,13 +48,34 @@ const zeroUsage = (): CodexUsage => ({
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
-/** Concatenate the `text` of a Codex message's content items. */
-function messageText(content: unknown): string {
-  if (!Array.isArray(content)) return '';
-  return content
-    .map((c) => (c && typeof c === 'object' ? str((c as Record<string, unknown>).text) : ''))
-    .filter(Boolean)
-    .join('');
+/** Strip Codex's redundant `<image …>` / `</image>` placeholder tags. */
+function stripImagePlaceholders(text: string): string {
+  return text.replace(/<\/?image\b[^>]*>/gi, '').trim();
+}
+
+/**
+ * Build canonical content blocks from a Codex message's content items: text
+ * items become text blocks (with the redundant `<image …>` placeholder — which
+ * also embeds a local temp path — stripped), and `input_image`/`output_image`
+ * items become image blocks rendered from their `image_url` (usually a base64
+ * data URL, so self-contained). The existing frontend renders image blocks.
+ */
+function messageBlocks(content: unknown): ContentBlock[] {
+  if (!Array.isArray(content)) return [];
+  const out: ContentBlock[] = [];
+  for (const c of content) {
+    if (!c || typeof c !== 'object') continue;
+    const item = c as Record<string, unknown>;
+    const t = str(item.type);
+    if (t === 'input_image' || t === 'output_image') {
+      const url = str(item.image_url);
+      if (url) out.push({ type: 'image', source: { type: 'url', url } });
+    } else {
+      const text = stripImagePlaceholders(str(item.text));
+      if (text) out.push({ type: 'text', text });
+    }
+  }
+  return out;
 }
 
 /** Session id from the filename: `rollout-<ts>-<uuid>.jsonl`. */
@@ -165,14 +186,8 @@ export function parseRollout(path: string): CodexSession | null {
     if (kind === 'message') {
       const role = str(pl.role);
       if (role === 'developer') continue; // system prompt — not conversation
-      const text = messageText(pl.content);
-      if (role === 'assistant') {
-        open('assistant', ts);
-        if (text) blocks.push({ type: 'text', text });
-      } else {
-        open('user', ts);
-        if (text) blocks.push({ type: 'text', text });
-      }
+      open(role === 'assistant' ? 'assistant' : 'user', ts);
+      for (const b of messageBlocks(pl.content)) blocks.push(b);
     } else if (kind === 'reasoning') {
       open('assistant', ts);
       // Codex persists only encrypted reasoning (no plaintext) — mirror Claude's
