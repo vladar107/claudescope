@@ -30,7 +30,7 @@
           #   nix run nixpkgs#prefetch-npm-deps -- package-lock.json
           # A version-only bump does NOT change this. Placeholder = lib.fakeHash:
           # the first real `nix build` prints the correct value to paste in here.
-          npmDepsHash = lib.fakeHash;
+          npmDepsHash = "sha256-jQsMvQK4qVuZSL+yB9W0z1Dw9HUt9+Go0QxVwAY5FrU=";
 
           nodejs = node;
 
