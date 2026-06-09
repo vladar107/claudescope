@@ -41,7 +41,7 @@
           # `version` npm lifecycle script (scripts/refresh-flake-hash.mjs) when a
           # release is cut, so the tagged commit always matches. To recompute by
           # hand: `nix run nixpkgs#prefetch-npm-deps -- package-lock.json`.
-          npmDepsHash = "sha256-X7DMipMRbdQRaaj1FAazVs3rubmYrvm5RAysBavFL24=";
+          npmDepsHash = "sha256-fEHtLtiwGjqsiwSPVcZuLdbwJpU0TSa0CWfrGj24i8M=";
 
           nodejs = node;
 
