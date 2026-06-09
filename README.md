@@ -59,7 +59,7 @@ cache-read breakdown. Click a chart legend to toggle a series.
 
 ## Quick start
 
-**Prerequisite:** [Node.js](https://nodejs.org) **20 or newer** (`node -v`).
+**Prerequisite:** [Node.js](https://nodejs.org) **22 or newer** (`node -v`).
 
 ### Install (recommended)
 
@@ -269,7 +269,7 @@ shell, and self-update behavior — and how to report a vulnerability.
 - **App is empty / "sessions directory not found"** — `CLAUDE_PROJECTS_DIR`
   doesn't point at real transcripts. Check the banner and set it correctly.
 - **`Error: listen EADDRINUSE :4317`** — the port is taken; run `claudescope --port <n>`.
-- **Node version errors** — you need Node ≥ 20 (`node -v`).
+- **Node version errors** — you need Node ≥ 22 (`node -v`).
 - **Stale or wrong data** — delete `~/.claudescope/index.duckdb*` and
   `claudescope restart` to rebuild the index from scratch.
 - **`@duckdb/node-api` install issues** — it ships prebuilt native binaries;
