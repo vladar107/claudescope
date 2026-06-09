@@ -1,10 +1,11 @@
 # Claudescope — agent guide
 
 A local, **read-only**, **multi-agent** viewer to browse, read, search, and
-analyze AI coding-agent transcripts in one place — both
-[Claude Code](https://claude.com/claude-code) (`~/.claude/projects/**/*.jsonl`)
-and [OpenAI Codex](https://openai.com/codex)
-(`~/.codex/sessions/**/rollout-*.jsonl`). Sessions are merged by working
+analyze AI coding-agent transcripts in one place — [Claude Code](https://claude.com/claude-code) (`~/.claude/projects/**/*.jsonl`),
+[OpenAI Codex](https://openai.com/codex)
+(`~/.codex/sessions/**/rollout-*.jsonl`), and
+[JetBrains Junie](https://www.jetbrains.com/junie/)
+(`~/.junie/sessions/session-*/events.jsonl`). Sessions are merged by working
 directory into one project per `cwd`, each session tagged with its agent.
 Distributed as a single npm CLI (`@vladar107/claudescope`). This file is the
 source of truth for both humans and agents working in this repo; `AGENTS.md`
@@ -91,6 +92,11 @@ it. Publish metadata (keywords, repo, etc.) is sourced from the **root**
   Codex only encrypted reasoning), not the plaintext. Expected, not a bug.
 - **Codex sessions have no stored title** — the session title falls back to the
   first user message (see `first_user` in `data/index.ts`).
+- **Junie transcripts read differently** — Junie stores an event-sourced UI
+  stream (`events.jsonl`), not a chat log: no assistant prose and no thinking, so
+  a session renders as tool/terminal/file blocks plus a final result. Expected,
+  not a bug. Older Junie sessions also lack a recorded `cwd` (no `projectDir` in
+  `index.jsonl`) and group under the `(unknown — Junie)` project bucket.
 - **Cost is a local estimate** from token usage × `pricing.json` rates; not real
   billing. Computed once at index time and stored.
 - **Release is maintainer-only** and tag-triggered (npm Trusted Publishing /

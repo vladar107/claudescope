@@ -7,14 +7,27 @@
 
 *A scope for your AI coding-agent sessions.*
 
-A local, **read-only**, multi-agent viewer to browse, read, search, and analyze
-your AI coding-agent transcripts in one place — both
-[Claude Code](https://claude.com/claude-code) (`~/.claude/projects/**/*.jsonl`)
-and [OpenAI Codex](https://openai.com/codex) (`~/.codex/sessions/**/rollout-*.jsonl`).
+Claudescope is a **local, read-only** viewer that brings every AI coding-agent
+transcript on your machine into one place — to browse, read, search, and analyze.
 Sessions from every agent that worked in a directory are **merged under one
-project**, each tagged with the agent that produced it.
+project**, each tagged with the agent that produced it. It runs entirely on your
+machine and only ever reads your transcripts.
 
-- **Multi-agent** — Claude Code and Codex sessions side by side, each labeled with an **agent badge**. A project that several agents touched shows one card with all its agent tags; drill in and **filter the session list by agent**.
+## Supported agents
+
+| Agent | Transcripts read from |
+| ------------------------------------------------- | --------------------------------------------- |
+| [Claude Code](https://claude.com/claude-code)     | `~/.claude/projects/**/*.jsonl`               |
+| [OpenAI Codex](https://openai.com/codex)          | `~/.codex/sessions/**/rollout-*.jsonl`        |
+| [JetBrains Junie](https://www.jetbrains.com/junie/) | `~/.junie/sessions/session-*/events.jsonl`  |
+
+Each source is optional — a directory that doesn't exist is simply skipped, so
+Claudescope works whether you use one agent or all three. Adding another is just
+[adding another connector](#how-it-works).
+
+## What it can do
+
+- **Multi-agent** — Claude Code, Codex, and Junie sessions side by side, each labeled with an **agent badge**. A project that several agents touched shows one card with all its agent tags; drill in and **filter the session list by agent**.
 - **Browse** every session grouped by project — titles, dates, message/tool counts, token totals, cost, git branch, PR links.
 - **Read** a session as a clean threaded conversation: markdown, syntax-highlighted code, collapsible thinking, paired tool calls + results, **syntax-highlighted red/green diffs** for edits, attachments, and sidechain/subagent turns. A built-in **find-in-session** bar (⌘/Ctrl+F) searches the whole transcript — including collapsed thinking, tool, and subagent content — auto-expanding and highlighting matches, with a user/assistant filter.
 - **Review changes** via a **Files changed** tab that aggregates every edit/write in the session by file, with per-file diffs and +/− counts (diffs load lazily per file).
@@ -24,7 +37,7 @@ project**, each tagged with the agent that produced it.
 - **Light & dark themes** — follows your system appearance, with a manual toggle.
 
 > **Privacy:** Everything runs locally on `127.0.0.1`. The app **never** writes to
-> `~/.claude` or `~/.codex` — both are read-only sources. Its only persistent
+> `~/.claude`, `~/.codex`, or `~/.junie` — all are read-only sources. Its only persistent
 > state lives in `~/.claudescope/` — a DuckDB index and a copy of the pricing
 > file, both safe to delete anytime. The sole outbound request is an optional
 > daily check for a newer published version (`claudescope update`); nothing about
@@ -141,11 +154,12 @@ All optional — set via environment variables.
 | `PORT`                | `4317`                 | Port the app listens on (or `--port <n>`).                             |
 | `CLAUDE_PROJECTS_DIR` | `~/.claude/projects`   | Where to read Claude Code transcripts from. A leading `~` is expanded. |
 | `CODEX_SESSIONS_DIR`  | `~/.codex/sessions`    | Where to read OpenAI Codex transcripts from. A leading `~` is expanded.|
+| `JUNIE_SESSIONS_DIR`  | `~/.junie/sessions`    | Where to read JetBrains Junie transcripts from. A leading `~` is expanded.|
 | `CLAUDESCOPE_HOME`    | `~/.claudescope`       | Where the app keeps its own state (index, pricing copy, logs, PID).    |
 | `REINDEX_INTERVAL_MS` | `15000`                | How often to auto-pick-up new/updated sessions. Set `0` to disable.    |
 
 Each agent source is optional — if a directory doesn't exist it's simply skipped,
-so the app works whether you use one agent or both.
+so the app works whether you use one agent or all three.
 
 Examples:
 
@@ -153,6 +167,7 @@ Examples:
 claudescope --port 8080                                  # custom port
 CLAUDE_PROJECTS_DIR=/path/to/exported/projects claudescope  # view someone else's transcripts
 CODEX_SESSIONS_DIR=/path/to/codex/sessions claudescope   # point at Codex sessions elsewhere
+JUNIE_SESSIONS_DIR=/path/to/junie/sessions claudescope   # point at Junie sessions elsewhere
 claudescope --no-open                                    # don't pop a browser tab
 ```
 
@@ -231,6 +246,11 @@ served from cache (legitimately high for Claude Code, which re-reads cached cont
   explicitly. (Not a bug.)
 - **Codex sessions have no stored title**, so the title falls back to the first
   user message.
+- **Junie sessions render differently.** Junie records an event-sourced UI stream
+  rather than a chat log, so a session reads as tool / terminal / file blocks plus
+  a final result — there's no assistant prose or thinking to show. Pasted
+  screenshots are surfaced inline. Older Junie sessions don't record a working
+  directory and group under an **"(unknown — Junie)"** project.
 
 ---
 
@@ -250,10 +270,10 @@ session. The index is a derived cache — if it's ever corrupted (e.g. the proce
 is killed mid-write) the app discards and rebuilds it automatically.
 
 Each agent is a **connector** (`packages/server/src/connectors/`). Claude Code
-JSONL is projected per-row; Codex spreads a session across record types, so its
-connector normalizes a rollout to canonical NDJSON first — after that the
-indexing, search, cost, and threading paths are shared. Adding another agent is
-adding another connector.
+JSONL is projected per-row; Codex spreads a session across record types and Junie
+records an event-sourced UI stream, so those connectors normalize a session to
+canonical NDJSON first — after that the indexing, search, cost, and threading
+paths are shared. Adding another agent is adding another connector.
 
 ---
 
@@ -296,8 +316,8 @@ bundles, and publishes. Auth uses npm **Trusted Publishing** (OIDC) — no
 
 ## Security & privacy
 
-Claudescope runs entirely on your machine. It treats `~/.claude` and `~/.codex`
-as **read-only**, **binds to `127.0.0.1` only**, sends **no telemetry**, and its sole outbound
+Claudescope runs entirely on your machine. It treats `~/.claude`, `~/.codex`, and
+`~/.junie` as **read-only**, **binds to `127.0.0.1` only**, sends **no telemetry**, and its sole outbound
 request is a cached npm-registry version check for the update notice. See
 [`SECURITY.md`](./SECURITY.md) for the full breakdown of filesystem, network,
 shell, and self-update behavior — and how to report a vulnerability.
@@ -306,10 +326,10 @@ shell, and self-update behavior — and how to report a vulnerability.
 
 ## Troubleshooting
 
-- **App is empty / "sessions directory not found"** — `CLAUDE_PROJECTS_DIR`
-  (and/or `CODEX_SESSIONS_DIR`) doesn't point at real transcripts. Check the
-  banner and set it correctly. Either source can be absent; only the present one
-  is indexed.
+- **App is empty / "sessions directory not found"** — none of `CLAUDE_PROJECTS_DIR`,
+  `CODEX_SESSIONS_DIR`, or `JUNIE_SESSIONS_DIR` points at real transcripts. Check
+  the banner and set them correctly. Any source can be absent; only the present
+  ones are indexed.
 - **`Error: listen EADDRINUSE :4317`** — the port is taken; run `claudescope --port <n>`.
 - **Node version errors** — you need Node ≥ 22 (`node -v`).
 - **Stale or wrong data** — delete `~/.claudescope/index.duckdb*` and

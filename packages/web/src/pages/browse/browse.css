@@ -210,7 +210,8 @@
 
 /* Agent badge — recognizable brand hues per connector, with a faint tint so the
    color reads at a glance. Claude = Anthropic coral (#D97757); Codex = OpenAI
-   teal-green (#10A37F). */
+   teal-green (#10A37F); Junie = JetBrains green (#3FB950, a grassy green kept
+   distinct from Codex's blue-leaning teal). */
 .tv-chip--agent {
   font-weight: 600;
 }
@@ -226,6 +227,11 @@
   background: #10a37f1a;
   color: #2cc4a0;
 }
+.tv-chip--agent.tv-agent--junie {
+  border-color: #3fb95066;
+  background: #3fb9501a;
+  color: #56d964;
+}
 /* Light theme: keep the brand tints but darken the text so it stays legible on
    a light surface. */
 :root[data-theme='light'] .tv-chip--agent.tv-agent--claude-code {
@@ -233,4 +239,7 @@
 }
 :root[data-theme='light'] .tv-chip--agent.tv-agent--codex {
   color: #0a7a5e;
+}
+:root[data-theme='light'] .tv-chip--agent.tv-agent--junie {
+  color: #1a7f37;
 }
