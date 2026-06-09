@@ -1,10 +1,14 @@
 # Claudescope — agent guide
 
-A local, **read-only** web app to browse, read, search, and analyze
-[Claude Code](https://claude.com/claude-code) session transcripts
-(`~/.claude/projects/**/*.jsonl`). Distributed as a single npm CLI
-(`@vladar107/claudescope`). This file is the source of truth for both humans and
-agents working in this repo; `AGENTS.md` points here.
+A local, **read-only**, **multi-agent** viewer to browse, read, search, and
+analyze AI coding-agent transcripts in one place — both
+[Claude Code](https://claude.com/claude-code) (`~/.claude/projects/**/*.jsonl`)
+and [OpenAI Codex](https://openai.com/codex)
+(`~/.codex/sessions/**/rollout-*.jsonl`). Sessions are merged by working
+directory into one project per `cwd`, each session tagged with its agent.
+Distributed as a single npm CLI (`@vladar107/claudescope`). This file is the
+source of truth for both humans and agents working in this repo; `AGENTS.md`
+points here.
 
 ## Architecture
 
@@ -19,12 +23,16 @@ npm-workspaces monorepo (`packages/*`):
 - The server serves **both** the API and the built SPA on **one port** (`4317`).
 - DuckDB reads the JSONL natively (`read_ndjson`) for indexing, full-text search,
   and analytics. A TS parser assembles the threaded view for a single session.
+- **Agent connectors** (`packages/server/src/connectors/`) abstract each source.
+  Claude Code projects per-row; Codex spreads a session across record types, so
+  its connector normalizes a rollout to canonical NDJSON first (`codex/normalize.ts`).
+  Adding an agent = adding a connector; the index/FTS/cost paths stay shared.
 - The DuckDB index is a **derived cache** — fully rebuildable from the JSONL. If
   it's corrupt the app discards and rebuilds it.
 
 ## Runtime state — critical
 
-- **NEVER write to `~/.claude`.** It is the read-only data source.
+- **NEVER write to `~/.claude` or `~/.codex`.** They are read-only data sources.
 - All app-owned state lives in **`~/.claudescope/`** (override: `CLAUDESCOPE_HOME`):
   the DuckDB index, a user-editable `pricing.json` (seeded from a shipped
   default; `loadPricing` falls back to the default if the copy is missing), the
@@ -79,8 +87,10 @@ it. Publish metadata (keywords, repo, etc.) is sourced from the **root**
 
 ## Gotchas
 
-- **Thinking blocks render empty** — Claude Code stores only a signature, not the
-  reasoning text. Expected, not a bug.
+- **Thinking blocks render empty** — Claude Code stores only a signature (and
+  Codex only encrypted reasoning), not the plaintext. Expected, not a bug.
+- **Codex sessions have no stored title** — the session title falls back to the
+  first user message (see `first_user` in `data/index.ts`).
 - **Cost is a local estimate** from token usage × `pricing.json` rates; not real
   billing. Computed once at index time and stored.
 - **Release is maintainer-only** and tag-triggered (npm Trusted Publishing /

@@ -5,55 +5,78 @@
 [![node](https://img.shields.io/node/v/@vladar107/claudescope)](https://nodejs.org)
 [![license](https://img.shields.io/npm/l/@vladar107/claudescope)](./LICENSE)
 
-*A scope for your Claude Code sessions.*
+*A scope for your AI coding-agent sessions.*
 
-A local, **read-only** web app to browse, read, search, and analyze your
-[Claude Code](https://claude.com/claude-code) session transcripts
-(`~/.claude/projects/**/*.jsonl`).
+A local, **read-only**, multi-agent viewer to browse, read, search, and analyze
+your AI coding-agent transcripts in one place — both
+[Claude Code](https://claude.com/claude-code) (`~/.claude/projects/**/*.jsonl`)
+and [OpenAI Codex](https://openai.com/codex) (`~/.codex/sessions/**/rollout-*.jsonl`).
+Sessions from every agent that worked in a directory are **merged under one
+project**, each tagged with the agent that produced it.
 
+- **Multi-agent** — Claude Code and Codex sessions side by side, each labeled with an **agent badge**. A project that several agents touched shows one card with all its agent tags; drill in and **filter the session list by agent**.
 - **Browse** every session grouped by project — titles, dates, message/tool counts, token totals, cost, git branch, PR links.
-- **Read** a session as a clean threaded conversation: markdown, syntax-highlighted code, collapsible thinking, paired tool calls + results, **syntax-highlighted red/green diffs** for `Edit`/`MultiEdit`, attachments, and sidechain/subagent turns. A built-in **find-in-session** bar (⌘/Ctrl+F) searches the whole transcript — including collapsed thinking, tool, and subagent content — auto-expanding and highlighting matches, with a user/assistant filter.
-- **Review changes** via a **Files changed** tab that aggregates every `Edit`/`MultiEdit`/`Write` in the session by file, with per-file diffs and +/− counts (diffs load lazily per file).
+- **Read** a session as a clean threaded conversation: markdown, syntax-highlighted code, collapsible thinking, paired tool calls + results, **syntax-highlighted red/green diffs** for edits, attachments, and sidechain/subagent turns. A built-in **find-in-session** bar (⌘/Ctrl+F) searches the whole transcript — including collapsed thinking, tool, and subagent content — auto-expanding and highlighting matches, with a user/assistant filter.
+- **Review changes** via a **Files changed** tab that aggregates every edit/write in the session by file, with per-file diffs and +/− counts (diffs load lazily per file).
 - **Export / share** a session to Markdown — download or copy it, with an optional toggle to **redact** home-dir paths and likely secrets.
-- **Search** full-text across all sessions (DuckDB BM25), with highlighted snippets that deep-link to the exact message.
-- **Analyze** token usage and cost over time, by project, and by model — including cache-hit ratio.
+- **Search** full-text across all sessions, all agents (DuckDB BM25), with highlighted snippets that deep-link to the exact message.
+- **Analyze** token usage and cost over time, by project, by model, and **by agent** — including cache-hit ratio.
+- **Light & dark themes** — follows your system appearance, with a manual toggle.
 
 > **Privacy:** Everything runs locally on `127.0.0.1`. The app **never** writes to
-> `~/.claude`. Its only persistent state lives in `~/.claudescope/` — a DuckDB
-> index and a copy of the pricing file, both safe to delete anytime. The sole
-> outbound request is an optional daily check for a newer published version
-> (`claudescope update`); nothing about your transcripts ever leaves your machine.
+> `~/.claude` or `~/.codex` — both are read-only sources. Its only persistent
+> state lives in `~/.claudescope/` — a DuckDB index and a copy of the pricing
+> file, both safe to delete anytime. The sole outbound request is an optional
+> daily check for a newer published version (`claudescope update`); nothing about
+> your transcripts ever leaves your machine.
 
 ---
 
 ## Screenshots
 
 > The screenshots below use **synthetic demo data** — every project name, path,
-> and message is fabricated. Reproduce it locally with:
-> `node scripts/demo-seed.mjs && CLAUDE_PROJECTS_DIR=.demo/projects npm start`.
+> and message is fabricated (`acme-web` is a multi-agent project: Claude Code +
+> Codex). They render light or dark to match your system. Regenerate them with
+> **`npm run screenshots`** (seeds the demo data, boots the app, and captures
+> every view in both themes via Playwright).
 
-**Browse** — every project and its sessions at a glance: titles, dates, message &
-tool counts, token totals, cost, git branch, and PR links.
+**Browse** — every project and its sessions at a glance, each tagged with the
+agents that worked in it: titles, dates, message & tool counts, token totals,
+cost, git branch, and PR links.
 
-![Browse projects and sessions](docs/screenshots/browse.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark.png">
+  <img alt="Browse projects and sessions" src="docs/screenshots/browse-light.png">
+</picture>
 
 **Read** — a session as a clean threaded conversation: markdown, collapsible
-thinking, **syntax-highlighted red/green diffs** for `Edit`/`MultiEdit`, nested
-**subagent** runs, per-message token chips, and a **find-in-session** bar (⌘/Ctrl+F)
-that auto-expands and highlights matches. **Conversation / Files-changed** tabs and
-an **⤓ Export** (Markdown, optional redaction) sit in the header.
+thinking, **syntax-highlighted red/green diffs** for edits, nested **subagent**
+runs, per-message token chips, and a **find-in-session** bar (⌘/Ctrl+F) that
+auto-expands and highlights matches. The breadcrumb links back to the project's
+session list; **Conversation / Files-changed** tabs and an **⤓ Export** (Markdown,
+optional redaction) sit in the header.
 
-![Session reader: tabs, Export, the in-session finder, and a highlighted diff](docs/screenshots/session.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/session-dark.png">
+  <img alt="Session reader: breadcrumb, tabs, Export, the in-session finder, thinking, and a subagent run" src="docs/screenshots/session-light.png">
+</picture>
 
-**Search** — full-text across every session (DuckDB BM25) with highlighted
-snippets and user/assistant filters; each result deep-links to the exact message.
+**Search** — full-text across every session and agent (DuckDB BM25) with
+highlighted snippets and user/assistant filters; each result deep-links to the
+exact message.
 
-![Full-text search across sessions](docs/screenshots/search.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/search-dark.png">
+  <img alt="Full-text search across sessions" src="docs/screenshots/search-light.png">
+</picture>
 
-**Analyze** — token & cost analytics over time, by project, and by model, with a
-cache-read breakdown. Click a chart legend to toggle a series.
+**Analyze** — token & cost analytics over time, by project, by model, and **by
+agent**, with a cache-read breakdown. Click a chart legend to toggle a series.
 
-![Token and cost analytics dashboard](docs/screenshots/analytics.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/analytics-dark.png">
+  <img alt="Token and cost analytics dashboard" src="docs/screenshots/analytics-light.png">
+</picture>
 
 ---
 
@@ -116,19 +139,24 @@ All optional — set via environment variables.
 | Variable              | Default                | Description                                                            |
 | --------------------- | ---------------------- | ---------------------------------------------------------------------- |
 | `PORT`                | `4317`                 | Port the app listens on (or `--port <n>`).                             |
-| `CLAUDE_PROJECTS_DIR` | `~/.claude/projects`   | Where to read session transcripts from. A leading `~` is expanded.     |
+| `CLAUDE_PROJECTS_DIR` | `~/.claude/projects`   | Where to read Claude Code transcripts from. A leading `~` is expanded. |
+| `CODEX_SESSIONS_DIR`  | `~/.codex/sessions`    | Where to read OpenAI Codex transcripts from. A leading `~` is expanded.|
 | `CLAUDESCOPE_HOME`    | `~/.claudescope`       | Where the app keeps its own state (index, pricing copy, logs, PID).    |
 | `REINDEX_INTERVAL_MS` | `15000`                | How often to auto-pick-up new/updated sessions. Set `0` to disable.    |
+
+Each agent source is optional — if a directory doesn't exist it's simply skipped,
+so the app works whether you use one agent or both.
 
 Examples:
 
 ```bash
 claudescope --port 8080                                  # custom port
 CLAUDE_PROJECTS_DIR=/path/to/exported/projects claudescope  # view someone else's transcripts
+CODEX_SESSIONS_DIR=/path/to/codex/sessions claudescope   # point at Codex sessions elsewhere
 claudescope --no-open                                    # don't pop a browser tab
 ```
 
-The startup banner prints the resolved URL and the sessions directory in use, so
+The startup banner prints the resolved URL and the source directories in use, so
 you can always confirm what it's reading.
 
 ### Cost methodology
@@ -150,10 +178,10 @@ just a `SUM` over events; a project/session total is the sum of its events.
 Rates live in `~/.claudescope/pricing.json` (seeded on first run from the copy
 shipped with the package; when running from source, `packages/server/pricing.json`).
 A model id resolves in this order:
-exact `models` entry → **family** match (`opus` / `sonnet` / `haiku` substring) →
-`default`. The family step means version- or date-suffixed ids (e.g.
-`claude-haiku-4-5-20251001`) still price correctly. Shipped rates (USD per 1M tokens,
-from Anthropic's published API pricing):
+exact `models` entry → **family** match (`opus` / `sonnet` / `haiku` / `gpt`
+substring) → `default`. The family step means version- or date-suffixed ids (e.g.
+`claude-haiku-4-5-20251001`, or a Codex `gpt-5.x-codex` id) still price correctly.
+Shipped rates (USD per 1M tokens, from Anthropic and OpenAI published API pricing):
 
 | family / model      | input | output | cache write (5m) | cache read |
 | ------------------- | ----- | ------ | ---------------- | ---------- |
@@ -161,6 +189,9 @@ from Anthropic's published API pricing):
 | Opus 4.1 / 4        | $15   | $75    | $18.75           | $1.50      |
 | Sonnet 4.x          | $3    | $15    | $3.75            | $0.30      |
 | Haiku 4.5           | $1    | $5     | $1.25            | $0.10      |
+| GPT-5               | $0.63 | $5     | —                | $0.13      |
+| GPT-5.4             | $2.50 | $15    | —                | $0.50      |
+| GPT-5.5             | $5    | $30    | —                | $0.50      |
 | `<synthetic>`       | $0    | $0     | $0               | $0         |
 
 - Edit `~/.claudescope/pricing.json` to update prices or add models, then re-index
@@ -169,9 +200,9 @@ from Anthropic's published API pricing):
   published pricing page. There's no official pricing *API*, so this is a
   best-effort scrape (it validates what it parses and won't write garbage) —
   review the diff afterwards. Use `--dry-run` to preview without writing.
-- The `opus`/`sonnet`/`haiku` family rules use **current** pricing; the deprecated
-  Opus 4 / 4.1 ($15/$75) are pinned via exact `models` entries. Add an exact entry
-  to override any specific model.
+- The `opus`/`sonnet`/`haiku`/`gpt` family rules use **current** pricing; the
+  deprecated Opus 4 / 4.1 ($15/$75) and specific GPT-5 versions are pinned via
+  exact `models` entries. Add an exact entry to override any specific model.
 
 > **Caveat:** these are **list-price estimates** — they ignore any discounts,
 > service tier, or batch pricing, and the cache-write rate assumes the 5-minute
@@ -195,8 +226,11 @@ served from cache (legitimately high for Claude Code, which re-reads cached cont
   restart. In an open session, hit **⟳ Refresh** (or ⌘R / Ctrl+R) to pull the
   latest messages in place without losing your scroll position. Each scan is
   near-free when nothing changed; you can also force one with `POST /api/reindex`.
-- **Thinking blocks** appear empty because Claude Code stores only a signature,
-  not the reasoning text — the app notes this explicitly. (Not a bug.)
+- **Thinking blocks** appear empty because Claude Code stores only a signature
+  (and Codex only encrypted reasoning), not the plaintext — the app notes this
+  explicitly. (Not a bug.)
+- **Codex sessions have no stored title**, so the title falls back to the first
+  user message.
 
 ---
 
@@ -214,6 +248,12 @@ DuckDB reads the JSONL natively (`read_ndjson`) for indexing, full-text search,
 and analytics; a small TypeScript parser assembles the threaded view for a single
 session. The index is a derived cache — if it's ever corrupted (e.g. the process
 is killed mid-write) the app discards and rebuilds it automatically.
+
+Each agent is a **connector** (`packages/server/src/connectors/`). Claude Code
+JSONL is projected per-row; Codex spreads a session across record types, so its
+connector normalizes a rollout to canonical NDJSON first — after that the
+indexing, search, cost, and threading paths are shared. Adding another agent is
+adding another connector.
 
 ---
 
@@ -256,8 +296,8 @@ bundles, and publishes. Auth uses npm **Trusted Publishing** (OIDC) — no
 
 ## Security & privacy
 
-Claudescope runs entirely on your machine. It treats `~/.claude` as **read-only**,
-**binds to `127.0.0.1` only**, sends **no telemetry**, and its sole outbound
+Claudescope runs entirely on your machine. It treats `~/.claude` and `~/.codex`
+as **read-only**, **binds to `127.0.0.1` only**, sends **no telemetry**, and its sole outbound
 request is a cached npm-registry version check for the update notice. See
 [`SECURITY.md`](./SECURITY.md) for the full breakdown of filesystem, network,
 shell, and self-update behavior — and how to report a vulnerability.
@@ -267,7 +307,9 @@ shell, and self-update behavior — and how to report a vulnerability.
 ## Troubleshooting
 
 - **App is empty / "sessions directory not found"** — `CLAUDE_PROJECTS_DIR`
-  doesn't point at real transcripts. Check the banner and set it correctly.
+  (and/or `CODEX_SESSIONS_DIR`) doesn't point at real transcripts. Check the
+  banner and set it correctly. Either source can be absent; only the present one
+  is indexed.
 - **`Error: listen EADDRINUSE :4317`** — the port is taken; run `claudescope --port <n>`.
 - **Node version errors** — you need Node ≥ 22 (`node -v`).
 - **Stale or wrong data** — delete `~/.claudescope/index.duckdb*` and
