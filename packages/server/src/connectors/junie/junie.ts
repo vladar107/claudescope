@@ -78,7 +78,7 @@ function eventsProjectionSql(filePath: string): string {
       file_path, session_id, uuid, parent_uuid, role, type, ts, cwd, git_branch,
       model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
       service_tier, is_sidechain, tool_use_count, text_content
-    FROM read_ndjson(${path}, format='newline_delimited', maximum_object_size=268435456, columns={
+    FROM read_ndjson(${path}, format='newline_delimited', maximum_object_size=268435456, ignore_errors=true, columns={
       file_path:'VARCHAR', session_id:'VARCHAR', uuid:'VARCHAR', parent_uuid:'VARCHAR',
       role:'VARCHAR', type:'VARCHAR', ts:'TIMESTAMP', cwd:'VARCHAR', git_branch:'VARCHAR',
       model:'VARCHAR', input_tokens:'BIGINT', output_tokens:'BIGINT', cache_read_tokens:'BIGINT',
@@ -94,7 +94,7 @@ function auxProjections(filePath: string): AuxProjections {
   return {
     titles: `
       SELECT session_id, last(title) AS title
-      FROM read_ndjson(${path}, format='newline_delimited', maximum_object_size=268435456,
+      FROM read_ndjson(${path}, format='newline_delimited', maximum_object_size=268435456, ignore_errors=true,
         columns={session_id:'VARCHAR', title:'VARCHAR'})
       WHERE session_id IS NOT NULL AND title IS NOT NULL AND title <> ''
       GROUP BY session_id`,

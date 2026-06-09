@@ -72,13 +72,19 @@ function writeFixtures(): string[] {
   ]));
   writeFileSync(join(wfA, 'agent-wwww.meta.json'), JSON.stringify({ agentType: 'workflow-subagent' }));
 
-  // Second project / session.
+  // Second project / session — deliberately includes a MALFORMED line mid-file:
+  // a string with an invalid JSON backslash escape (`\p`, as in an un-doubled
+  // path or a `\p{…}` regex). DuckDB's strict reader rejects it at the `p`;
+  // `ignore_errors=true` must skip just that line and still index the surrounding
+  // valid events. Without the fix, the whole reindex throws and the suite fails.
   const sessB = join(projB, 'sessB.jsonl');
-  writeFileSync(sessB, jsonl([
-    { type: 'ai-title', sessionId: 'sessB', aiTitle: 'Session B' },
-    { type: 'user', sessionId: 'sessB', uuid: 'b-u1', parentUuid: null, cwd: '/tmp/projB', timestamp: '2026-01-02T09:00:00.000Z', isSidechain: false, message: { role: 'user', content: 'hello from project B' } },
-    { type: 'assistant', sessionId: 'sessB', uuid: 'b-a1', parentUuid: 'b-u1', cwd: '/tmp/projB', timestamp: '2026-01-02T09:00:05.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-7', content: [{ type: 'text', text: 'hi B' }], usage: { input_tokens: 200, output_tokens: 100 } } },
-  ]));
+  const sessBLines = [
+    JSON.stringify({ type: 'ai-title', sessionId: 'sessB', aiTitle: 'Session B' }),
+    JSON.stringify({ type: 'user', sessionId: 'sessB', uuid: 'b-u1', parentUuid: null, cwd: '/tmp/projB', timestamp: '2026-01-02T09:00:00.000Z', isSidechain: false, message: { role: 'user', content: 'hello from project B' } }),
+    '{"type":"assistant","sessionId":"sessB","message":{"role":"assistant","content":"C:\\path\\to"}}',
+    JSON.stringify({ type: 'assistant', sessionId: 'sessB', uuid: 'b-a1', parentUuid: 'b-u1', cwd: '/tmp/projB', timestamp: '2026-01-02T09:00:05.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-7', content: [{ type: 'text', text: 'hi B' }], usage: { input_tokens: 200, output_tokens: 100 } } }),
+  ];
+  writeFileSync(sessB, sessBLines.join('\n') + '\n');
 
   return [sessA, agentA, join(subA, 'agent-aaaa.meta.json'), agentW, join(wfA, 'agent-wwww.meta.json'), sessB];
 }
@@ -145,6 +151,16 @@ describe('GET /api/sessions', () => {
   it('filters by project id', async () => {
     const sessions = (await get(`/api/sessions?project=${projBId}`)).json();
     expect(sessions.map((s: { id: string }) => s.id)).toEqual(['sessB']);
+  });
+
+  // Regression: sessB's transcript contains a malformed JSON line (invalid `\p`
+  // escape). The indexer must skip just that line, not abort the whole reindex.
+  it('indexes a session despite a malformed line in its transcript', async () => {
+    const detail = (await get('/api/sessions/sessB')).json();
+    expect(detail.meta.id).toBe('sessB');
+    // The two valid turns around the corrupt line are present; the bad line is
+    // dropped (not surfaced as a phantom turn).
+    expect(detail.thread.map((t: { role: string }) => t.role)).toEqual(['user', 'assistant']);
   });
 });
 
