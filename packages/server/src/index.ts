@@ -64,7 +64,10 @@ async function main(): Promise<void> {
             );
           }
         })
-        .catch((err) => app.log.error({ err }, 'auto-reindex failed'));
+        // A background poll failing is non-fatal — the server keeps serving the
+        // existing index — so warn rather than error (avoids error-level spam
+        // every interval when, e.g., a single file is briefly unreadable).
+        .catch((err) => app.log.warn({ err }, 'auto-reindex failed'));
     }, REINDEX_INTERVAL_MS);
     timer.unref(); // don't keep the process alive solely for the timer
     app.addHook('onClose', async () => clearInterval(timer));
