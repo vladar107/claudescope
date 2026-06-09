@@ -13,10 +13,10 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { RawEvent } from '@claudescope/shared';
-import { CLAUDE_PROJECTS_DIR } from '../config.js';
-import { sqlString } from '../db/duckdb.js';
-import type { SessionData, SubagentSource } from '../data/session-loader.js';
-import type { AgentConnector, AuxProjections, DiscoveredFile } from './types.js';
+import { CLAUDE_PROJECTS_DIR } from '../../config.js';
+import { sqlString } from '../../db/duckdb.js';
+import type { SessionData, SubagentSource } from '../../data/session-loader.js';
+import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
 
 /**
  * Shared `read_ndjson` options for the line-delimited Claude transcripts.

@@ -4,7 +4,7 @@
  */
 
 import type { AgentConnector } from './types.js';
-import { claudeCodeConnector } from './claude-code.js';
+import { claudeCodeConnector } from './claude-code/claude-code.js';
 import { codexConnector } from './codex/codex.js';
 import { junieConnector } from './junie/junie.js';
 
