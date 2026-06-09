@@ -15,6 +15,16 @@
         inherit (pkgs) lib;
         node = pkgs.nodejs_22;
 
+        # The DuckDB binding for THIS platform — the only one we ship. The npm
+        # dep closure fetches every platform's binary (incl. a musl Linux variant
+        # autoPatchelf can't satisfy on glibc nixpkgs), so we copy just this one.
+        # nixpkgs is glibc by default, so we never want the *-musl bindings.
+        duckdbBinding =
+          if pkgs.stdenv.isDarwin then
+            (if pkgs.stdenv.isAarch64 then "darwin-arm64" else "darwin-x64")
+          else
+            (if pkgs.stdenv.isAarch64 then "linux-arm64" else "linux-x64");
+
         claudescope = pkgs.buildNpmPackage {
           pname = "claudescope";
           # Single source of truth: the version comes from the root package.json,
@@ -53,11 +63,15 @@
             mkdir -p $out/lib/claudescope
             cp -R dist/. $out/lib/claudescope/
 
-            # The bundle keeps @duckdb/node-api external, so its package (and the
-            # host-platform @duckdb/node-bindings-* binary) must sit beside cli.js
-            # at runtime. autoPatchelfHook then fixes the .node on Linux.
+            # The bundle keeps @duckdb/node-api external, so it (the dispatcher
+            # @duckdb/node-bindings, and this platform's prebuilt binary) must sit
+            # beside cli.js at runtime. Copy ONLY the matching binding — shipping
+            # other platforms' binaries is dead weight, and the musl Linux one
+            # would fail autoPatchelfHook below. autoPatchelf then fixes the .node.
             mkdir -p $out/lib/claudescope/node_modules/@duckdb
-            cp -R node_modules/@duckdb/. $out/lib/claudescope/node_modules/@duckdb/
+            cp -R node_modules/@duckdb/node-api $out/lib/claudescope/node_modules/@duckdb/
+            cp -R node_modules/@duckdb/node-bindings $out/lib/claudescope/node_modules/@duckdb/
+            cp -R node_modules/@duckdb/node-bindings-${duckdbBinding} $out/lib/claudescope/node_modules/@duckdb/
 
             # Wrap the CLI with the pinned Node and put coreutils on PATH (the
             # `logs -f` command shells out to `tail`).
