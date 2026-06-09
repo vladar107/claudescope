@@ -19,7 +19,7 @@
 
 // Bump when a persisted table shape changes. On a version mismatch the index
 // (a derived cache) is discarded and rebuilt from source — see db/duckdb.ts.
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -76,7 +76,8 @@ export const SCHEMA_DDL: readonly string[] = [
      git_branch    VARCHAR,
      pr_url        VARCHAR,
      size_bytes    BIGINT DEFAULT 0,
-     has_sidechain BOOLEAN DEFAULT FALSE
+     has_sidechain BOOLEAN DEFAULT FALSE,
+     connector_id  VARCHAR
    )`,
 
   `CREATE TABLE IF NOT EXISTS pr_links (

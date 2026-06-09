@@ -137,7 +137,7 @@ describe('GET /api/sessions', () => {
     const sessions = (await get('/api/sessions')).json();
     expect(sessions.map((s: { id: string }) => s.id).sort()).toEqual(['sessA', 'sessB']);
     const a = sessions.find((s: { id: string }) => s.id === 'sessA');
-    expect(a).toMatchObject({ title: 'Session A', hasSidechain: true, prUrl: 'https://example/pr/7' });
+    expect(a).toMatchObject({ title: 'Session A', hasSidechain: true, prUrl: 'https://example/pr/7', connectorId: 'claude-code' });
   });
 
   it('filters by project id', async () => {

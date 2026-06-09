@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react';
 import { NavLink, Route, Routes } from 'react-router-dom';
+import type { SourceInfo } from '@claudescope/shared';
+import { api } from './api/client.js';
 import { BrowsePage } from './pages/browse/BrowsePage.js';
 import { SessionPage } from './pages/session/SessionPage.js';
 import { SearchPage } from './pages/search/SearchPage.js';
@@ -20,6 +23,19 @@ const NAV_ITEMS: NavItem[] = [
 
 /** Left navigation sidebar. */
 function Sidebar() {
+  const [sources, setSources] = useState<SourceInfo[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    api
+      .sources(controller.signal)
+      .then(setSources)
+      .catch(() => {
+        /* footer is best-effort */
+      });
+    return () => controller.abort();
+  }, []);
+
+  const paths = sources.map((s) => s.path).join(' · ');
   return (
     <nav className="tv-nav">
       <NavLink to="/" className="tv-nav__brand" end>
@@ -37,7 +53,9 @@ function Sidebar() {
         </NavLink>
       ))}
       <div className="tv-nav__spacer" />
-      <div className="tv-nav__footer">Read-only · ~/.claude/projects</div>
+      <div className="tv-nav__footer" title={paths}>
+        Read-only{paths ? ` · ${paths}` : ''}
+      </div>
     </nav>
   );
 }

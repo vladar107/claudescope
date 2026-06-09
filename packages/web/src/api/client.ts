@@ -15,6 +15,7 @@ import type {
   SessionDetailResponse,
   SessionSort,
   SessionsResponse,
+  SourcesResponse,
 } from '@claudescope/shared';
 
 /** Thrown when an `/api/*` response is not 2xx. Carries the HTTP status. */
@@ -125,6 +126,11 @@ export const api = {
       `/analytics${qs({ groupBy: params.groupBy, from: params.from, to: params.to })}`,
       { signal },
     );
+  },
+
+  /** GET /api/sources */
+  sources(signal?: AbortSignal): Promise<SourcesResponse> {
+    return request<SourcesResponse>('/sources', { signal });
   },
 
   /** POST /api/reindex */

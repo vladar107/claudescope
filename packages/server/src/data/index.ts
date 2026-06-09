@@ -120,6 +120,10 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
       SELECT session_id, sum(size_bytes) AS size_bytes
       FROM files WHERE session_id IS NOT NULL GROUP BY session_id
     ),
+    session_connector AS (
+      SELECT session_id, any_value(connector_id) AS connector_id
+      FROM files WHERE session_id IS NOT NULL GROUP BY session_id
+    ),
     modal_cwd AS (
       SELECT session_id, cwd FROM (
         SELECT session_id, cwd,
@@ -161,12 +165,14 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
       NULL AS git_branch,
       p.pr_url,
       COALESCE(fs.size_bytes, 0) AS size_bytes,
-      a.has_sidechain
+      a.has_sidechain,
+      sc.connector_id
     FROM agg a
     LEFT JOIN modal_cwd mc ON mc.session_id = a.session_id
     LEFT JOIN titles t ON t.session_id = a.session_id
     LEFT JOIN pr_links p ON p.session_id = a.session_id
     LEFT JOIN file_size fs ON fs.session_id = a.session_id
+    LEFT JOIN session_connector sc ON sc.session_id = a.session_id
   `);
 
   // git_branch: most recent non-null branch seen for the session.

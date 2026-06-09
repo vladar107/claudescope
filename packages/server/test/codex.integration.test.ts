@@ -77,10 +77,24 @@ afterAll(async () => {
 const get = (url: string) => app.inject({ method: 'GET', url });
 
 describe('Codex session indexing', () => {
-  it('lists the Codex session with model from turn_context', async () => {
+  it('lists the Codex session with model from turn_context and a codex agent tag', async () => {
     const sessions = (await get('/api/sessions')).json();
     expect(sessions.map((s: { id: string }) => s.id)).toEqual(['codex-sess-1']);
     expect(sessions[0].models).toContain('gpt-5.4');
+    expect(sessions[0].connectorId).toBe('codex');
+  });
+
+  it('tags the project with its agent and groups analytics by agent', async () => {
+    const projects = (await get('/api/projects')).json();
+    expect(projects[0].connectorIds).toContain('codex');
+
+    const { rows } = (await get('/api/analytics?groupBy=agent')).json();
+    expect(rows.map((r: { key: string }) => r.key)).toContain('codex');
+  });
+
+  it('exposes the codex source directory via /api/sources', async () => {
+    const sources = (await get('/api/sources')).json();
+    expect(sources.some((s: { id: string }) => s.id === 'codex')).toBe(true);
   });
 
   it('attributes token_count usage and computes a gpt-5.4 cost', async () => {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ProjectMeta } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
+import { AgentBadge, CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
 import { timeAgo } from './format.js';
 import { SessionList } from './SessionList.js';
 import './browse.css';
@@ -134,6 +134,9 @@ function ProjectCard({ project, onOpen }: { project: ProjectMeta; onOpen: () => 
       <div className="tv-project-card__name">{project.displayName}</div>
       <div className="tv-project-card__cwd tv-muted tv-mono">{project.cwd}</div>
       <div className="tv-project-card__stats">
+        {project.connectorIds.map((id) => (
+          <AgentBadge key={id} connectorId={id} />
+        ))}
         <span className="tv-chip">
           <span className="tv-chip__label">sessions</span>
           <span className="tv-chip__value">{project.sessionCount}</span>

@@ -22,6 +22,8 @@ export interface ProjectMeta {
   totalCostUsd: number;
   /** ISO timestamp of the most recent activity. */
   lastActive: string;
+  /** Distinct agent connector ids whose sessions live under this cwd. */
+  connectorIds: string[];
 }
 
 /** Aggregated metadata for a single session. */
@@ -41,6 +43,8 @@ export interface SessionMeta {
   sizeBytes: number;
   /** True when a sidechain/subagent subdirectory accompanies the session. */
   hasSidechain: boolean;
+  /** Agent that produced this session, e.g. `claude-code` or `codex`. */
+  connectorId: string;
 }
 
 /** A single full-text search hit. */
@@ -102,7 +106,7 @@ export interface SearchQuery {
   type?: SearchType;
 }
 
-export type AnalyticsGroupBy = 'project' | 'model' | 'day';
+export type AnalyticsGroupBy = 'project' | 'model' | 'day' | 'agent';
 
 export interface AnalyticsQuery {
   groupBy: AnalyticsGroupBy;
@@ -133,6 +137,19 @@ export interface SessionDetailResponse {
 
 /** GET /api/search */
 export type SearchResponse = SearchResult[];
+
+/** One read-only source directory backing an agent connector. */
+export interface SourceInfo {
+  /** Connector id, e.g. `claude-code` or `codex`. */
+  id: string;
+  /** Human-friendly agent label. */
+  label: string;
+  /** Source directory, with the home dir contracted to `~`. */
+  path: string;
+}
+
+/** GET /api/sources */
+export type SourcesResponse = SourceInfo[];
 
 /** GET /api/analytics */
 export interface AnalyticsResponse {

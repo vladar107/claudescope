@@ -170,3 +170,16 @@
   text-decoration: none;
   background: var(--tv-accent-muted);
 }
+
+/* Agent badge — recognizable brand-ish hues per connector. */
+.tv-chip--agent {
+  font-weight: 600;
+}
+.tv-agent--claude-code {
+  border-color: #d9775766;
+  color: #e8896b;
+}
+.tv-agent--codex {
+  border-color: #10a37f66;
+  color: #1abc9c;
+}

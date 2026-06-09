@@ -29,6 +29,11 @@ function groupSource(groupBy: AnalyticsGroupBy): { keyExpr: string; fromSql: str
       return { keyExpr: "COALESCE(e.model, 'unknown')", fromSql: 'FROM events e' };
     case 'day':
       return { keyExpr: "strftime(e.ts, '%Y-%m-%d')", fromSql: 'FROM events e' };
+    case 'agent':
+      return {
+        keyExpr: "COALESCE(s.connector_id, 'unknown')",
+        fromSql: 'FROM events e JOIN sessions s ON e.session_id = s.id',
+      };
     case 'project':
     default:
       return {

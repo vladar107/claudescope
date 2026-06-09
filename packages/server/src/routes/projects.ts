@@ -21,7 +21,8 @@ export async function registerProjectsRoute(app: FastifyInstance): Promise<void>
          count(*) AS session_count,
          sum(total_tokens) AS total_tokens,
          sum(total_cost_usd) AS total_cost_usd,
-         max(ended_at) AS last_active
+         max(ended_at) AS last_active,
+         array_to_string(list_distinct(list(connector_id) FILTER (WHERE connector_id IS NOT NULL)), ',') AS connector_ids
        FROM sessions
        WHERE project_cwd IS NOT NULL
        GROUP BY project_cwd
@@ -30,6 +31,8 @@ export async function registerProjectsRoute(app: FastifyInstance): Promise<void>
 
     return rows.map((r): ProjectMeta => {
       const cwd = String(r.cwd);
+      const connectorIdsStr = r.connector_ids != null ? String(r.connector_ids) : '';
+      const connectorIds = connectorIdsStr ? connectorIdsStr.split(',').filter(Boolean) : [];
       return {
         id: projectIdFromCwd(cwd),
         cwd,
@@ -38,6 +41,7 @@ export async function registerProjectsRoute(app: FastifyInstance): Promise<void>
         totalTokens: Number(r.total_tokens ?? 0),
         totalCostUsd: Number(r.total_cost_usd ?? 0),
         lastActive: toIso(r.last_active),
+        connectorIds,
       };
     });
   });

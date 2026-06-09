@@ -25,6 +25,7 @@ import './analytics.css';
 
 const GROUP_OPTIONS: { value: AnalyticsGroupBy; label: string }[] = [
   { value: 'project', label: 'By project' },
+  { value: 'agent', label: 'By agent' },
   { value: 'model', label: 'By model' },
   { value: 'day', label: 'By day' },
 ];
@@ -42,6 +43,8 @@ export function AnalyticsPage() {
   const [groupBy, setGroupBy] = useState<AnalyticsGroupBy>('project');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  // Cache tokens dwarf input/output and clutter the charts — hidden by default.
+  const [showCache, setShowCache] = useState(false);
 
   // The breakdown query follows the active group-by toggle.
   const [breakdown, setBreakdown] = useState<QueryState>(INITIAL);
@@ -150,13 +153,22 @@ export function AnalyticsPage() {
             Clear dates
           </button>
         )}
+
+        <label className="tv-analytics__toggle">
+          <input
+            type="checkbox"
+            checked={showCache}
+            onChange={(e) => setShowCache(e.target.checked)}
+          />
+          Show cache
+        </label>
       </div>
 
       {error ? (
         <ErrorBox error={error} title="Failed to load analytics" onRetry={load} />
       ) : (
         <>
-          <SummaryCards totals={totals} loading={totalsLoading} />
+          <SummaryCards totals={totals} loading={totalsLoading} showCache={showCache} />
 
           <div className="tv-analytics__charts">
             <ChartCard
@@ -165,7 +177,7 @@ export function AnalyticsPage() {
               loading={series.loading}
               empty={!series.data || series.data.rows.length === 0}
             >
-              {series.data && <TimeSeriesChart rows={series.data.rows} />}
+              {series.data && <TimeSeriesChart rows={series.data.rows} showCache={showCache} />}
             </ChartCard>
 
             <ChartCard
@@ -174,7 +186,9 @@ export function AnalyticsPage() {
               loading={breakdown.loading}
               empty={!breakdown.data || breakdown.data.rows.length === 0}
             >
-              {breakdown.data && <BreakdownChart rows={breakdown.data.rows} groupBy={groupBy} />}
+              {breakdown.data && (
+                <BreakdownChart rows={breakdown.data.rows} groupBy={groupBy} showCache={showCache} />
+              )}
             </ChartCard>
           </div>
         </>
@@ -184,14 +198,28 @@ export function AnalyticsPage() {
 }
 
 function groupByNoun(g: AnalyticsGroupBy): string {
-  return g === 'project' ? 'by project' : g === 'model' ? 'by model' : 'by day';
+  return g === 'project'
+    ? 'by project'
+    : g === 'agent'
+      ? 'by agent'
+      : g === 'model'
+        ? 'by model'
+        : 'by day';
 }
 
 // ---------------------------------------------------------------------------
 // Summary cards
 // ---------------------------------------------------------------------------
 
-function SummaryCards({ totals, loading }: { totals: AnalyticsTotals | null; loading: boolean }) {
+function SummaryCards({
+  totals,
+  loading,
+  showCache,
+}: {
+  totals: AnalyticsTotals | null;
+  loading: boolean;
+  showCache: boolean;
+}) {
   if (loading) {
     return (
       <div className="tv-card" style={{ marginBottom: 'var(--tv-space-5)' }}>
@@ -214,11 +242,13 @@ function SummaryCards({ totals, loading }: { totals: AnalyticsTotals | null; loa
         value={formatCount(totals.messageCount)}
         sub="usage-bearing events"
       />
-      <StatCard
-        label="Input from cache"
-        value={formatPct(totals.cacheHitRatio)}
-        sub={`${formatCount(totals.cacheReadTokens)} read · ${formatCount(totals.cacheCreationTokens)} written`}
-      />
+      {showCache && (
+        <StatCard
+          label="Input from cache"
+          value={formatPct(totals.cacheHitRatio)}
+          sub={`${formatCount(totals.cacheReadTokens)} read · ${formatCount(totals.cacheCreationTokens)} written`}
+        />
+      )}
     </div>
   );
 }

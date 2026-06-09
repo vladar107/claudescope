@@ -64,6 +64,12 @@ export interface AgentConnector {
   /** Stable id, e.g. `'claude-code'`. */
   id: string;
 
+  /** Human-friendly agent name, e.g. `'Claude Code'`. */
+  label: string;
+
+  /** Read-only source directory this connector reads from. */
+  sourceDir: string;
+
   /** Locate every transcript file this agent owns, with mtime/size for change detection. */
   discover(): DiscoveredFile[];
 

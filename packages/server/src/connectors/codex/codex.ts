@@ -90,6 +90,8 @@ async function loadSession(_sessionId: string, paths: string[]): Promise<Session
 
 export const codexConnector: AgentConnector = {
   id: 'codex',
+  label: 'Codex',
+  sourceDir: CODEX_SESSIONS_DIR,
   discover,
   prepare,
   eventsProjectionSql,
