@@ -47,8 +47,14 @@ jobs:
 
   # Build the Nix flake so a broken flake or a stale npmDepsHash is caught on PRs,
   # not first at release time. (Needs npmDepsHash filled in — see CONTRIBUTING.)
+  # Matrix covers the platforms users install on: Linux x64, macOS arm64 (macos-14)
+  # and Intel (macos-13). npmDepsHash is OS-independent, so all three share it.
   nix:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, macos-13]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
