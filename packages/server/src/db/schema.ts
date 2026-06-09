@@ -17,17 +17,23 @@
  *  - titles:   ai-title events keyed by sessionId (latest wins).
  */
 
-export const SCHEMA_VERSION = 2;
+// Bump when a persisted table shape changes. On a version mismatch the index
+// (a derived cache) is discarded and rebuilt from source — see db/duckdb.ts.
+export const SCHEMA_VERSION = 3;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
+  // Single-row table holding the schema version this DB was created with.
+  `CREATE TABLE IF NOT EXISTS meta (schema_version INTEGER)`,
+
   `CREATE TABLE IF NOT EXISTS files (
-     path        VARCHAR PRIMARY KEY,
-     mtime_ms    BIGINT  NOT NULL,
-     size_bytes  BIGINT  NOT NULL,
-     session_id  VARCHAR,
-     project_cwd VARCHAR,
-     indexed_at  TIMESTAMP DEFAULT now()
+     path         VARCHAR PRIMARY KEY,
+     mtime_ms     BIGINT  NOT NULL,
+     size_bytes   BIGINT  NOT NULL,
+     session_id   VARCHAR,
+     project_cwd  VARCHAR,
+     connector_id VARCHAR,
+     indexed_at   TIMESTAMP DEFAULT now()
    )`,
 
   `CREATE TABLE IF NOT EXISTS events (

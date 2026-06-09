@@ -78,6 +78,8 @@ async function loadFile(
   costExpr: string,
 ): Promise<void> {
   const path = sqlString(file.path);
+  // Formats that can't be projected per-row normalize to a canonical NDJSON first.
+  await connector.prepare?.(file.path);
   await conn.run(`DELETE FROM events WHERE file_path = ${path}`);
 
   await conn.run(`
@@ -260,10 +262,10 @@ async function doReindex(): Promise<ReindexResponse> {
     const cwd = cwdRows.length > 0 ? String(cwdRows[0]?.cwd ?? '') : null;
 
     await conn.run(`
-      INSERT OR REPLACE INTO files (path, mtime_ms, size_bytes, session_id, project_cwd, indexed_at)
+      INSERT OR REPLACE INTO files (path, mtime_ms, size_bytes, session_id, project_cwd, connector_id, indexed_at)
       VALUES (${sqlString(file.path)}, ${file.mtimeMs}, ${file.size},
               ${sessionId ? sqlString(sessionId) : 'NULL'},
-              ${cwd ? sqlString(cwd) : 'NULL'}, now())
+              ${cwd ? sqlString(cwd) : 'NULL'}, ${sqlString(connector.id)}, now())
     `);
     reindexed += 1;
   }

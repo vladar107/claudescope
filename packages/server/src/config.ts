@@ -36,6 +36,15 @@ export const CLAUDE_PROJECTS_DIR = expandHome(
   process.env.CLAUDE_PROJECTS_DIR ?? join(homedir(), '.claude', 'projects'),
 );
 
+/**
+ * READ-ONLY source of OpenAI Codex CLI sessions. The app MUST NEVER write here.
+ * Defaults to `~/.codex/sessions` (`rollout-*.jsonl` under `YYYY/MM/DD/`).
+ * Override with CODEX_SESSIONS_DIR. A leading `~` is expanded.
+ */
+export const CODEX_SESSIONS_DIR = expandHome(
+  process.env.CODEX_SESSIONS_DIR ?? join(homedir(), '.codex', 'sessions'),
+);
+
 /** Whether to auto-open the default browser on startup (set by the launcher). */
 export const OPEN_BROWSER = process.env.OPEN_BROWSER === '1';
 

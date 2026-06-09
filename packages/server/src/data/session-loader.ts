@@ -11,7 +11,7 @@
 
 import type { RawEvent } from '@claudescope/shared';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
-import { connectorForSession } from '../connectors/registry.js';
+import { connectorById } from '../connectors/registry.js';
 
 /** One subagent transcript: its metadata plus its raw events. */
 export interface SubagentSource {
@@ -42,10 +42,11 @@ export async function loadSessionData(sessionId: string): Promise<SessionData> {
   const conn = await getConnection();
   const rows = await queryRows(
     conn,
-    `SELECT path FROM files WHERE session_id = ${sqlString(sessionId)}`,
+    `SELECT path, connector_id FROM files WHERE session_id = ${sqlString(sessionId)}`,
   );
   const paths = rows.map((r) => String(r.path));
   if (paths.length === 0) return { mainEvents: [], subagents: [] };
 
-  return connectorForSession(sessionId).loadSession(sessionId, paths);
+  const connectorId = rows[0]?.connector_id != null ? String(rows[0].connector_id) : null;
+  return connectorById(connectorId).loadSession(sessionId, paths);
 }

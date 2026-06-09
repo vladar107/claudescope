@@ -68,8 +68,16 @@ export interface AgentConnector {
   discover(): DiscoveredFile[];
 
   /**
-   * A `SELECT` projecting the raw file at `filePath` into the canonical event
-   * columns (see {@link CANONICAL_EVENT_COLUMNS}). Executed in DuckDB.
+   * Optional pre-pass run before {@link eventsProjectionSql}, for formats that
+   * can't be projected per-row by DuckDB. The connector normalizes the raw file
+   * in TS (e.g. correlating data spread across record types) and writes a
+   * canonical NDJSON the projection then reads. Flat formats (Claude) omit this.
+   */
+  prepare?(filePath: string): Promise<void>;
+
+  /**
+   * A `SELECT` projecting the (possibly {@link prepare}d) file into the canonical
+   * event columns (see {@link CANONICAL_EVENT_COLUMNS}). Executed in DuckDB.
    */
   eventsProjectionSql(filePath: string): string;
 

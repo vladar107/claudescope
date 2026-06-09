@@ -32,6 +32,8 @@ const outPath = resolve(String(values.out));
 const work = mkdtempSync(join(tmpdir(), 'claudescope-perf-'));
 const projectsDir = join(work, 'projects');
 process.env.CLAUDE_PROJECTS_DIR = projectsDir;
+// Isolate from any real ~/.codex so the bench corpus is exactly what we generate.
+process.env.CODEX_SESSIONS_DIR = join(work, 'codex-empty');
 process.env.DUCKDB_PATH = join(work, 'index.duckdb');
 process.env.CLAUDESCOPE_HOME = join(work, 'home');
 process.env.REINDEX_INTERVAL_MS = '0';
