@@ -35,7 +35,6 @@ function Sidebar() {
     return () => controller.abort();
   }, []);
 
-  const paths = sources.map((s) => s.path).join(' · ');
   return (
     <nav className="tv-nav">
       <NavLink to="/" className="tv-nav__brand" end>
@@ -53,8 +52,13 @@ function Sidebar() {
         </NavLink>
       ))}
       <div className="tv-nav__spacer" />
-      <div className="tv-nav__footer" title={paths}>
-        Read-only{paths ? ` · ${paths}` : ''}
+      <div className="tv-nav__footer">
+        <span className="tv-nav__footer-label">Read-only sources</span>
+        {sources.map((s) => (
+          <span key={s.id} className="tv-nav__source tv-mono" title={`${s.label} · ${s.path}`}>
+            {s.path}
+          </span>
+        ))}
       </div>
     </nav>
   );

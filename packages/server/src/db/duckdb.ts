@@ -4,12 +4,23 @@
  * `fts` extensions, and applies the index schema (idempotent) at startup.
  */
 
+import { createHash } from 'node:crypto';
 import { mkdirSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
 import type { DuckDBConnection } from '@duckdb/node-api';
 import { DUCKDB_PATH } from '../config.js';
 import { SCHEMA_DDL, SCHEMA_VERSION } from './schema.js';
+
+/**
+ * A fingerprint of the persisted schema. Derived from the DDL text (+ version),
+ * so ANY change to a table shape — not just a manual version bump — changes the
+ * signature and forces a rebuild. This is what makes the derived-cache migration
+ * robust: a stamp can never get "ahead" of the actual schema.
+ */
+const SCHEMA_SIGNATURE = createHash('sha1')
+  .update(`v${SCHEMA_VERSION}\n${SCHEMA_DDL.join('\n')}`)
+  .digest('hex');
 
 let connection: DuckDBConnection | null = null;
 let connecting: Promise<DuckDBConnection> | null = null;
@@ -24,16 +35,22 @@ async function tableExists(conn: DuckDBConnection, name: string): Promise<boolea
 }
 
 /**
- * Whether the existing DB predates the current {@link SCHEMA_VERSION} and must be
- * rebuilt. A DB with data tables but no matching `meta.schema_version` is a
- * legacy/derived cache from an older shape — caller discards and rebuilds it.
+ * Whether the existing DB's schema differs from the current {@link SCHEMA_SIGNATURE}
+ * and must be rebuilt. A populated DB whose stored signature is absent or
+ * different is a derived cache from an older (or partially-built) shape — the
+ * caller discards and rebuilds it. Reading a legacy/incompatible `meta` shape
+ * throws, which we treat as stale.
  */
 async function isStaleSchema(conn: DuckDBConnection): Promise<boolean> {
   if (!(await tableExists(conn, 'files'))) return false; // brand-new DB
   if (!(await tableExists(conn, 'meta'))) return true; // pre-versioning legacy DB
-  const reader = await conn.run('SELECT schema_version FROM meta LIMIT 1');
-  const rows = await reader.getRowObjects();
-  return Number(rows[0]?.schema_version ?? -1) !== SCHEMA_VERSION;
+  try {
+    const reader = await conn.run("SELECT value FROM meta WHERE key = 'schema_signature'");
+    const rows = await reader.getRowObjects();
+    return String(rows[0]?.value ?? '') !== SCHEMA_SIGNATURE;
+  } catch {
+    return true; // old `meta` shape (no key/value columns) → rebuild
+  }
 }
 
 /** Open the DB file, load extensions, and apply the idempotent schema. */
@@ -53,9 +70,9 @@ async function openAndPrepare(): Promise<DuckDBConnection> {
   for (const ddl of SCHEMA_DDL) {
     await conn.run(ddl);
   }
-  // Stamp the version on a fresh DB (no-op once stamped).
+  // Stamp the current schema signature (idempotent).
   await conn.run(
-    `INSERT INTO meta (schema_version) SELECT ${SCHEMA_VERSION} WHERE NOT EXISTS (SELECT 1 FROM meta)`,
+    `INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_signature', '${SCHEMA_SIGNATURE}')`,
   );
   return conn;
 }

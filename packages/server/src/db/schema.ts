@@ -23,8 +23,9 @@ export const SCHEMA_VERSION = 4;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
-  // Single-row table holding the schema version this DB was created with.
-  `CREATE TABLE IF NOT EXISTS meta (schema_version INTEGER)`,
+  // Key/value table holding the schema signature this DB was built with, so a
+  // version OR shape change forces a rebuild (see db/duckdb.ts).
+  `CREATE TABLE IF NOT EXISTS meta (key VARCHAR PRIMARY KEY, value VARCHAR)`,
 
   `CREATE TABLE IF NOT EXISTS files (
      path         VARCHAR PRIMARY KEY,
