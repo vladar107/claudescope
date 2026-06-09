@@ -46,9 +46,16 @@ function writeSession(): void {
   const sessionDir = join(junieDir, SESSION_ID);
   mkdirSync(sessionDir, { recursive: true });
 
-  const pngPath = join(junieDir, 'clipboard-images', SESSION_ID, 'shot.png');
-  mkdirSync(join(junieDir, 'clipboard-images', SESSION_ID), { recursive: true });
+  const imgDir = join(junieDir, 'clipboard-images', SESSION_ID);
+  mkdirSync(imgDir, { recursive: true });
+  // A pasted PNG referenced via customAttachments, and another referenced via an
+  // `@/path.png` mention in the prompt text. A third mention points at a file
+  // that no longer exists (Junie purges clipboard images quickly).
+  const pngPath = join(imgDir, 'shot.png');
+  const mentionPath = join(imgDir, 'mention.png');
+  const missingPath = join(imgDir, 'gone.png');
   writeFileSync(pngPath, Buffer.from(PNG_BASE64, 'base64'));
+  writeFileSync(mentionPath, Buffer.from(PNG_BASE64, 'base64'));
 
   writeFileSync(
     join(junieDir, 'index.jsonl'),
@@ -66,10 +73,12 @@ function writeSession(): void {
   writeFileSync(
     join(sessionDir, 'events.jsonl'),
     jsonl([
-      // User prompt with a pasted image path + a typed attachment that is skipped.
+      // User prompt referencing images two ways: `@/path.png` mentions in the
+      // text (one present, one purged) plus a customAttachments path. The typed
+      // attachment object is skipped.
       {
         kind: 'UserPromptEvent',
-        prompt: 'look at this screenshot',
+        prompt: `look at this screenshot @${mentionPath} and the old one @${missingPath}`,
         customAttachments: [pngPath, { kind: 'OnboardingMigrationAttachment' }],
       },
       { kind: 'SendToAgentEvent' },
@@ -231,17 +240,34 @@ describe('Junie session detail', () => {
     expect(allText).not.toContain('opaque'); // state blob ignored
   });
 
-  it('inlines a pasted clipboard PNG as a renderable base64 image block', async () => {
+  it('inlines pasted PNGs (mention + customAttachments) as base64 image blocks', async () => {
     const detail = (await get(`/api/sessions/${SESSION_ID}`)).json();
     const flat = detail.thread.flatMap((t: { blocks: Record<string, unknown>[] }) => t.blocks);
-    const img = flat.find(
+    const images = flat.filter(
       (b: Record<string, unknown>) =>
         b.kind === 'attachment' && (b.attachment as { type?: string })?.type === 'image',
     );
-    expect(img).toBeTruthy();
-    const source = (img.attachment as { source: { type: string; media_type: string; data: string } })
-      .source;
-    expect(source).toMatchObject({ type: 'base64', media_type: 'image/png' });
-    expect(source.data).toBe(PNG_BASE64);
+    // Two present files (the `@mention` one + the customAttachments one); the
+    // purged mention embeds nothing.
+    expect(images).toHaveLength(2);
+    for (const img of images) {
+      const source = (img.attachment as { source: { type: string; media_type: string; data: string } })
+        .source;
+      expect(source).toMatchObject({ type: 'base64', media_type: 'image/png', data: PNG_BASE64 });
+    }
+  });
+
+  it('cleans @image mentions out of the prompt text (present + purged)', async () => {
+    const detail = (await get(`/api/sessions/${SESSION_ID}`)).json();
+    const userTurn = detail.thread.find((t: { role: string }) => t.role === 'user');
+    const text = userTurn.blocks
+      .filter((b: { kind: string }) => b.kind === 'text')
+      .map((b: { text: string }) => b.text)
+      .join(' ');
+    expect(text).toContain('[image: mention.png]');
+    expect(text).toContain('[image: gone.png (unavailable)]');
+    // The raw absolute clipboard paths must not leak into the rendered text.
+    expect(text).not.toContain('@/');
+    expect(text).not.toContain('clipboard-images');
   });
 });

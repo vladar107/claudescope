@@ -110,6 +110,31 @@ function attachmentImages(customAttachments: unknown): ImageBlock[] {
   return out;
 }
 
+// Junie embeds a pasted screenshot as an `@/absolute/path.png` mention in the
+// prompt text (not always in customAttachments). Match an absolute path with an
+// image extension so it can be inlined and the raw path cleaned from the text.
+const IMAGE_MENTION_RE = /@(\/\S+?\.(?:png|jpe?g|gif|webp))\b/gi;
+
+/**
+ * Pull `@<image-path>` mentions out of a prompt: inline each as an ImageBlock
+ * when the file still exists (Junie purges clipboard images fast), and replace
+ * the raw path token with a readable marker so it never leaks into the rendered
+ * text. Returns the cleaned text and any embedded images.
+ */
+function extractPromptImages(prompt: string): { text: string; images: ImageBlock[] } {
+  const images: ImageBlock[] = [];
+  const text = prompt.replace(IMAGE_MENTION_RE, (_match, path: string) => {
+    const name = path.split('/').pop() || 'image';
+    const img = imageBlockFromPath(path);
+    if (img) {
+      images.push(img);
+      return `[image: ${name}]`;
+    }
+    return `[image: ${name} (unavailable)]`;
+  });
+  return { text, images };
+}
+
 /** Plain text of a Junie FileContent object (`{kind, text}`), or '' if absent. */
 function fileContentText(c: unknown): string {
   if (!c || typeof c !== 'object') return '';
@@ -334,7 +359,8 @@ export function parseSession(eventsPath: string): JunieSession | null {
 
     if (kind === 'UserPromptEvent') {
       flushAssistant();
-      pushUser(str(o.prompt), attachmentImages(o.customAttachments));
+      const { text, images } = extractPromptImages(str(o.prompt));
+      pushUser(text, [...images, ...attachmentImages(o.customAttachments)]);
       continue;
     }
     if (kind !== 'SessionA2uxEvent') continue; // SendToAgentEvent, TaskState, … are markers
