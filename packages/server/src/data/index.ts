@@ -266,28 +266,36 @@ async function doReindex(): Promise<ReindexResponse> {
       continue; // unchanged
     }
 
-    await loadFile(conn, connector, file, costExpr);
+    // Isolate per-file failures: a file DuckDB can't read at all (beyond the
+    // per-line `ignore_errors` tolerance) must not abort the whole reindex and
+    // wedge every other session. Skip it (its `files` row keeps the old mtime,
+    // so a later edit retries it) and carry on.
+    try {
+      await loadFile(conn, connector, file, costExpr);
 
-    // Determine the session id from loaded events (filename usually matches,
-    // but the event sessionId is authoritative).
-    const sidRows = await queryRows(
-      conn,
-      `SELECT session_id FROM events WHERE file_path = ${sqlString(file.path)} LIMIT 1`,
-    );
-    const sessionId = sidRows.length > 0 ? String(sidRows[0]?.session_id ?? '') : null;
-    const cwdRows = await queryRows(
-      conn,
-      `SELECT cwd FROM events WHERE file_path = ${sqlString(file.path)} AND cwd IS NOT NULL LIMIT 1`,
-    );
-    const cwd = cwdRows.length > 0 ? String(cwdRows[0]?.cwd ?? '') : null;
+      // Determine the session id from loaded events (filename usually matches,
+      // but the event sessionId is authoritative).
+      const sidRows = await queryRows(
+        conn,
+        `SELECT session_id FROM events WHERE file_path = ${sqlString(file.path)} LIMIT 1`,
+      );
+      const sessionId = sidRows.length > 0 ? String(sidRows[0]?.session_id ?? '') : null;
+      const cwdRows = await queryRows(
+        conn,
+        `SELECT cwd FROM events WHERE file_path = ${sqlString(file.path)} AND cwd IS NOT NULL LIMIT 1`,
+      );
+      const cwd = cwdRows.length > 0 ? String(cwdRows[0]?.cwd ?? '') : null;
 
-    await conn.run(`
-      INSERT OR REPLACE INTO files (path, mtime_ms, size_bytes, session_id, project_cwd, connector_id, indexed_at)
-      VALUES (${sqlString(file.path)}, ${file.mtimeMs}, ${file.size},
-              ${sessionId ? sqlString(sessionId) : 'NULL'},
-              ${cwd ? sqlString(cwd) : 'NULL'}, ${sqlString(connector.id)}, now())
-    `);
-    reindexed += 1;
+      await conn.run(`
+        INSERT OR REPLACE INTO files (path, mtime_ms, size_bytes, session_id, project_cwd, connector_id, indexed_at)
+        VALUES (${sqlString(file.path)}, ${file.mtimeMs}, ${file.size},
+                ${sessionId ? sqlString(sessionId) : 'NULL'},
+                ${cwd ? sqlString(cwd) : 'NULL'}, ${sqlString(connector.id)}, now())
+      `);
+      reindexed += 1;
+    } catch (err) {
+      console.warn(`claudescope: skipping unreadable transcript ${file.path}:`, err);
+    }
   }
 
   // Nothing changed on disk: skip the (relatively expensive) derived-table and

@@ -18,8 +18,14 @@ import { sqlString } from '../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from './types.js';
 
-/** Shared `read_ndjson` options for the line-delimited Claude transcripts. */
-const READ_OPTS = `union_by_name=true, format='newline_delimited', maximum_object_size=268435456`;
+/**
+ * Shared `read_ndjson` options for the line-delimited Claude transcripts.
+ * `ignore_errors=true` makes DuckDB skip a malformed/partial line (e.g. a
+ * transcript written mid-flush, or one with an unescaped control character)
+ * instead of failing the whole file read — which would otherwise abort the
+ * entire reindex. The JS session-detail parser tolerates such lines too.
+ */
+const READ_OPTS = `union_by_name=true, format='newline_delimited', maximum_object_size=268435456, ignore_errors=true`;
 
 /**
  * SQL extracting FTS-searchable plain text from a `message` JSON value.
