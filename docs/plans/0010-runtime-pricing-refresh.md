@@ -1,6 +1,6 @@
 # 0010 — Runtime pricing refresh from LiteLLM
 
-- **Status:** in-progress
+- **Status:** done
 - **Date:** 2026-06-10
 - **PR:** [#9](https://github.com/vladar107/claudescope/pull/9)
 
