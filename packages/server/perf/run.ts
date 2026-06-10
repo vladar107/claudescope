@@ -3,7 +3,7 @@
  * throwaway temp dir, runs the hot-path scenarios (warmup + median-of-N), and
  * writes a result JSON + prints a human table.
  *
- *   npm run bench -- --out result.json [--scale 1] [--runs 5] [--round N]
+ *   npm run bench -- --out result.json [--scale 1] [--runs 5]
  *
  * Env vars are set BEFORE importing any server module (config binds the DB path
  * at import time), mirroring test/api.integration.test.ts.
@@ -21,14 +21,11 @@ const { values } = parseArgs({
     out: { type: 'string', default: 'perf-result.json' },
     scale: { type: 'string', default: '1' },
     runs: { type: 'string', default: '5' },
-    // Interleaved CI round number — recorded in result meta only.
-    round: { type: 'string' },
   },
 });
 
 const scale = Math.max(1, Number(values.scale));
 const runs = Math.max(1, Number(values.runs));
-const round = values.round !== undefined ? Number(values.round) : undefined;
 const outPath = resolve(String(values.out));
 
 // --- temp locations (decided before any server module is imported) ----------
@@ -84,7 +81,6 @@ async function main(): Promise<void> {
       node: process.version,
       scale,
       runs,
-      ...(round !== undefined ? { round } : {}),
       totalEvents: info.totalEvents,
       totalBytes: info.totalBytes,
     },

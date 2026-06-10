@@ -50,6 +50,8 @@ jobs:
         run: npm ci
 
       - name: Bench (5 interleaved A/B rounds)
+        # NOTE: the base side runs main's harness — only pass flags that main's
+        # run.ts already understands; a new flag needs a two-step rollout.
         run: |
           for i in 1 2 3 4 5; do
             # Alternate which side goes first to cancel order bias on top of drift.
@@ -59,7 +61,7 @@ jobs:
               # --if-present: on the PR that introduces the suite, base has no
               # bench script yet → no base files → compare no-ops (bootstrap).
               (cd "$side" && npm run bench --if-present -- \
-                --out "$GITHUB_WORKSPACE/$name-$i.json" --scale 2 --runs 2 --round "$i")
+                --out "$GITHUB_WORKSPACE/$name-$i.json" --scale 2 --runs 2)
             done
           done
 

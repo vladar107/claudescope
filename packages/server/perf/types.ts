@@ -33,8 +33,6 @@ export interface BenchResult {
     node: string;
     scale: number;
     runs: number;
-    /** Interleaved CI round this file came from (absent for local runs). */
-    round?: number;
     totalEvents: number;
     totalBytes: number;
   };
