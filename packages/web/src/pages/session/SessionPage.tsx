@@ -11,7 +11,13 @@ import { ChangesetPanel } from './ChangesetPanel.js';
 import { buildChangeset } from './changeset.js';
 import { ExportMenu } from './ExportMenu.js';
 import { SessionSearchContext } from './SearchContext.js';
-import { buildMatches, revealForMatch, type FinderMatch, type RoleFilter } from './search.js';
+import {
+  buildSearchCorpus,
+  findMatches,
+  revealForMatch,
+  type FinderMatch,
+  type RoleFilter,
+} from './search.js';
 import { SessionFinder } from './SessionFinder.js';
 import { highlightMatchInBlock, clearHighlights } from './finderDom.js';
 import './session.css';
@@ -227,10 +233,19 @@ function SessionView({
     return () => window.clearTimeout(t);
   }, [query]);
 
+  // Searchable corpus, built lazily on the first non-empty query (readers who
+  // never search pay nothing) and kept until the query clears or `data` swaps.
+  // Query/filter changes then only re-run the cheap string scan below.
+  const searching = debouncedQuery.length > 0;
+  const corpus = useMemo(
+    () => (searching ? buildSearchCorpus(thread, subagents, subagentsByToolUseId) : null),
+    [searching, thread, subagents, subagentsByToolUseId],
+  );
+
   // Ordered match list, computed from data (collapsed content included).
   const matches = useMemo(
-    () => buildMatches(thread, subagents, subagentsByToolUseId, debouncedQuery, roleFilter),
-    [thread, subagents, subagentsByToolUseId, debouncedQuery, roleFilter],
+    () => (corpus ? findMatches(corpus, debouncedQuery, roleFilter) : []),
+    [corpus, debouncedQuery, roleFilter],
   );
   const count = matches.length;
 
