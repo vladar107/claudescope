@@ -1,7 +1,9 @@
-import { memo, type ReactNode } from 'react';
+import { memo, useState, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CodeBlock } from './CodeBlock.js';
+import { ClampedText } from './ClampedText.js';
+import { MAX_MARKDOWN_CHARS } from './limits.js';
 
 export interface MarkdownProps {
   /** Markdown source to render. */
@@ -13,6 +15,8 @@ export interface MarkdownProps {
   markdown?: boolean;
   /** Extra className appended to the wrapper. */
   className?: string;
+  /** Fully expand clamped text (e.g. an in-session search match is in the tail). */
+  forceExpand?: boolean;
 }
 
 /**
@@ -55,11 +59,30 @@ const components: Components = {
  * enabled, so content is sanitized by default. Falls back to a <pre> block when
  * `markdown` is false.
  */
-function MarkdownImpl({ children, markdown = true, className }: MarkdownProps) {
+function MarkdownImpl({ children, markdown = true, className, forceExpand = false }: MarkdownProps) {
+  // Huge sources never hit the markdown parser unless the reader opts in.
+  const [parseAnyway, setParseAnyway] = useState(false);
   const cls = className ? `tv-md ${className}` : 'tv-md';
 
   if (!markdown) {
-    return <pre className={`tv-pre ${className ?? ''}`.trim()}>{children}</pre>;
+    return (
+      <ClampedText
+        className={`tv-pre ${className ?? ''}`.trim()}
+        text={children}
+        forceExpand={forceExpand}
+      />
+    );
+  }
+
+  if (children.length > MAX_MARKDOWN_CHARS && !parseAnyway) {
+    return (
+      <div className={cls}>
+        <ClampedText className="tv-pre" text={children} forceExpand={forceExpand} />
+        <button type="button" className="tv-linkbtn tv-clamp-more" onClick={() => setParseAnyway(true)}>
+          Render as markdown anyway
+        </button>
+      </div>
+    );
   }
 
   return (

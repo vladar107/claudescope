@@ -1,6 +1,7 @@
 /** Reusable rendering + UI components shared across feature pages. */
 
 export { Markdown, type MarkdownProps } from './Markdown.js';
+export { ClampedText, type ClampedTextProps } from './ClampedText.js';
 export { CodeBlock, type CodeBlockProps } from './CodeBlock.js';
 export { Collapsible, type CollapsibleProps } from './Collapsible.js';
 export { ToolBlock, type ToolBlockProps } from './ToolBlock.js';

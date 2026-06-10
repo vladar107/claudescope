@@ -5,7 +5,8 @@ import { api, ApiError } from '../../api/client.js';
 import { AgentBadge, CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
 import { formatBytes, formatDateTime, shortModel } from '../browse/format.js';
 import { hasRenderableContent } from './blocks.js';
-import { SubagentBlock, SubagentJumpMenu, ThreadList, useHashTarget } from './ThreadView.js';
+import { SubagentBlock, SubagentJumpMenu, ThreadList } from './ThreadView.js';
+import { useProgressiveMount } from './useProgressiveMount.js';
 import { ChangesetPanel } from './ChangesetPanel.js';
 import { buildChangeset } from './changeset.js';
 import { ExportMenu } from './ExportMenu.js';
@@ -92,25 +93,6 @@ export function SessionPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [refresh]);
 
-  // Scroll to the #<uuid> anchor once the thread has rendered (deep-link). Only
-  // fire on the first load for a given session — a soft refresh swaps `data` but
-  // must not yank a deep-linked reader away from their place.
-  const hashScrolledForId = useRef<string | null>(null);
-  useEffect(() => {
-    if (!data || !id) return;
-    if (hashScrolledForId.current === id) return;
-    hashScrolledForId.current = id;
-    const hash = window.location.hash.slice(1);
-    if (!hash) return;
-    const el = document.getElementById(hash);
-    if (el) {
-      el.scrollIntoView({ block: 'center' });
-      el.classList.add('is-targeted');
-      const timer = window.setTimeout(() => el.classList.remove('is-targeted'), 2400);
-      return () => window.clearTimeout(timer);
-    }
-  }, [data, id]);
-
   if (!id) return <ErrorBox error="Missing session id" />;
   if (loading) return <Spinner size="lg" label="Loading session…" />;
   if (error) return <ErrorBox error={error} onRetry={() => setReloadKey((k) => k + 1)} />;
@@ -130,7 +112,6 @@ function SessionView({
 }) {
   const { meta, thread, subagents } = data;
   const title = meta.title || 'Untitled session';
-  const hashTarget = useHashTarget();
   const [searchParams] = useSearchParams();
 
   // Only render turns that actually carry visible content.
@@ -154,6 +135,55 @@ function SessionView({
     return map;
   }, [subagents]);
   const orphanSubagents = useMemo(() => subagents.filter((s) => !s.toolUseId), [subagents]);
+
+  // Mount turns progressively: the first chunk renders immediately, the rest
+  // stream in during idle time, so a huge session never blocks the first paint
+  // behind one giant React commit.
+  const { visibleItems, allMounted, mounted, ensureMounted } = useProgressiveMount(items);
+
+  // subagentId → uuid of the top-level turn its run renders under. Used to
+  // mount the right turn before navigating to a match/anchor inside a nested
+  // subagent (orphan runs render after the list and are always mounted).
+  const spawnTurnBySubagentId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of items) {
+      for (const block of item.blocks) {
+        if (block.kind !== 'tool') continue;
+        for (const run of subagentsByToolUseId.get(block.id) ?? []) map.set(run.agentId, item.uuid);
+      }
+    }
+    return map;
+  }, [items, subagentsByToolUseId]);
+
+  // Scroll to the #<anchor> deep-link once its turn is mounted. Only on the
+  // first load for a given session — a soft refresh swaps `data` but must not
+  // yank a deep-linked reader away from their place.
+  const hashScrolledForId = useRef<string | null>(null);
+  useEffect(() => {
+    if (hashScrolledForId.current === meta.id) return;
+    const hash = window.location.hash.slice(1);
+    if (!hash) {
+      hashScrolledForId.current = meta.id;
+      return;
+    }
+    const el = document.getElementById(hash);
+    if (!el) {
+      // Target not in the DOM yet: request its turn and retry as turns mount.
+      if (allMounted) {
+        hashScrolledForId.current = meta.id; // never going to appear — give up
+        return;
+      }
+      const agentId = hash.startsWith('subagent-') ? hash.slice('subagent-'.length) : undefined;
+      const target = agentId ? spawnTurnBySubagentId.get(agentId) : hash;
+      if (target) ensureMounted(target);
+      return;
+    }
+    hashScrolledForId.current = meta.id;
+    el.scrollIntoView({ block: 'center' });
+    el.classList.add('is-targeted');
+    const timer = window.setTimeout(() => el.classList.remove('is-targeted'), 2400);
+    return () => window.clearTimeout(timer);
+  }, [meta.id, mounted, allMounted, spawnTurnBySubagentId, ensureMounted]);
 
   // Cheap (no diffing): just groups edits by file, for the tab count.
   const changes = useMemo(() => buildChangeset(thread, subagents), [thread, subagents]);
@@ -195,16 +225,22 @@ function SessionView({
   const reveal = useMemo(() => revealForMatch(activeMatch), [activeMatch]);
 
   // Highlight the active match within its (now-revealed) block. Scoped to one
-  // block, so it stays cheap. Re-run on a short delay to catch async code blocks.
+  // block, so it stays cheap. Re-run on a short delay to catch async code
+  // blocks, and on `mounted` growth in case the match's turn wasn't in the
+  // DOM yet (progressive mounting).
   useEffect(() => {
     const container = threadRef.current;
     clearHighlights();
     if (!container || !activeMatch) return;
+    const anchorUuid = activeMatch.subagentId
+      ? spawnTurnBySubagentId.get(activeMatch.subagentId) // undefined → orphan section, always mounted
+      : activeMatch.turnUuid;
+    if (anchorUuid) ensureMounted(anchorUuid);
     const run = () => highlightMatchInBlock(container, activeMatch, debouncedQuery);
     run();
     const t = window.setTimeout(run, 200);
     return () => window.clearTimeout(t);
-  }, [activeMatch, debouncedQuery]);
+  }, [activeMatch, debouncedQuery, mounted, spawnTurnBySubagentId, ensureMounted]);
 
   // Clear highlights when leaving the session.
   useEffect(() => clearHighlights, []);
@@ -228,7 +264,8 @@ function SessionView({
 
   // Memoize the (expensive) thread subtree so switching tabs — which only
   // changes `tab` — doesn't re-render hundreds of turns / re-parse markdown.
-  // It recomputes only when the data or the finder's reveal/hash actually change.
+  // It recomputes only when the data or the finder's reveal actually change
+  // (and Turn/ThreadBlockView are memoized, so even then most turns bail out).
   const threadView = useMemo(
     () => (
       <SessionSearchContext.Provider value={reveal}>
@@ -236,11 +273,10 @@ function SessionView({
           {items.length === 0 ? (
             <p className="tv-muted">This session has no renderable messages.</p>
           ) : (
-            <ThreadList
-              items={items}
-              subagentsByToolUseId={subagentsByToolUseId}
-              hashTarget={hashTarget}
-            />
+            <ThreadList items={visibleItems} subagentsByToolUseId={subagentsByToolUseId} />
+          )}
+          {allMounted ? null : (
+            <p className="tv-muted">Rendering {items.length - visibleItems.length} more turns…</p>
           )}
 
           {orphanSubagents.length > 0 ? (
@@ -250,14 +286,14 @@ function SessionView({
                 <span className="tv-muted"> (not linked to a tool call)</span>
               </h2>
               {orphanSubagents.map((run) => (
-                <SubagentBlock key={run.agentId} run={run} hashTarget={hashTarget} />
+                <SubagentBlock key={run.agentId} run={run} />
               ))}
             </section>
           ) : null}
         </div>
       </SessionSearchContext.Provider>
     ),
-    [reveal, items, subagentsByToolUseId, hashTarget, orphanSubagents],
+    [reveal, items, visibleItems, allMounted, subagentsByToolUseId, orphanSubagents],
   );
 
   return (
