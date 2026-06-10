@@ -35,4 +35,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0008 | [Junie connector](./0008-junie-connector.md) | done |
 | 0009 | [Homebrew + Nix distribution](./0009-homebrew-nix-distribution.md) | done |
 | 0010 | [runtime pricing refresh](./0010-runtime-pricing-refresh.md) | done |
-| 0011 | [performance: search, scrolling, bench](./0011-performance-search-scroll-bench.md) | in-progress |
+| 0011 | [performance: search, scrolling, bench](./0011-performance-search-scroll-bench.md) | done |

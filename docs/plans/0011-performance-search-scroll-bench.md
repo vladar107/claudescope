@@ -1,8 +1,8 @@
 # 0011 — Performance: in-session search, huge-session scrolling, perf-suite redesign
 
-- **Status:** in-progress
+- **Status:** done
 - **Date:** 2026-06-10
-- **PR:** <links per workstream, once opened>
+- **PR:** [#10](https://github.com/vladar107/claudescope/pull/10) (search), [#11](https://github.com/vladar107/claudescope/pull/11) (perf suite), [#12](https://github.com/vladar107/claudescope/pull/12) (scrolling)
 
 ## Context
 
