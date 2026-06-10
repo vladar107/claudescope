@@ -59,19 +59,22 @@ export function clearHighlights(): void {
  * Highlight the active match within its block and scroll it into view. Tints
  * all occurrences in that block, emphasizing the active one. Best-effort: any
  * DOM/Range error is swallowed so the finder can never crash the page.
+ *
+ * Returns true once the match was found and highlighted, so callers can stop
+ * retrying (the block may not be in the DOM yet under progressive mounting).
  */
 export function highlightMatchInBlock(
   container: HTMLElement,
   match: FinderMatch,
   query: string,
-): void {
+): boolean {
   try {
     const el = container.querySelector<HTMLElement>(
       `[data-block-id="${CSS.escape(match.blockId)}"]`,
     );
-    if (!el) return;
+    if (!el) return false;
     const ranges = collectRanges(el, query);
-    if (ranges.length === 0) return;
+    if (ranges.length === 0) return false;
     const active = ranges[Math.min(match.occurrenceInBlock, ranges.length - 1)]!;
     const reg = registry();
     if (reg) {
@@ -79,7 +82,9 @@ export function highlightMatchInBlock(
       reg.set('cs-find-active', makeHighlight([active]));
     }
     active.startContainer.parentElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return true;
   } catch {
     /* never let the finder crash the reader */
+    return false;
   }
 }

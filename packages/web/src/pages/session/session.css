@@ -81,7 +81,9 @@
      that are off-screen (keeping them in the DOM, so anchors, the finder, and
      jump-to still work). `auto` caches each turn's real height once measured. */
   content-visibility: auto;
-  contain-intrinsic-size: auto 140px;
+  /* Closer to the median rendered turn height — a low estimate makes the
+     scrollbar jump as real heights replace it during fast scrolling. */
+  contain-intrinsic-size: auto 280px;
 }
 
 .tv-turn__gutter {

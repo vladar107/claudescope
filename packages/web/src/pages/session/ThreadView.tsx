@@ -1,6 +1,6 @@
-import { Fragment, useContext, useEffect, useRef, useState } from 'react';
-import type { SubagentRun, ThreadItem } from '@claudescope/shared';
-import { Collapsible, TokenChips } from '../../components';
+import { Fragment, memo, useContext, useEffect, useRef, useState } from 'react';
+import type { SubagentRun, ThreadBlock, ThreadItem } from '@claudescope/shared';
+import { ClampedText, Collapsible, TokenChips } from '../../components';
 import { formatDateTime, shortModel } from '../browse/format.js';
 import { ThreadBlockView, hasRenderableContent } from './blocks.js';
 import { classifySystemText } from './text.js';
@@ -29,42 +29,37 @@ export function useHashTarget(): string {
 export function ThreadList({
   items,
   subagentsByToolUseId,
-  hashTarget,
 }: {
   items: ThreadItem[];
   /** tool_use id → the subagent run(s) it spawned (Workflow fans out to many). */
   subagentsByToolUseId?: Map<string, SubagentRun[]>;
-  hashTarget: string;
 }) {
   return (
     <>
       {items.map((item) => (
-        <Turn
-          key={item.uuid}
-          item={item}
-          subagentsByToolUseId={subagentsByToolUseId}
-          hashTarget={hashTarget}
-        />
+        <Turn key={item.uuid} item={item} subagentsByToolUseId={subagentsByToolUseId} />
       ))}
     </>
   );
 }
 
-function Turn({
+/**
+ * Memoized: turns are immutable for the life of a session payload, so finder
+ * steps and hash changes never re-render the whole list — the reveal context
+ * is read in {@link RevealableBlock} below, and the hash in SubagentBlock.
+ */
+const Turn = memo(function Turn({
   item,
   subagentsByToolUseId,
-  hashTarget,
 }: {
   item: ThreadItem;
   subagentsByToolUseId?: Map<string, SubagentRun[]>;
-  hashTarget: string;
 }) {
   // Harness-injected user turns (task notifications, bash I/O, slash-command
   // output) are noise in the conversation — collapse them behind a label.
   const systemLabel = item.role === 'user' ? classifySystemTurn(item) : null;
   if (systemLabel) return <SystemTurn item={item} label={systemLabel} />;
 
-  const { blockIds } = useContext(SessionSearchContext);
   const roleClass = item.role === 'user' ? 'tv-turn--user' : 'tv-turn--assistant';
   const sidechainClass = item.isSidechain ? ' tv-turn--sidechain' : '';
 
@@ -94,14 +89,11 @@ function Turn({
           {item.blocks.map((block, i) => {
             const runs =
               block.kind === 'tool' ? subagentsByToolUseId?.get(block.id) : undefined;
-            const blockId = blockRevealId(item.uuid, i);
             return (
               <Fragment key={i}>
-                <div className="tv-block" data-block-id={blockId}>
-                  <ThreadBlockView block={block} forceOpen={blockIds.has(blockId)} />
-                </div>
+                <RevealableBlock blockId={blockRevealId(item.uuid, i)} block={block} />
                 {runs?.map((run) => (
-                  <SubagentBlock key={run.agentId} run={run} hashTarget={hashTarget} />
+                  <SubagentBlock key={run.agentId} run={run} />
                 ))}
               </Fragment>
             );
@@ -109,6 +101,20 @@ function Turn({
         </div>
       </div>
     </article>
+  );
+});
+
+/**
+ * Thin per-block wrapper that subscribes to the finder reveal context, so a
+ * finder step re-renders only these wrappers — the memoized ThreadBlockView
+ * bails out everywhere except the block whose `forceOpen` actually flipped.
+ */
+function RevealableBlock({ blockId, block }: { blockId: string; block: ThreadBlock }) {
+  const { blockIds } = useContext(SessionSearchContext);
+  return (
+    <div className="tv-block" data-block-id={blockId}>
+      <ThreadBlockView block={block} forceOpen={blockIds.has(blockId)} />
+    </div>
   );
 }
 
@@ -146,7 +152,7 @@ function SystemTurn({ item, label }: { item: ThreadItem; label: string }) {
             ) : null
           }
         >
-          <pre className="tv-system-turn__pre">{text}</pre>
+          <ClampedText className="tv-system-turn__pre" text={text} />
         </Collapsible>
       </div>
     </article>
@@ -158,8 +164,9 @@ function SystemTurn({ item, label }: { item: ThreadItem; label: string }) {
  * default; opens (and scrolls into view) when the location hash targets it, so
  * the "Subagents" jump menu and deep-links land on an expanded run.
  */
-export function SubagentBlock({ run, hashTarget }: { run: SubagentRun; hashTarget: string }) {
+export function SubagentBlock({ run }: { run: SubagentRun }) {
   const anchor = subagentAnchor(run.agentId);
+  const hashTarget = useHashTarget();
   const { subagentIds } = useContext(SessionSearchContext);
   const forceOpen = subagentIds.has(run.agentId);
   const [open, setOpen] = useState(false);
@@ -200,7 +207,7 @@ export function SubagentBlock({ run, hashTarget }: { run: SubagentRun; hashTarge
           {items.length === 0 ? (
             <p className="tv-muted">No renderable messages in this subagent run.</p>
           ) : (
-            <ThreadList items={items} hashTarget={hashTarget} />
+            <ThreadList items={items} />
           )}
         </div>
       </Collapsible>

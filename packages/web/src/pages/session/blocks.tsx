@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { ThreadBlock } from '@claudescope/shared';
 import { Markdown, ThinkingBlock, ToolBlock } from '../../components';
 import { stripImageMarkers } from './text.js';
@@ -8,8 +9,12 @@ import { stripImageMarkers } from './text.js';
  * - thinking: collapsible muted block
  * - tool: paired tool_use + tool_result (handles missing result + is_error)
  * - attachment: unknown/rich block (e.g. image) surfaced safely
+ *
+ * Memoized: blocks are immutable for the life of a session payload, so when a
+ * finder step re-renders the thread via context, only the block whose
+ * `forceOpen` flipped actually recomputes.
  */
-export function ThreadBlockView({
+export const ThreadBlockView = memo(function ThreadBlockView({
   block,
   forceOpen = false,
 }: {
@@ -20,7 +25,7 @@ export function ThreadBlockView({
   switch (block.kind) {
     case 'text': {
       const text = stripImageMarkers(block.text);
-      return text ? <Markdown>{text}</Markdown> : null;
+      return text ? <Markdown forceExpand={forceOpen}>{text}</Markdown> : null;
     }
     case 'thinking':
       return <ThinkingBlock thinking={block.thinking} forceOpen={forceOpen} />;
@@ -29,7 +34,7 @@ export function ThreadBlockView({
     case 'attachment':
       return <AttachmentView attachment={block.attachment} />;
   }
-}
+});
 
 /**
  * Best-effort rendering for attachment blocks. Image blocks (the observed

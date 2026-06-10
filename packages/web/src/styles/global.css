@@ -658,6 +658,13 @@ button {
   overflow-x: auto;
 }
 
+/* "Show all (2.4 MB)" affordance under clamped text (ClampedText). */
+.tv-clamp-more {
+  display: block;
+  margin-top: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+}
+
 /* Search-result <mark> highlights from server snippets. */
 mark {
   background: var(--tv-mark-bg);

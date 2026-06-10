@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ContentBlock, ToolInteraction } from '@claudescope/shared';
 import { Collapsible } from './Collapsible.js';
 import { CodeBlock } from './CodeBlock.js';
+import { ClampedText } from './ClampedText.js';
 import { Markdown } from './Markdown.js';
 import { LineDiff } from './LineDiff.js';
 import { extOf, MAX_HIGHLIGHT } from './diff.js';
@@ -39,14 +40,10 @@ function stringifyInput(input: unknown): string {
   }
 }
 
-/** Syntax-highlighted code, falling back to plain text for large payloads. */
-function Code({ code, lang }: { code: string; lang?: string }) {
+/** Syntax-highlighted code, falling back to clamped plain text for large payloads. */
+function Code({ code, lang, forceExpand = false }: { code: string; lang?: string; forceExpand?: boolean }) {
   if (code.length > MAX_HIGHLIGHT) {
-    return (
-      <pre className="tv-code-plain">
-        <code>{code}</code>
-      </pre>
-    );
+    return <ClampedText className="tv-code-plain" text={code} code forceExpand={forceExpand} />;
   }
   return <CodeBlock code={code} lang={lang} />;
 }
@@ -60,16 +57,26 @@ function FileHeader({ path, note }: { path: string; note?: string }) {
   );
 }
 
-/** Render normalized tool_result content blocks. Text/JSON shown as text. */
-function renderResultBlocks(blocks: ContentBlock[]) {
+/** Render normalized tool_result content blocks. Text/JSON shown as (clamped) text. */
+function renderResultBlocks(blocks: ContentBlock[], forceExpand: boolean) {
   return blocks.map((block, i) => {
-    if (block.type === 'text') return <Markdown key={i} markdown={false}>{block.text}</Markdown>;
-    if (block.type === 'thinking') return <Markdown key={i} markdown={false}>{block.thinking}</Markdown>;
-    return <Markdown key={i} markdown={false}>{stringifyInput(block)}</Markdown>;
+    if (block.type === 'text')
+      return <Markdown key={i} markdown={false} forceExpand={forceExpand}>{block.text}</Markdown>;
+    if (block.type === 'thinking')
+      return <Markdown key={i} markdown={false} forceExpand={forceExpand}>{block.thinking}</Markdown>;
+    return <Markdown key={i} markdown={false} forceExpand={forceExpand}>{stringifyInput(block)}</Markdown>;
   });
 }
 
-function ResultSection({ tool, isError }: { tool: ToolInteraction; isError: boolean }) {
+function ResultSection({
+  tool,
+  isError,
+  forceExpand,
+}: {
+  tool: ToolInteraction;
+  isError: boolean;
+  forceExpand: boolean;
+}) {
   if (!tool.result) {
     return (
       <div className="tv-tool__section">
@@ -80,13 +87,21 @@ function ResultSection({ tool, isError }: { tool: ToolInteraction; isError: bool
   return (
     <div className="tv-tool__section">
       <p className="tv-tool__section-label">{isError ? 'Result (error)' : 'Result'}</p>
-      {renderResultBlocks(tool.result.content)}
+      {renderResultBlocks(tool.result.content, forceExpand)}
     </div>
   );
 }
 
 /** Tool-specific body: diffs for edits, highlighted code for files/commands. */
-function ToolBody({ tool, isError }: { tool: ToolInteraction; isError: boolean }) {
+function ToolBody({
+  tool,
+  isError,
+  forceOpen,
+}: {
+  tool: ToolInteraction;
+  isError: boolean;
+  forceOpen: boolean;
+}) {
   const input = asRecord(tool.input);
 
   switch (tool.name) {
@@ -100,7 +115,7 @@ function ToolBody({ tool, isError }: { tool: ToolInteraction; isError: boolean }
             newText={str(input.new_string) ?? ''}
             lang={extOf(fp)}
           />
-          <ResultSection tool={tool} isError={isError} />
+          <ResultSection tool={tool} isError={isError} forceExpand={forceOpen} />
         </>
       );
     }
@@ -123,7 +138,7 @@ function ToolBody({ tool, isError }: { tool: ToolInteraction; isError: boolean }
               </div>
             );
           })}
-          <ResultSection tool={tool} isError={isError} />
+          <ResultSection tool={tool} isError={isError} forceExpand={forceOpen} />
         </>
       );
     }
@@ -132,8 +147,8 @@ function ToolBody({ tool, isError }: { tool: ToolInteraction; isError: boolean }
       return (
         <>
           {fp ? <FileHeader path={fp} /> : null}
-          <Code code={str(input.content) ?? ''} lang={extOf(fp)} />
-          <ResultSection tool={tool} isError={isError} />
+          <Code code={str(input.content) ?? ''} lang={extOf(fp)} forceExpand={forceOpen} />
+          <ResultSection tool={tool} isError={isError} forceExpand={forceOpen} />
         </>
       );
     }
@@ -143,7 +158,11 @@ function ToolBody({ tool, isError }: { tool: ToolInteraction; isError: boolean }
       return (
         <>
           {fp ? <FileHeader path={fp} /> : null}
-          {tool.result ? <Code code={text} lang={extOf(fp)} /> : <ResultSection tool={tool} isError={isError} />}
+          {tool.result ? (
+            <Code code={text} lang={extOf(fp)} forceExpand={forceOpen} />
+          ) : (
+            <ResultSection tool={tool} isError={isError} forceExpand={forceOpen} />
+          )}
         </>
       );
     }
@@ -154,13 +173,11 @@ function ToolBody({ tool, isError }: { tool: ToolInteraction; isError: boolean }
           {str(input.description) ? (
             <p className="tv-tool__section-label tv-muted">{str(input.description)}</p>
           ) : null}
-          <Code code={str(input.command) ?? ''} lang="bash" />
+          <Code code={str(input.command) ?? ''} lang="bash" forceExpand={forceOpen} />
           {out ? (
             <div className="tv-tool__section">
               <p className="tv-tool__section-label">{isError ? 'Output (error)' : 'Output'}</p>
-              <pre className="tv-code-plain">
-                <code>{out}</code>
-              </pre>
+              <ClampedText className="tv-code-plain" text={out} code forceExpand={forceOpen} />
             </div>
           ) : null}
         </>
@@ -171,9 +188,9 @@ function ToolBody({ tool, isError }: { tool: ToolInteraction; isError: boolean }
         <>
           <div className="tv-tool__section">
             <p className="tv-tool__section-label">Input</p>
-            <Code code={stringifyInput(tool.input)} lang="json" />
+            <Code code={stringifyInput(tool.input)} lang="json" forceExpand={forceOpen} />
           </div>
-          <ResultSection tool={tool} isError={isError} />
+          <ResultSection tool={tool} isError={isError} forceExpand={forceOpen} />
         </>
       );
   }
@@ -205,7 +222,7 @@ export function ToolBlock({ tool, defaultOpen = false, forceOpen = false }: Tool
         ) : null
       }
     >
-      <ToolBody tool={tool} isError={isError} />
+      <ToolBody tool={tool} isError={isError} forceOpen={forceOpen} />
     </Collapsible>
   );
 }
