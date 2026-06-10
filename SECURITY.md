@@ -36,9 +36,17 @@ None of these are misused; they're listed here so you can verify that.
 
 - **Binds to `127.0.0.1` only** (`packages/server/src/index.ts`) — the server is
   never exposed to your LAN or the internet.
-- The **only outbound request** in shipped code is a version check against
-  `https://registry.npmjs.org` (cached for 24h) to tell you when an update is
-  available (`packages/server/src/cli.ts`).
+- Shipped code makes exactly **two kinds of outbound request**, both to
+  hardcoded trusted endpoints:
+  - a version check against `https://registry.npmjs.org` (cached for 24h) to
+    tell you when an update is available (`packages/server/src/cli.ts`);
+  - a daily fetch of model pricing rates from LiteLLM's public table at
+    `https://raw.githubusercontent.com/BerriAI/litellm/…/model_prices_and_context_window.json`
+    (`packages/server/src/data/pricing-refresh.ts`), validated and written
+    atomically to `~/.claudescope/pricing.fetched.json`. Set
+    `PRICING_REFRESH_INTERVAL_MS=0` to disable it entirely.
+
+  Both are GET requests that **send no data** beyond the request itself.
 - **No telemetry, analytics, or data exfiltration.** Your transcript content
   never leaves your machine.
 - The only other URLs in the repository (`example.com`, `platform.claude.com`)
