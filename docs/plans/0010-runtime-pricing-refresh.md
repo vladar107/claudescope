@@ -2,7 +2,7 @@
 
 - **Status:** in-progress
 - **Date:** 2026-06-10
-- **PR:** <link, once opened>
+- **PR:** [#9](https://github.com/vladar107/claudescope/pull/9)
 
 ## Context
 
