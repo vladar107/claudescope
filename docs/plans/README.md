@@ -34,3 +34,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0007 | [UI redesign: multi-agent, light/dark, responsive nav](./0007-ui-redesign-multi-agent.md) | done |
 | 0008 | [Junie connector](./0008-junie-connector.md) | done |
 | 0009 | [Homebrew + Nix distribution](./0009-homebrew-nix-distribution.md) | done |
+| 0010 | [runtime pricing refresh](./0010-runtime-pricing-refresh.md) | in-progress |

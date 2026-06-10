@@ -31,36 +31,86 @@ export function isIndexReady(): boolean {
   return ready;
 }
 
+/** The four rate fields, in canonical → SQL-column order. */
+const RATE_FIELDS = [
+  ['input', 'input', 'input_tokens'],
+  ['output', 'output', 'output_tokens'],
+  ['cacheWrite', 'cache_write', 'cache_write_tokens'],
+  ['cacheRead', 'cache_read', 'cache_read_tokens'],
+] as const satisfies readonly (readonly [keyof PricingConfig['models'][string], string, string])[];
+
+/** Alias the per-file projection gets when joined against {@link pricing_rates}. */
+const EVENTS_ALIAS = 'ev';
+
+/** Alias the {@link pricing_rates} join table gets in the cost expression. */
+const RATES_ALIAS = 'pr';
+
 /**
- * Build the per-event cost expression (USD) from the pricing config. Costs are
- * computed in SQL via a big CASE over the model id so the value is persisted on
- * each event row and analytics can simply SUM it. Rates are USD per 1M tokens.
+ * (Re)create and populate the `pricing_rates` join table from the merged
+ * pricing's exact-id model rates. At a few hundred rows this is cheap, so we
+ * just recreate it once per reindex run (never per file). The cost expression
+ * (see {@link buildCostExpr}) LEFT JOINs each event's `model` against this table
+ * for the exact-id rate, falling back to family/default in SQL.
+ */
+async function syncPricingTable(conn: DuckDBConnection, pricing: PricingConfig): Promise<void> {
+  await conn.run('DROP TABLE IF EXISTS pricing_rates');
+  await conn.run(`
+    CREATE TABLE pricing_rates (
+      model       VARCHAR PRIMARY KEY,
+      input       DOUBLE,
+      output      DOUBLE,
+      cache_write DOUBLE,
+      cache_read  DOUBLE
+    )
+  `);
+
+  const rows = Object.entries(pricing.models);
+  if (rows.length === 0) return;
+  const values = rows
+    .map(
+      ([model, r]) =>
+        `(${sqlString(model)}, ${r.input}, ${r.output}, ${r.cacheWrite}, ${r.cacheRead})`,
+    )
+    .join(', ');
+  await conn.run(`INSERT INTO pricing_rates VALUES ${values}`);
+}
+
+/**
+ * Build the per-event cost expression (USD). Costs are computed in SQL so the
+ * value is persisted on each event row and analytics can simply SUM it. Rates
+ * are USD per 1M tokens.
+ *
+ * Per rate field the value is `COALESCE(exact-id join rate, family substring
+ * match, default literal)`: the exact id comes from the {@link pricing_rates}
+ * join table (aliased {@link RATES_ALIAS}), the family match is a small CASE
+ * over `pricing.families` (a handful of branches), and the default is a literal.
  * Operates on the canonical token columns, so it is agent-agnostic.
+ *
+ * The caller must LEFT JOIN the projection against `pricing_rates ${RATES_ALIAS}`
+ * on the model column (see {@link loadFile}).
  */
 function buildCostExpr(pricing: PricingConfig): string {
-  const rateExpr = (field: keyof PricingConfig['models'][string]): string => {
+  const rateExpr = (field: keyof PricingConfig['models'][string], column: string): string => {
     const cases: string[] = [];
-    // Exact model ids win first.
-    for (const [model, rates] of Object.entries(pricing.models)) {
-      cases.push(`WHEN model = ${sqlString(model)} THEN ${rates[field]}`);
-    }
-    // Then family substring matches (opus/sonnet/haiku), so any version or
-    // date-suffixed id still resolves.
+    // Family substring matches (opus/sonnet/haiku/…), so any version or
+    // date-suffixed id still resolves when no exact-id row joined.
     for (const [family, rates] of Object.entries(pricing.families ?? {})) {
       const pat = sqlString(`%${family.toLowerCase()}%`);
-      cases.push(`WHEN lower(model) LIKE ${pat} THEN ${rates[field]}`);
+      cases.push(`WHEN lower(${EVENTS_ALIAS}.model) LIKE ${pat} THEN ${rates[field]}`);
     }
-    cases.push(`ELSE ${pricing.default[field]}`);
-    return `CASE ${cases.join(' ')} END`;
+    const familyExpr =
+      cases.length > 0 ? `CASE ${cases.join(' ')} ELSE ${pricing.default[field]} END` : `${pricing.default[field]}`;
+    // Exact-id rate (join) wins; then family; then default.
+    return `COALESCE(${RATES_ALIAS}.${column}, ${familyExpr})`;
   };
 
   // Cost is only attributable to assistant events (the ones carrying usage).
+  const terms = RATE_FIELDS.map(
+    ([field, column, tokenCol]) => `COALESCE(${EVENTS_ALIAS}.${tokenCol}, 0) * ${rateExpr(field, column)}`,
+  );
   return `
     (
-      COALESCE(input_tokens, 0)       * ${rateExpr('input')}      +
-      COALESCE(output_tokens, 0)      * ${rateExpr('output')}     +
-      COALESCE(cache_write_tokens, 0) * ${rateExpr('cacheWrite')} +
-      COALESCE(cache_read_tokens, 0)  * ${rateExpr('cacheRead')}
+      ${terms.join(' +\n      ')}
     ) / 1000000.0`;
 }
 
@@ -82,17 +132,22 @@ async function loadFile(
   await connector.prepare?.(file.path);
   await conn.run(`DELETE FROM events WHERE file_path = ${path}`);
 
+  // The cost expression references the projected token/model columns plus the
+  // pricing_rates join (aliased `pr` — see buildCostExpr). LEFT JOIN on the
+  // model column so events whose model has no exact-id row fall through to the
+  // family/default CASE; the table is recreated each reindex (syncPricingTable).
   await conn.run(`
     INSERT INTO events
     SELECT
-      file_path, session_id, uuid, parent_uuid, role, type, ts, cwd, git_branch,
-      model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-      service_tier, is_sidechain, tool_use_count,
+      ev.file_path, ev.session_id, ev.uuid, ev.parent_uuid, ev.role, ev.type, ev.ts, ev.cwd, ev.git_branch,
+      ev.model, ev.input_tokens, ev.output_tokens, ev.cache_read_tokens, ev.cache_write_tokens,
+      ev.service_tier, ev.is_sidechain, ev.tool_use_count,
       ${costExpr} AS cost_usd,
-      text_content
+      ev.text_content
     FROM (
       ${connector.eventsProjectionSql(file.path)}
-    )
+    ) AS ev
+    LEFT JOIN pricing_rates ${RATES_ALIAS} ON ${RATES_ALIAS}.model = ev.model
   `);
 
   const aux = connector.auxProjections(file.path);
@@ -232,6 +287,9 @@ async function doReindex(): Promise<ReindexResponse> {
   const start = Date.now();
   const conn = await getConnection();
   const pricing = loadPricing();
+  // Refresh the pricing join table (cheap; recreated once per run) before any
+  // file loads so the cost expression's exact-id join sees current rates.
+  await syncPricingTable(conn, pricing);
   const costExpr = buildCostExpr(pricing);
 
   // Discover across every registered connector, tagging each file with its owner.

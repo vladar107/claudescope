@@ -28,6 +28,7 @@ import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { APP_VERSION, CLAUDE_PROJECTS_DIR, CLAUDESCOPE_HOME, PORT as DEFAULT_PORT } from './config.js';
+import { refreshPricing } from './data/pricing-refresh.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** The server bundle, a sibling of this CLI in the published package. */
@@ -338,6 +339,27 @@ async function maybeNotifyUpdate(force: boolean): Promise<void> {
   }
 }
 
+/** Run a one-shot pricing refresh and print a concise summary. */
+async function pricingUpdate(): Promise<void> {
+  try {
+    const { modelCount, changed, path } = await refreshPricing();
+    console.log(`✓ Pricing updated: ${modelCount} models (${changed} changed) → ${path}`);
+    console.log('  A running server picks up the new rates automatically (newly indexed events).');
+  } catch (err) {
+    console.error(`✗ Pricing update failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.error('  Existing rates are unchanged.');
+    process.exitCode = 1;
+  }
+}
+
+/** Print brief usage for the pricing subcommand. */
+function pricingHelp(): void {
+  console.log(`Usage: claudescope pricing <subcommand>
+
+Subcommands:
+  update    Fetch current model prices (LiteLLM) into the local rate table`);
+}
+
 function help(): void {
   console.log(`claudescope v${APP_VERSION} — local viewer for Claude Code transcripts
 
@@ -351,6 +373,7 @@ Commands:
   open             Open the running app in your browser
   logs [-f]        Print the server log (-f / --follow to tail it)
   update [-y]      Upgrade to the latest published version and restart
+  pricing update   Fetch current model prices (LiteLLM) into the local rate table
   help             Show this help
   version          Print the installed version
 
@@ -407,6 +430,15 @@ async function main(): Promise<void> {
     case 'update':
       await update(Boolean(values.yes));
       break;
+    case 'pricing': {
+      const sub = positionals[1];
+      if (sub === 'update') {
+        await pricingUpdate();
+      } else {
+        pricingHelp();
+      }
+      break;
+    }
     case 'version':
       console.log(APP_VERSION);
       break;

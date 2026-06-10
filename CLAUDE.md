@@ -36,9 +36,11 @@ npm-workspaces monorepo (`packages/*`):
 - **NEVER write to `~/.claude` or `~/.codex`.** They are read-only data sources.
 - All app-owned state lives in **`~/.claudescope/`** (override: `CLAUDESCOPE_HOME`):
   the DuckDB index, a user-editable `pricing.json` (seeded from a shipped
-  default; `loadPricing` falls back to the default if the copy is missing), the
-  daemon PID file, and logs. State lives outside the package dir so global
-  installs survive upgrades — do not move it back into the package.
+  default; `loadPricing` falls back to the default if the copy is missing),
+  `pricing.fetched.json` (runtime-fetched rates snapshot, auto-refreshed daily
+  from LiteLLM, or manually via `claudescope pricing update`), the daemon PID
+  file, and logs. State lives outside the package dir so global installs survive
+  upgrades — do not move it back into the package.
 
 ## Commands
 
@@ -52,7 +54,7 @@ npm run typecheck   # tsc -b across all packages
 npm run bundle      # assemble the single publishable package into dist/
 ```
 
-The shipped CLI (after install) is `claudescope {start|stop|status|restart|logs|open|update}`.
+The shipped CLI (after install) is `claudescope {start|stop|status|restart|logs|open|update|pricing update}`.
 
 ## Distribution model
 
@@ -112,8 +114,10 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   a session renders as tool/terminal/file blocks plus a final result. Expected,
   not a bug. Older Junie sessions also lack a recorded `cwd` (no `projectDir` in
   `index.jsonl`) and group under the `(unknown — Junie)` project bucket.
-- **Cost is a local estimate** from token usage × `pricing.json` rates; not real
-  billing. Computed once at index time and stored.
+- **Cost is a local estimate** from token usage × rates; not real billing.
+  Computed once at index time and stored. Rates auto-refresh daily from LiteLLM
+  at runtime (`pricing.fetched.json`); `pricing.json` is the fallback/override
+  layer for families and the default rate.
 - **Release is maintainer-only** and tag-triggered (npm Trusted Publishing /
   OIDC). See `CONTRIBUTING.md`.
 

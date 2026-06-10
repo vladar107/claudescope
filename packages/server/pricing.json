@@ -12,6 +12,7 @@
     "opus": { "input": 5, "output": 25, "cacheWrite": 6.25, "cacheRead": 0.5 },
     "sonnet": { "input": 3, "output": 15, "cacheWrite": 3.75, "cacheRead": 0.3 },
     "haiku": { "input": 1, "output": 5, "cacheWrite": 1.25, "cacheRead": 0.1 },
+    "gemini": { "input": 1.25, "output": 10, "cacheWrite": 0, "cacheRead": 0.31 },
     "gpt": { "input": 2.5, "output": 15, "cacheWrite": 0, "cacheRead": 0.5 }
   },
   "default": { "input": 3, "output": 15, "cacheWrite": 3.75, "cacheRead": 0.3 }
