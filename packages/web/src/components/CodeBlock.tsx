@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTheme } from '../theme/ThemeProvider.js';
-import { getHighlighter, normalizeLang, shikiThemeFor } from './highlighter.js';
+import { getHighlighter, resolveLang, shikiThemeFor } from './highlighter.js';
 
 export interface CodeBlockProps {
   /** Raw source code (already de-fenced). */
@@ -11,19 +11,19 @@ export interface CodeBlockProps {
 
 /**
  * Highlights a code block with Shiki. Renders an unhighlighted <pre> first,
- * then swaps in highlighted HTML once the (lazy) highlighter resolves. If Shiki
- * fails to load or doesn't know the language, the plain <pre> stays — so this
- * component is always safe to render.
+ * then swaps in highlighted HTML once the (lazy) highlighter — and, if needed,
+ * the on-demand grammar for `lang` — resolves. If Shiki fails to load or
+ * doesn't know the language, the plain <pre> stays — so this component is
+ * always safe to render.
  */
 export function CodeBlock({ code, lang }: CodeBlockProps) {
   const [html, setHtml] = useState<string | null>(null);
-  const resolved = normalizeLang(lang);
   const { resolvedTheme } = useTheme();
 
   useEffect(() => {
     let cancelled = false;
-    getHighlighter()
-      .then((hl) => {
+    Promise.all([getHighlighter(), resolveLang(lang)])
+      .then(([hl, resolved]) => {
         if (cancelled || !hl) return;
         const out = hl.codeToHtml(code, { lang: resolved, theme: shikiThemeFor(resolvedTheme) });
         if (!cancelled) setHtml(out);
@@ -34,7 +34,7 @@ export function CodeBlock({ code, lang }: CodeBlockProps) {
     return () => {
       cancelled = true;
     };
-  }, [code, resolved, resolvedTheme]);
+  }, [code, lang, resolvedTheme]);
 
   if (html) {
     // Shiki output is trusted (we generated it from the code string).
