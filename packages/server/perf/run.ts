@@ -76,6 +76,7 @@ async function main(): Promise<void> {
 
   const result: BenchResult = {
     meta: {
+      schemaVersion: 2,
       timestamp: new Date().toISOString(),
       node: process.version,
       scale,

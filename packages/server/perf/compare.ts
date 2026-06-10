@@ -1,23 +1,35 @@
 /**
- * Compare two perf result files (base vs candidate) and gate on regression of
- * the HEADLINE metrics. Used by the same-runner A/B CI job: both files are
- * produced on the same VM moments apart, so most machine variance cancels and a
- * tight-ish threshold is meaningful.
+ * Compare pooled perf samples (base vs candidate) and gate on a statistically
+ * significant regression of the HEADLINE metrics.
  *
- *   npm run bench:compare -- --base base.json --candidate cand.json [--threshold 10]
+ * Accepts multiple result files per side — one per interleaved CI round, so
+ * temporal runner drift hits both arms alike and cancels in the pooled test:
  *
- * Bootstrap: if the base file is missing/empty (e.g. `main` predates the suite),
- * there is nothing to compare against — print a notice and exit 0.
+ *   npm run bench:compare -- --base b1.json --base b2.json \
+ *     --candidate c1.json --candidate c2.json [--threshold 10]
+ *
+ * A headline metric FAILS only when ALL hold:
+ *   1. the pooled candidate median regresses more than the threshold,
+ *   2. a one-sided Mann-Whitney U test confirms the shift (p < 0.01),
+ *   3. the metric is above the significance floor.
+ * A noisy baseline (CV > 12%) demotes FAIL to "inconclusive" — visible in the
+ * summary, but it does not fail the build on a pathological runner day.
+ *
+ * Bootstrap: with no base files (e.g. `main` predates the suite) there is
+ * nothing to compare — print a notice and exit 0. Base files without raw
+ * samples (schema v1) can't back a statistical gate, so the comparison is
+ * rendered advisory-only and also exits 0.
  */
 
 import { appendFileSync, readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import type { BenchResult, Metric } from './types.js';
+import { cv, iqr, mannWhitneyGreater, median } from './stats.js';
 
 const { values } = parseArgs({
   options: {
-    base: { type: 'string' },
-    candidate: { type: 'string' },
+    base: { type: 'string', multiple: true },
+    candidate: { type: 'string', multiple: true },
     threshold: { type: 'string', default: '10' },
     'min-ms': { type: 'string', default: '25' },
   },
@@ -27,22 +39,28 @@ const threshold = Math.max(0, Number(values.threshold));
 // Significance floor: a latency metric is too small to gate on a relative %
 // once it's down in the noise (GC/JIT/IO jitter dwarfs the signal). Below this
 // it's reported but never fails — a regression that actually matters pushes the
-// value above the floor anyway.
+// value above the floor anyway. Batched sampling keeps headline metrics above it.
 const minMs = Math.max(0, Number(values['min-ms']));
+// One-sided Mann-Whitney significance level for the gate.
+const ALPHA = 0.01;
+// Pooled-baseline CV above which a regression verdict is only "inconclusive".
+const MAX_BASE_CV = 0.12;
 
-function load(path: string | undefined): BenchResult | null {
-  if (!path) return null;
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as BenchResult;
-    if (!parsed.metrics?.length) return null;
-    return parsed;
-  } catch {
-    return null;
+function load(paths: string[] | undefined): BenchResult[] {
+  const out: BenchResult[] = [];
+  for (const path of paths ?? []) {
+    try {
+      const parsed = JSON.parse(readFileSync(path, 'utf8')) as BenchResult;
+      if (parsed.metrics?.length) out.push(parsed);
+    } catch {
+      /* unreadable file — treat as absent */
+    }
   }
+  return out;
 }
 
-const base = load(values.base);
-const candidate = load(values.candidate);
+const baseFiles = load(values.base);
+const candFiles = load(values.candidate);
 
 /** Append markdown to the GitHub Actions job summary, if running in CI. */
 function writeJobSummary(md: string): void {
@@ -50,60 +68,101 @@ function writeJobSummary(md: string): void {
   if (path) appendFileSync(path, md + '\n');
 }
 
-if (!candidate) {
-  console.error('✗ No candidate results to compare. Did the bench run produce a result file?');
+if (candFiles.length === 0) {
+  console.error('✗ No candidate results to compare. Did the bench run produce result files?');
   process.exit(1);
 }
-if (!base) {
+if (baseFiles.length === 0) {
   const msg = 'No baseline to compare against (bootstrap) — regression gate skipped.';
   console.log(`ℹ ${msg}`);
   writeJobSummary(`## ⚡ Performance\n\nℹ️ ${msg}`);
   process.exit(0);
 }
 
-const baseById = new Map<string, Metric>(base.metrics.map((m) => [m.id, m]));
+// Schema-v1 base files carry a single aggregated value and no raw samples —
+// a statistical gate is impossible, so render the table advisory-only.
+const advisory = baseFiles.some((f) => f.meta.schemaVersion === undefined);
 
-/** Signed regression percentage: positive = candidate is worse (slower) than base. */
-function regressionPct(b: Metric, c: Metric): number {
-  if (b.value === 0) return 0;
-  const deltaPct = ((c.value - b.value) / b.value) * 100;
-  return b.betterIsLower ? deltaPct : -deltaPct;
+/** Pool each side's raw samples per metric id (v1 metrics fall back to [value]). */
+function pool(files: BenchResult[]): Map<string, { metric: Metric; samples: number[] }> {
+  const out = new Map<string, { metric: Metric; samples: number[] }>();
+  for (const file of files) {
+    for (const m of file.metrics) {
+      const entry = out.get(m.id) ?? { metric: m, samples: [] };
+      entry.samples.push(...(m.samples?.length ? m.samples : [m.value]));
+      out.set(m.id, entry);
+    }
+  }
+  return out;
 }
+
+const basePool = pool(baseFiles);
+const candPool = pool(candFiles);
 
 interface Row {
   metric: Metric;
-  base: number;
+  baseMed: number;
+  baseIqr: number;
+  candMed: number;
+  candIqr: number;
+  /** Signed regression %: positive = candidate is worse than base. */
   reg: number;
+  /** One-sided M-W p-value that the candidate is worse. */
+  p: number;
+  baseCv: number;
   belowFloor: boolean;
-  verdict: 'FAIL' | 'noise' | 'ok';
+  verdict: 'FAIL' | 'inconclusive' | 'ok';
 }
 
 const rows: Row[] = [];
 let failed = false;
-for (const c of candidate.metrics) {
-  const b = baseById.get(c.id);
-  if (!b) continue;
-  const reg = regressionPct(b, c);
-  // Latency metrics below the significance floor are reported, never gated.
-  const belowFloor = c.unit === 'ms' && Math.max(b.value, c.value) < minMs;
-  const regressed = c.headline && reg > threshold && !belowFloor;
-  if (regressed) failed = true;
-  const verdict: Row['verdict'] = regressed
-    ? 'FAIL'
-    : belowFloor && c.headline && reg > threshold
-      ? 'noise'
-      : 'ok';
-  rows.push({ metric: c, base: b.value, reg, belowFloor, verdict });
+for (const [id, cand] of candPool) {
+  const base = basePool.get(id);
+  if (!base) continue;
+  const m = cand.metric;
+  const baseMed = median(base.samples);
+  const candMed = median(cand.samples);
+  const deltaPct = baseMed === 0 ? 0 : ((candMed - baseMed) / baseMed) * 100;
+  const reg = m.betterIsLower ? deltaPct : -deltaPct;
+  // Direction of "worse": larger for latency, smaller for throughput.
+  const p = m.betterIsLower
+    ? mannWhitneyGreater(base.samples, cand.samples)
+    : mannWhitneyGreater(cand.samples, base.samples);
+  const baseCv = cv(base.samples);
+  const belowFloor = m.unit === 'ms' && Math.max(baseMed, candMed) < minMs;
+  const significant = m.headline && reg > threshold && p < ALPHA && !belowFloor && !advisory;
+  let verdict: Row['verdict'] = 'ok';
+  if (significant) {
+    verdict = baseCv > MAX_BASE_CV ? 'inconclusive' : 'FAIL';
+    if (verdict === 'FAIL') failed = true;
+  }
+  rows.push({
+    metric: m,
+    baseMed,
+    baseIqr: iqr(base.samples),
+    candMed,
+    candIqr: iqr(cand.samples),
+    reg,
+    p,
+    baseCv,
+    belowFloor,
+    verdict,
+  });
 }
 
 // --- console (CI logs) ------------------------------------------------------
-console.log(`Perf comparison (threshold ${threshold}% on headline metrics, * = headline):\n`);
+console.log(
+  `Perf comparison (gate: headline Δ > ${threshold}% AND p < ${ALPHA}; * = headline; ` +
+    `${baseFiles.length} base / ${candFiles.length} candidate file(s))${advisory ? ' — ADVISORY (v1 base)' : ''}:\n`,
+);
 for (const r of rows) {
   const sign = r.reg >= 0 ? '+' : '';
   console.log(
-    `  ${r.metric.headline ? '*' : ' '} ${r.metric.id.padEnd(28)} base=${r.base
+    `  ${r.metric.headline ? '*' : ' '} ${r.metric.id.padEnd(30)} base=${r.baseMed
       .toFixed(2)
-      .padStart(10)}  cand=${r.metric.value.toFixed(2).padStart(10)}  ${(sign + r.reg.toFixed(1) + '%').padStart(9)}  ${r.verdict}`,
+      .padStart(10)}  cand=${r.candMed.toFixed(2).padStart(10)}  ${(sign + r.reg.toFixed(1) + '%').padStart(9)}  p=${r.p
+      .toFixed(3)
+      .padStart(5)}  ${r.verdict}`,
   );
 }
 
@@ -112,38 +171,47 @@ function fmtValue(unit: string, value: number): string {
   if (unit === 'events/s') return Math.round(value).toLocaleString('en-US');
   return value.toFixed(2);
 }
+function fmtCell(unit: string, med: number, spread: number): string {
+  return `${fmtValue(unit, med)} ±${fmtValue(unit, spread)}`;
+}
 function deltaCell(reg: number): string {
   const arrow = Math.abs(reg) < 0.05 ? '■' : reg > 0 ? '▲' : '▼';
   return `${arrow} ${reg >= 0 ? '+' : '-'}${Math.abs(reg).toFixed(1)}%`;
 }
 function verdictIcon(r: Row): string {
   if (r.verdict === 'FAIL') return '⚠️';
-  if (r.verdict === 'noise') return '💤';
+  if (r.verdict === 'inconclusive') return '❓';
+  if (r.belowFloor) return '💤';
   return r.reg < -5 ? '🚀' : '✅';
 }
 function mdTable(subset: Row[]): string {
-  const head = '| Metric | Baseline | This PR | Δ vs base |    |\n|---|--:|--:|--:|:--:|';
+  const head =
+    '| Metric | Baseline | This PR | Δ vs base | p | base CV |    |\n|---|--:|--:|--:|--:|--:|:--:|';
   const body = subset
     .map(
       (r) =>
-        `| ${r.metric.label} (${r.metric.unit}) | ${fmtValue(r.metric.unit, r.base)} | ${fmtValue(
+        `| ${r.metric.label} (${r.metric.unit}) | ${fmtCell(r.metric.unit, r.baseMed, r.baseIqr)} | ${fmtCell(
           r.metric.unit,
-          r.metric.value,
-        )} | ${deltaCell(r.reg)} | ${verdictIcon(r)} |`,
+          r.candMed,
+          r.candIqr,
+        )} | ${deltaCell(r.reg)} | ${r.p.toFixed(3)} | ${(r.baseCv * 100).toFixed(1)}% | ${verdictIcon(r)} |`,
     )
     .join('\n');
   return `${head}\n${body}`;
 }
 
 const headline = rows.filter((r) => r.metric.headline);
-const m = candidate.meta;
-const banner = failed
-  ? `## ⚡ Performance: ⚠️ headline regression > ${threshold}%`
-  : '## ⚡ Performance: ✅ no headline regression';
+const m = candFiles[0].meta;
+const banner = advisory
+  ? '## ⚡ Performance: ℹ️ advisory only (baseline lacks per-sample data)'
+  : failed
+    ? `## ⚡ Performance: ⚠️ significant headline regression > ${threshold}%`
+    : '## ⚡ Performance: ✅ no significant headline regression';
 const summary = [
   banner,
   '',
-  `baseline (\`main\`) vs candidate (PR) · gate ${threshold}% on headline · floor ${minMs} ms`,
+  `baseline (\`main\`) vs candidate (PR), ${baseFiles.length}+${candFiles.length} interleaved runs pooled · ` +
+    `gate Δ > ${threshold}% AND Mann-Whitney p < ${ALPHA} on headline · floor ${minMs} ms`,
   '',
   '### Key metrics',
   '',
@@ -153,13 +221,18 @@ const summary = [
   mdTable(rows),
   '\n</details>',
   '',
-  `<sub>Δ vs base: ▲ positive = slower/worse, ▼ = faster. ✅ within gate · ⚠️ regressed · 💤 below ${minMs} ms floor (ignored) · 🚀 >5% faster. Corpus: ${m.totalEvents.toLocaleString('en-US')} events · ${(m.totalBytes / 1e6).toFixed(1)} MB · scale ${m.scale} · runs ${m.runs}.</sub>`,
+  `<sub>Values are pooled median ±IQR. Δ vs base: ▲ positive = slower/worse, ▼ = faster. ` +
+    `✅ within gate · ⚠️ significant regression · ❓ regression but baseline too noisy (CV > ${MAX_BASE_CV * 100}%) · ` +
+    `💤 below ${minMs} ms floor · 🚀 >5% faster. ` +
+    `Corpus: ${m.totalEvents.toLocaleString('en-US')} events · ${(m.totalBytes / 1e6).toFixed(1)} MB · scale ${m.scale} · runs ${m.runs}/file.</sub>`,
 ].join('\n');
 writeJobSummary(summary);
 
 if (failed) {
-  console.error(`\n✗ Performance regression: a headline metric regressed more than ${threshold}%.`);
+  console.error(
+    `\n✗ Performance regression: a headline metric regressed more than ${threshold}% with p < ${ALPHA}.`,
+  );
   process.exit(1);
 }
-console.log('\n✓ No headline regression beyond threshold.');
+console.log(advisory ? '\nℹ Advisory comparison only (no gate).' : '\n✓ No significant headline regression.');
 process.exit(0);

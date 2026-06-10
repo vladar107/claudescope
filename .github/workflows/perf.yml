@@ -1,10 +1,13 @@
 name: Performance
 
-# Same-runner A/B perf gate. On each PR, bench the PR head and the target branch
-# back-to-back on the SAME VM, then compare medians — this cancels most runner
-# variance, which a stored baseline across different VMs cannot. Fails if a
-# headline metric regresses beyond the threshold. PR-only: the A/B needs both
-# sides, and there is no diff to gate on a plain push to main.
+# Interleaved same-runner A/B perf gate. On each PR, bench the PR head and the
+# target branch in ALTERNATING short rounds on the SAME VM (base,cand / cand,base
+# / …), then pool the raw samples per side and gate with a Mann-Whitney test.
+# Alternation cancels the temporal drift that a sequential A-then-B cannot
+# (shared runners routinely drift ~10-15% between two long blocks), and the
+# statistical gate means a FAIL requires both a >10% pooled-median regression
+# AND p < 0.01 — not a lucky/unlucky pair of medians. PR-only: the A/B needs
+# both sides, and there is no diff to gate on a plain push to main.
 on:
   pull_request:
     branches: [main]
@@ -38,30 +41,37 @@ jobs:
           cache: npm
           cache-dependency-path: pr/package-lock.json
 
-      - name: Bench candidate (PR head)
+      - name: Install deps (PR head)
         working-directory: pr
-        run: |
-          npm ci
-          npm run bench -- --out "$GITHUB_WORKSPACE/candidate.json"
+        run: npm ci
 
-      - name: Bench base (target branch)
+      - name: Install deps (base)
         working-directory: base
-        run: |
-          npm ci
-          # --if-present: on the PR that introduces the suite, base has no bench
-          # script yet → no base file → compare no-ops (bootstrap).
-          npm run bench --if-present -- --out "$GITHUB_WORKSPACE/base.json"
+        run: npm ci
 
-      - name: Compare (fail on >20% headline regression)
+      - name: Bench (5 interleaved A/B rounds)
+        # NOTE: the base side runs main's harness — only pass flags that main's
+        # run.ts already understands; a new flag needs a two-step rollout.
+        run: |
+          for i in 1 2 3 4 5; do
+            # Alternate which side goes first to cancel order bias on top of drift.
+            if [ $((i % 2)) -eq 1 ]; then order="base pr"; else order="pr base"; fi
+            for side in $order; do
+              if [ "$side" = pr ]; then name=cand; else name=base; fi
+              # --if-present: on the PR that introduces the suite, base has no
+              # bench script yet → no base files → compare no-ops (bootstrap).
+              (cd "$side" && npm run bench --if-present -- \
+                --out "$GITHUB_WORKSPACE/$name-$i.json" --scale 2 --runs 2)
+            done
+          done
+
+      - name: Compare (fail on >10% pooled headline regression with p < 0.01)
         working-directory: pr
-        # Threshold is 20% here, not the local default of 10%. The two benches run
-        # sequentially, so same-runner A/B cancels fixed hardware differences but
-        # NOT temporal drift — GitHub shared runners routinely vary ~10-15% in the
-        # minute between the two runs (observed: every metric skewing uniformly).
-        # 20% catches real regressions (a non-native ingestion rewrite would be
-        # multiples slower) without flaking on runner noise; use `npm run bench`
-        # locally on a stable machine for fine-grained (~1%) checks.
-        run: npm run bench:compare -- --base "$GITHUB_WORKSPACE/base.json" --candidate "$GITHUB_WORKSPACE/candidate.json" --threshold 20
+        run: |
+          args=()
+          for f in "$GITHUB_WORKSPACE"/base-*.json; do [ -e "$f" ] && args+=(--base "$f"); done
+          for f in "$GITHUB_WORKSPACE"/cand-*.json; do [ -e "$f" ] && args+=(--candidate "$f"); done
+          npm run bench:compare -- "${args[@]}" --threshold 10
 
       - name: Upload perf results
         if: always()
@@ -69,6 +79,6 @@ jobs:
         with:
           name: perf-results
           path: |
-            candidate.json
-            base.json
+            cand-*.json
+            base-*.json
           if-no-files-found: ignore
