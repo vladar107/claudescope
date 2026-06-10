@@ -97,6 +97,33 @@ export const DEFAULT_PRICING_PATH = firstExisting(
 export const PRICING_PATH = process.env.PRICING_PATH ?? join(CLAUDESCOPE_HOME, 'pricing.json');
 
 /**
+ * App-owned snapshot of runtime-fetched rates (from LiteLLM). Stored alongside
+ * the other app state so it survives index rebuilds, which discard the DuckDB
+ * cache. Override with FETCHED_PRICING_PATH (used by tests to point at a
+ * throwaway temp dir).
+ */
+export const FETCHED_PRICING_PATH =
+  process.env.FETCHED_PRICING_PATH ?? join(CLAUDESCOPE_HOME, 'pricing.fetched.json');
+
+/**
+ * Source for runtime pricing refresh: LiteLLM's community-maintained,
+ * machine-readable price table (raw GitHub, no auth). Override with
+ * LITELLM_PRICING_URL.
+ */
+export const LITELLM_PRICING_URL =
+  process.env.LITELLM_PRICING_URL ??
+  'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json';
+
+/**
+ * How often (ms) the daemon re-fetches pricing from LiteLLM. Set
+ * PRICING_REFRESH_INTERVAL_MS=0 to disable. Default 24h. (The timer itself is
+ * wired up in a later wave; this constant only declares the interval.)
+ */
+export const PRICING_REFRESH_INTERVAL_MS = Number(
+  process.env.PRICING_REFRESH_INTERVAL_MS ?? 24 * 60 * 60 * 1000,
+);
+
+/**
  * Built web assets served in production. Resolved for both the bundled layout
  * (`<pkg>/web` next to the server bundle) and the dev layout
  * (`packages/web/dist`). Override with WEB_DIST_DIR.

@@ -14,6 +14,14 @@ export interface ModelRates {
   cacheRead: number;
 }
 
+/** Snapshot of rates fetched at runtime (e.g. from LiteLLM). */
+export interface FetchedPricing {
+  /** ISO timestamp of the successful fetch. */
+  fetchedAt: string;
+  /** Per-model rate table, keyed by exact model id. */
+  models: Record<string, ModelRates>;
+}
+
 export interface PricingConfig {
   /** Per-model rate table, keyed by exact model id (highest precedence). */
   models: Record<string, ModelRates>;

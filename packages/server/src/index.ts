@@ -3,21 +3,43 @@
  * (in production) serves the built web assets from disk.
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
+import type { FetchedPricing } from '@claudescope/shared';
 import {
   APP_VERSION,
   CLAUDE_PROJECTS_DIR,
+  FETCHED_PRICING_PATH,
   OPEN_BROWSER,
   PORT,
+  PRICING_REFRESH_INTERVAL_MS,
   REINDEX_INTERVAL_MS,
   WEB_DIST_DIR,
   ensureStateDir,
 } from './config.js';
 import { registerRoutes } from './routes/index.js';
 import { reindex } from './data/index.js';
+import { refreshPricing } from './data/pricing-refresh.js';
+
+/** How old a fetched-pricing snapshot may be before a boot refresh fires. */
+const PRICING_STALE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whether the fetched-pricing snapshot is missing, unparsable, or older than
+ * {@link PRICING_STALE_MS} — i.e. worth refreshing on boot.
+ */
+function pricingSnapshotIsStale(): boolean {
+  try {
+    const snapshot = JSON.parse(readFileSync(FETCHED_PRICING_PATH, 'utf8')) as FetchedPricing;
+    const fetchedAt = Date.parse(snapshot?.fetchedAt ?? '');
+    if (!Number.isFinite(fetchedAt)) return true;
+    return Date.now() - fetchedAt > PRICING_STALE_MS;
+  } catch {
+    return true; // missing or corrupt → refresh
+  }
+}
 
 /** Open a URL in the user's default browser (best-effort, cross-platform). */
 function openBrowser(url: string): void {
@@ -71,6 +93,31 @@ async function main(): Promise<void> {
     }, REINDEX_INTERVAL_MS);
     timer.unref(); // don't keep the process alive solely for the timer
     app.addHook('onClose', async () => clearInterval(timer));
+  }
+
+  // Auto-refresh pricing from LiteLLM: once at boot when the snapshot is
+  // missing/stale (>24h), then on an interval so long-running daemons track new
+  // models and rate changes. Set PRICING_REFRESH_INTERVAL_MS=0 to disable both
+  // (no network calls). No explicit cache-bust is needed: loadPricing's mtime
+  // cache picks up the rewritten file on the next reindex poll. Never blocks
+  // startup; failures are non-fatal — the loader falls back to last-known /
+  // shipped rates.
+  if (PRICING_REFRESH_INTERVAL_MS > 0) {
+    const runPricingRefresh = (): void => {
+      refreshPricing()
+        .then((res) =>
+          app.log.info(
+            { modelCount: res.modelCount, changed: res.changed },
+            'pricing refresh complete',
+          ),
+        )
+        .catch((err) => app.log.warn({ err }, 'pricing refresh failed — keeping last-known rates'));
+    };
+
+    if (pricingSnapshotIsStale()) runPricingRefresh();
+    const pricingTimer = setInterval(runPricingRefresh, PRICING_REFRESH_INTERVAL_MS);
+    pricingTimer.unref();
+    app.addHook('onClose', async () => clearInterval(pricingTimer));
   }
 
   // In production, serve the built SPA. In dev, Vite serves it and proxies /api.

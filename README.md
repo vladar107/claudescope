@@ -38,10 +38,11 @@ Claudescope works whether you use one agent or all three. Adding another is just
 
 > **Privacy:** Everything runs locally on `127.0.0.1`. The app **never** writes to
 > `~/.claude`, `~/.codex`, or `~/.junie` — all are read-only sources. Its only persistent
-> state lives in `~/.claudescope/` — a DuckDB index and a copy of the pricing
-> file, both safe to delete anytime. The sole outbound request is an optional
-> daily check for a newer published version (`claudescope update`); nothing about
-> your transcripts ever leaves your machine.
+> state lives in `~/.claudescope/` — a DuckDB index, a copy of the pricing file, and
+> a cached pricing snapshot (`pricing.fetched.json`), all safe to delete anytime. The
+> sole outbound requests are an optional daily check for a newer published version
+> (`claudescope update`) and an optional daily pricing refresh (`claudescope pricing
+> update`); nothing about your transcripts ever leaves your machine.
 
 ---
 
@@ -139,8 +140,9 @@ claudescope restart    # restart it
 claudescope status     # is it running? is an update available?
 claudescope open       # open the running app in your browser
 claudescope logs -f    # tail the server log
-claudescope update     # upgrade to the latest published version and restart
-claudescope help       # full usage
+claudescope update          # upgrade to the latest published version and restart
+claudescope pricing update  # fetch current model prices (LiteLLM) into the local rate table
+claudescope help            # full usage
 
 # options: --port <n>   (default 4317, or $PORT)
 #          --no-open    (don't open the browser on start)
@@ -205,13 +207,24 @@ cost = ( input_tokens          × input_rate
 The per-event cost is computed once at index time and stored, so analytics is
 just a `SUM` over events; a project/session total is the sum of its events.
 
-Rates live in `~/.claudescope/pricing.json` (seeded on first run from the copy
-shipped with the package; when running from source, `packages/server/pricing.json`).
-A model id resolves in this order:
-exact `models` entry → **family** match (`opus` / `sonnet` / `haiku` / `gpt`
-substring) → `default`. The family step means version- or date-suffixed ids (e.g.
-`claude-haiku-4-5-20251001`, or a Codex `gpt-5.x-codex` id) still price correctly.
-Shipped rates (USD per 1M tokens, from Anthropic and OpenAI published API pricing):
+Rates are resolved in a layered lookup:
+
+1. **Fetched exact id** — `~/.claudescope/pricing.fetched.json` (auto-refreshed
+   daily from [LiteLLM's community price table](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json),
+   covering Anthropic, OpenAI, Gemini, xAI, Mistral, and DeepSeek models).
+2. **Local exact id** — `~/.claudescope/pricing.json` (seeded on first run from
+   the shipped default; user-editable; takes precedence over the fetched snapshot
+   for any id it defines explicitly).
+3. **Family match** — `opus` / `sonnet` / `haiku` / `gemini` / `gpt` substring in
+   the model id → the matching family rate from `pricing.json`.
+4. **Default** — the `default` entry in `pricing.json`.
+
+The family step means version- or date-suffixed ids (e.g. `claude-haiku-4-5-20251001`,
+`gpt-5.x-codex`, `gemini-2.5-flash`) still price correctly. `pricing.json` is the
+user-editable fallback and override layer for families and the default rate; the
+fetched snapshot provides exact per-model rates for all known models.
+
+Shipped fallback rates (USD per 1M tokens):
 
 | family / model      | input | output | cache write (5m) | cache read |
 | ------------------- | ----- | ------ | ---------------- | ---------- |
@@ -219,20 +232,21 @@ Shipped rates (USD per 1M tokens, from Anthropic and OpenAI published API pricin
 | Opus 4.1 / 4        | $15   | $75    | $18.75           | $1.50      |
 | Sonnet 4.x          | $3    | $15    | $3.75            | $0.30      |
 | Haiku 4.5           | $1    | $5     | $1.25            | $0.10      |
+| Gemini 2.5 Pro-class| $1.25 | $10    | —                | $0.31      |
 | GPT-5               | $0.63 | $5     | —                | $0.13      |
 | GPT-5.4             | $2.50 | $15    | —                | $0.50      |
 | GPT-5.5             | $5    | $30    | —                | $0.50      |
 | `<synthetic>`       | $0    | $0     | $0               | $0         |
 
-- Edit `~/.claudescope/pricing.json` to update prices or add models, then re-index
-  (`POST /api/reindex` or `claudescope restart`) to recompute.
-- Or run **`npm run update-pricing`** to refresh `pricing.json` from Anthropic's
-  published pricing page. There's no official pricing *API*, so this is a
-  best-effort scrape (it validates what it parses and won't write garbage) —
-  review the diff afterwards. Use `--dry-run` to preview without writing.
-- The `opus`/`sonnet`/`haiku`/`gpt` family rules use **current** pricing; the
-  deprecated Opus 4 / 4.1 ($15/$75) and specific GPT-5 versions are pinned via
-  exact `models` entries. Add an exact entry to override any specific model.
+- Rates **auto-refresh daily** in the background while the server runs. Run
+  `claudescope pricing update` to force a refresh at any time. New rates apply
+  to newly indexed events; existing indexed costs are unchanged.
+- Edit `~/.claudescope/pricing.json` to override families, the default rate, or
+  pin specific model prices. Re-index (`POST /api/reindex` or `claudescope
+  restart`) to recompute stored costs at the new rates.
+- The `opus`/`sonnet`/`haiku`/`gemini`/`gpt` family rules use **current**
+  pricing; the deprecated Opus 4 / 4.1 ($15/$75) and specific GPT-5 versions are
+  pinned via exact `models` entries. Add an exact entry to override any model.
 
 > **Caveat:** these are **list-price estimates** — they ignore any discounts,
 > service tier, or batch pricing, and the cache-write rate assumes the 5-minute
