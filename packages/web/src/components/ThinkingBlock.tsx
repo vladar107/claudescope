@@ -30,7 +30,7 @@ export function ThinkingBlock({ thinking, defaultOpen = false, forceOpen = false
       title="Thinking"
     >
       {hasText ? (
-        <Markdown>{thinking}</Markdown>
+        <Markdown forceExpand={forceOpen}>{thinking}</Markdown>
       ) : (
         <p className="tv-muted" style={{ fontStyle: 'italic', margin: 0 }}>
           Thinking content isn’t stored in the transcript (only a signature).

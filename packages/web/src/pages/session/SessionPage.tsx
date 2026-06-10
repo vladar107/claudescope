@@ -5,13 +5,13 @@ import { api, ApiError } from '../../api/client.js';
 import { AgentBadge, CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
 import { formatBytes, formatDateTime, shortModel } from '../browse/format.js';
 import { hasRenderableContent } from './blocks.js';
-import { SubagentBlock, SubagentJumpMenu, ThreadList } from './ThreadView.js';
+import { SubagentBlock, SubagentJumpMenu, ThreadList, useHashTarget } from './ThreadView.js';
 import { useProgressiveMount } from './useProgressiveMount.js';
 import { ChangesetPanel } from './ChangesetPanel.js';
 import { buildChangeset } from './changeset.js';
 import { ExportMenu } from './ExportMenu.js';
 import { SessionSearchContext } from './SearchContext.js';
-import { buildMatches, revealForMatch, type RoleFilter } from './search.js';
+import { buildMatches, revealForMatch, type FinderMatch, type RoleFilter } from './search.js';
 import { SessionFinder } from './SessionFinder.js';
 import { highlightMatchInBlock, clearHighlights } from './finderDom.js';
 import './session.css';
@@ -155,6 +155,21 @@ function SessionView({
     return map;
   }, [items, subagentsByToolUseId]);
 
+  // Post-load hash navigation (subagent jump menu, time anchors): the target's
+  // turn may not be mounted yet, in which case the native hash scroll (and a
+  // nested SubagentBlock's own open-on-hash effect) has nothing to land on —
+  // request mounting and let those take over once the element exists.
+  const hashTarget = useHashTarget();
+  useEffect(() => {
+    if (!hashTarget || allMounted) return;
+    if (document.getElementById(hashTarget)) return;
+    const agentId = hashTarget.startsWith('subagent-')
+      ? hashTarget.slice('subagent-'.length)
+      : undefined;
+    const target = agentId ? spawnTurnBySubagentId.get(agentId) : hashTarget;
+    if (target) ensureMounted(target);
+  }, [hashTarget, allMounted, mounted, spawnTurnBySubagentId, ensureMounted]);
+
   // Scroll to the #<anchor> deep-link once its turn is mounted. Only on the
   // first load for a given session — a soft refresh swaps `data` but must not
   // yank a deep-linked reader away from their place.
@@ -181,8 +196,10 @@ function SessionView({
     hashScrolledForId.current = meta.id;
     el.scrollIntoView({ block: 'center' });
     el.classList.add('is-targeted');
-    const timer = window.setTimeout(() => el.classList.remove('is-targeted'), 2400);
-    return () => window.clearTimeout(timer);
+    // Fire-and-forget: this effect re-runs as idle mounting grows `mounted`,
+    // so a cleanup-managed timer would be cleared before it fires and leave
+    // the highlight stuck on. Removing a class on a detached node is harmless.
+    window.setTimeout(() => el.classList.remove('is-targeted'), 2400);
   }, [meta.id, mounted, allMounted, spawnTurnBySubagentId, ensureMounted]);
 
   // Cheap (no diffing): just groups edits by file, for the tab count.
@@ -227,16 +244,26 @@ function SessionView({
   // Highlight the active match within its (now-revealed) block. Scoped to one
   // block, so it stays cheap. Re-run on a short delay to catch async code
   // blocks, and on `mounted` growth in case the match's turn wasn't in the
-  // DOM yet (progressive mounting).
+  // DOM yet (progressive mounting). Once highlighted, later `mounted` growth
+  // must NOT re-run it — highlightMatchInBlock scrolls to the match, and
+  // re-running per idle tick would keep yanking the reader back to it.
+  const highlighted = useRef<{ match: FinderMatch; query: string } | null>(null);
   useEffect(() => {
+    const done = highlighted.current;
+    if (done && done.match === activeMatch && done.query === debouncedQuery) return;
     const container = threadRef.current;
     clearHighlights();
+    highlighted.current = null;
     if (!container || !activeMatch) return;
     const anchorUuid = activeMatch.subagentId
       ? spawnTurnBySubagentId.get(activeMatch.subagentId) // undefined → orphan section, always mounted
       : activeMatch.turnUuid;
     if (anchorUuid) ensureMounted(anchorUuid);
-    const run = () => highlightMatchInBlock(container, activeMatch, debouncedQuery);
+    const run = () => {
+      if (highlightMatchInBlock(container, activeMatch, debouncedQuery)) {
+        highlighted.current = { match: activeMatch, query: debouncedQuery };
+      }
+    };
     run();
     const t = window.setTimeout(run, 200);
     return () => window.clearTimeout(t);

@@ -29,7 +29,7 @@ export function useProgressiveMount(items: ThreadItem[]): {
   allMounted: boolean;
   /** Number of currently mounted turns — effects that wait for a turn's DOM to appear should depend on it. */
   mounted: number;
-  /** Make the turn with this uuid mountable now (unknown uuids mount everything — safe fallback). */
+  /** Make the turn with this uuid mountable now (unknown uuids grow by a chunk per call). */
   ensureMounted: (uuid: string) => void;
 } {
   const total = items.length;
@@ -58,9 +58,13 @@ export function useProgressiveMount(items: ThreadItem[]): {
   const ensureMounted = useCallback(
     (uuid: string) => {
       const index = indexByUuid.get(uuid);
-      // Unknown uuid (e.g. a turn inside a subagent thread) — mount everything
-      // rather than silently never reaching the target.
-      setMounted((c) => (index === undefined ? total : mountCountFor(index, c, total)));
+      // Unknown uuid (e.g. a turn inside a subagent thread, or a stale anchor):
+      // grow by a chunk rather than mounting everything at once — callers retry
+      // on `mounted` growth, so this walks to allMounted without reintroducing
+      // the one-giant-commit freeze.
+      setMounted((c) =>
+        index === undefined ? Math.min(c + CHUNK_TURNS, total) : mountCountFor(index, c, total),
+      );
     },
     [indexByUuid, total],
   );
