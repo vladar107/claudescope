@@ -346,8 +346,10 @@ bundles, and publishes. Auth uses npm **Trusted Publishing** (OIDC) — no
 ## Security & privacy
 
 Claudescope runs entirely on your machine. It treats `~/.claude`, `~/.codex`, and
-`~/.junie` as **read-only**, **binds to `127.0.0.1` only**, sends **no telemetry**, and its sole outbound
-request is a cached npm-registry version check for the update notice. See
+`~/.junie` as **read-only**, **binds to `127.0.0.1` only**, and sends **no telemetry**. Its only
+outbound requests are a cached npm-registry version check for the update notice
+and a daily fetch of public model pricing rates from LiteLLM (disable with
+`PRICING_REFRESH_INTERVAL_MS=0`). See
 [`SECURITY.md`](./SECURITY.md) for the full breakdown of filesystem, network,
 shell, and self-update behavior — and how to report a vulnerability.
 
