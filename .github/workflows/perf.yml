@@ -63,7 +63,7 @@ jobs:
             done
           done
 
-      - name: Compare (gate: >10% pooled regression AND p < 0.01 on headline)
+      - name: Compare (fail on >10% pooled headline regression with p < 0.01)
         working-directory: pr
         run: |
           args=()
