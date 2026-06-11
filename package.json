@@ -1,6 +1,6 @@
 {
   "name": "claudescope",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Local, read-only web app to browse, read, search, and analyze your AI coding-agent transcripts — Claude Code, OpenAI Codex, and JetBrains Junie.",
   "keywords": [
