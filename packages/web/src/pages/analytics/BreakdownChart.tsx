@@ -1,7 +1,8 @@
 /**
  * Horizontal breakdown bars for the active group-by (project | model | day):
  * stacked token segments per group plus the cost shown in the tooltip. Rows are
- * sorted by total tokens (desc) and capped to the top 15 to stay readable.
+ * sorted by the visible token sum (desc) — total with cache shown, otherwise
+ * input + output — and capped to the top 15 to stay readable.
  */
 
 import { useMemo } from 'react';
@@ -48,22 +49,23 @@ export function BreakdownChart({
   groupBy: AnalyticsGroupBy;
   showCache: boolean;
 }) {
-  const data = useMemo<Bucket[]>(
-    () =>
-      rows
-        .map((r) => ({
-          key: r.key,
-          label: shortKey(r.key, groupBy),
-          input: r.inputTokens,
-          output: r.outputTokens,
-          cache: r.cacheCreationTokens + r.cacheReadTokens,
-          cost: r.costUsd,
-          total: r.totalTokens,
-        }))
-        .sort((a, b) => b.total - a.total)
-        .slice(0, MAX_BARS),
-    [rows, groupBy],
-  );
+  // Sort by what the bars actually render: with cache hidden, ordering by the
+  // full total would shuffle the visible (input + output) bar lengths.
+  const data = useMemo<Bucket[]>(() => {
+    const visible = (b: Bucket) => (showCache ? b.total : b.input + b.output);
+    return rows
+      .map((r) => ({
+        key: r.key,
+        label: shortKey(r.key, groupBy),
+        input: r.inputTokens,
+        output: r.outputTokens,
+        cache: r.cacheCreationTokens + r.cacheReadTokens,
+        cost: r.costUsd,
+        total: r.totalTokens,
+      }))
+      .sort((a, b) => visible(b) - visible(a))
+      .slice(0, MAX_BARS);
+  }, [rows, groupBy, showCache]);
 
   // Scale height with the number of bars so labels never overlap.
   const height = Math.max(220, data.length * 34 + 60);
