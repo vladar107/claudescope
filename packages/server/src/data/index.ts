@@ -143,7 +143,8 @@ async function loadFile(
       ev.model, ev.input_tokens, ev.output_tokens, ev.cache_read_tokens, ev.cache_write_tokens,
       ev.service_tier, ev.is_sidechain, ev.tool_use_count,
       ${costExpr} AS cost_usd,
-      ev.text_content
+      ev.text_content,
+      ev.message_id, ev.forked_from_session_id, TRUE AS usage_canonical
     FROM (
       ${connector.eventsProjectionSql(file.path)}
     ) AS ev
@@ -159,6 +160,52 @@ async function loadFile(
       `INSERT OR REPLACE INTO pr_links (session_id, pr_number, pr_repository, pr_url) ${aux.prLinks}`,
     );
   }
+}
+
+/**
+ * Mark exactly one `events` row per billed API call as the usage-canonical one,
+ * so token/cost SUMs don't multiply-count a single API response.
+ *
+ * Why this is needed: Claude Code writes one row per content block, all sharing
+ * the same `message.id` and repeating the FULL `usage` object; and forking a
+ * session copies the whole history into a new file (sessionId rewritten, usage
+ * preserved), with each copied row carrying a top-level `forkedFrom` marker.
+ * Both inflate the per-event usage SUMs. Codex/Junie carry NULL message_id and
+ * accumulate per-call deltas once in their normalizers, so they are unaffected.
+ *
+ * The election runs globally each reindex (a full recompute over `events`, cheap
+ * at this scale) so it stays correct across files added, edited, or removed:
+ *  - Rows with NULL message_id are ALWAYS canonical (synthetic rows have unique
+ *    ids when present, so partitioning by message_id never collapses real calls).
+ *  - Within a `message_id` partition, prefer the original over fork copies
+ *    (exact attribution), then the final streaming row over partial ones (only
+ *    `output_tokens` grows across a streamed group), then a deterministic
+ *    file_path/uuid tiebreak for legacy forks that predate the `forkedFrom`
+ *    marker. If the original file was deleted, a fork copy wins rank 1 and the
+ *    cost gracefully re-attaches to the surviving fork session.
+ */
+async function electCanonicalUsage(conn: DuckDBConnection): Promise<void> {
+  // Reset: NULL-id rows are always canonical; everything else starts non-canonical
+  // and only the elected rank-1 row per partition is flipped back below.
+  await conn.run(`UPDATE events SET usage_canonical = (message_id IS NULL)`);
+  await conn.run(`
+    UPDATE events SET usage_canonical = TRUE
+    FROM (
+      SELECT file_path, uuid, message_id,
+             row_number() OVER (
+               PARTITION BY message_id
+               ORDER BY (forked_from_session_id IS NOT NULL) ASC,
+                        output_tokens DESC,
+                        file_path, uuid
+             ) AS rn
+      FROM events
+      WHERE message_id IS NOT NULL
+    ) w
+    WHERE events.file_path = w.file_path
+      AND events.uuid = w.uuid
+      AND events.message_id = w.message_id
+      AND w.rn = 1
+  `);
 }
 
 /**
@@ -193,11 +240,14 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
         max(ts) AS ended_at,
         count(*) AS message_count,
         sum(tool_use_count) AS tool_call_count,
-        sum(input_tokens) AS input_tokens,
-        sum(output_tokens) AS output_tokens,
-        sum(cache_read_tokens) AS cache_read_tokens,
-        sum(cache_write_tokens) AS cache_write_tokens,
-        sum(cost_usd) AS total_cost_usd,
+        -- Usage/cost SUMs filter on usage_canonical so a single billed API call
+        -- (written as many content-block rows, or copied by a fork) is counted
+        -- once; COALESCE guards a session whose every usage row is non-canonical.
+        COALESCE(sum(input_tokens) FILTER (WHERE usage_canonical), 0) AS input_tokens,
+        COALESCE(sum(output_tokens) FILTER (WHERE usage_canonical), 0) AS output_tokens,
+        COALESCE(sum(cache_read_tokens) FILTER (WHERE usage_canonical), 0) AS cache_read_tokens,
+        COALESCE(sum(cache_write_tokens) FILTER (WHERE usage_canonical), 0) AS cache_write_tokens,
+        COALESCE(sum(cost_usd) FILTER (WHERE usage_canonical), 0) AS total_cost_usd,
         bool_or(is_sidechain) AS has_sidechain,
         list_distinct(list(model) FILTER (WHERE model IS NOT NULL)) AS model_list
       FROM events GROUP BY session_id
@@ -364,8 +414,9 @@ async function doReindex(): Promise<ReindexResponse> {
     return { reindexed, durationMs: Date.now() - start };
   }
 
-  // Something changed: rebuild derived tables + FTS so additions, edits, and
-  // removals are all reflected.
+  // Something changed: re-elect the usage-canonical rows globally, then rebuild
+  // derived tables + FTS so additions, edits, and removals are all reflected.
+  await electCanonicalUsage(conn);
   await rebuildSessions(conn);
   await rebuildFtsIndex(conn);
 

@@ -117,7 +117,9 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
 - **Cost is a local estimate** from token usage × rates; not real billing.
   Computed once at index time and stored. Rates auto-refresh daily from LiteLLM
   at runtime (`pricing.fetched.json`); `pricing.json` is the fallback/override
-  layer for families and the default rate.
+  layer for families and the default rate. Usage is deduplicated by billed API
+  call (`message.id`): multi-block splits and fork/resume copies repeat usage
+  across rows, and only the canonical row (elected at index time) is counted.
 - **Release is maintainer-only** and tag-triggered (npm Trusted Publishing /
   OIDC). See `CONTRIBUTING.md`.
 
