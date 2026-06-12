@@ -317,7 +317,7 @@ async function getLatestVersion(force: boolean): Promise<string | null> {
       /* fall through to a fresh fetch */
     }
   }
-  const url = `https://registry.npmjs.org/${PKG.replace('/', '%2f')}/latest`;
+  const url = `https://registry.npmjs.org/${PKG.replaceAll('/', '%2f')}/latest`;
   const res = await fetch(url, { signal: AbortSignal.timeout(2500) });
   if (!res.ok) return null;
   const json = (await res.json()) as { version?: string };
