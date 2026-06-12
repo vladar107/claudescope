@@ -245,12 +245,9 @@ function parseBlocks(
         blocks.push({ kind: 'text', type: 'text', text: block.text });
         break;
       case 'thinking':
-        blocks.push({
-          kind: 'thinking',
-          type: 'thinking',
-          thinking: block.thinking,
-          ...(block.signature !== undefined ? { signature: block.signature } : {}),
-        });
+        // The signature is deliberately dropped: it renders nothing and can be
+        // a third of the response payload on big sessions.
+        blocks.push({ kind: 'thinking', type: 'thinking', thinking: block.thinking });
         break;
       case 'tool_use': {
         const interaction: ToolInteraction = {

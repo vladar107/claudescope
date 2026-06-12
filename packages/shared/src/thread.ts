@@ -34,7 +34,11 @@ export interface ParsedTextBlock extends TextBlock {
   kind: 'text';
 }
 
-export interface ParsedThinkingBlock extends ThinkingBlock {
+/**
+ * The raw block's `signature` is excluded: it renders nothing in the UI and is
+ * pure payload weight (often megabytes across a large session).
+ */
+export interface ParsedThinkingBlock extends Omit<ThinkingBlock, 'signature'> {
   kind: 'thinking';
 }
 
