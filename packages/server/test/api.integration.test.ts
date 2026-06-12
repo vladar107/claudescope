@@ -230,6 +230,51 @@ describe('POST /api/reindex', () => {
   });
 });
 
+describe('stale aux row cleanup', () => {
+  // Regression: if an ai-title line is removed from a transcript, the stale
+  // titles row must not survive the reload and be picked up via LEFT JOIN in
+  // rebuildSessions — the session title must fall back to the first user message.
+  it('clears a stale ai-title when the line is removed from the transcript', async () => {
+    const { reindex } = await import('../src/data/index.js');
+
+    // Write a fresh session fixture with an ai-title line.
+    const projC = join(projectsDir, 'enc-projC');
+    mkdirSync(projC, { recursive: true });
+    const sessC = join(projC, 'sessC.jsonl');
+    writeFileSync(
+      sessC,
+      jsonl([
+        { type: 'ai-title', sessionId: 'sessC', aiTitle: 'AI Generated Title' },
+        { type: 'user', sessionId: 'sessC', uuid: 'c-u1', parentUuid: null, cwd: '/tmp/projC', timestamp: '2026-03-01T08:00:00.000Z', isSidechain: false, message: { role: 'user', content: 'first user message for sessC' } },
+        { type: 'assistant', sessionId: 'sessC', uuid: 'c-a1', parentUuid: 'c-u1', cwd: '/tmp/projC', timestamp: '2026-03-01T08:00:05.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'text', text: 'reply C' }], usage: { input_tokens: 10, output_tokens: 5 } } },
+      ]),
+    );
+
+    await reindex();
+
+    // Confirm the ai-title is picked up on first index.
+    const before = (await get('/api/sessions/sessC')).json();
+    expect(before.meta.title).toBe('AI Generated Title');
+
+    // Rewrite the file WITHOUT the ai-title line. Change the content slightly
+    // so mtime+size differ and the (mtime,size) check triggers a reload.
+    writeFileSync(
+      sessC,
+      jsonl([
+        { type: 'user', sessionId: 'sessC', uuid: 'c-u1', parentUuid: null, cwd: '/tmp/projC', timestamp: '2026-03-01T08:00:00.000Z', isSidechain: false, message: { role: 'user', content: 'first user message for sessC' } },
+        { type: 'assistant', sessionId: 'sessC', uuid: 'c-a1', parentUuid: 'c-u1', cwd: '/tmp/projC', timestamp: '2026-03-01T08:00:05.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'text', text: 'reply C' }], usage: { input_tokens: 10, output_tokens: 5 } } },
+      ]),
+    );
+
+    await reindex();
+
+    // The stale ai-title must be gone; title should fall back to first user message.
+    const after = (await get('/api/sessions/sessC')).json();
+    expect(after.meta.title).not.toBe('AI Generated Title');
+    expect(after.meta.title).toContain('first user message for sessC');
+  });
+});
+
 describe('read-only guarantee', () => {
   it('never modifies the source transcripts', async () => {
     const before = fixtureFiles.map((f) => statSync(f));

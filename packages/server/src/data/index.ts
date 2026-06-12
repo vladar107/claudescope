@@ -130,6 +130,12 @@ async function loadFile(
   const path = sqlString(file.path);
   // Formats that can't be projected per-row normalize to a canonical NDJSON first.
   await connector.prepare?.(file.path);
+  // Delete stale aux rows before clearing events: if an ai-title or pr-link line
+  // was removed from the transcript, the old row must not survive the reload and
+  // get LEFT JOINed back into the rebuilt session. The subquery reads events
+  // before they are deleted, so these must come first.
+  await conn.run(`DELETE FROM titles   WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${path})`);
+  await conn.run(`DELETE FROM pr_links WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${path})`);
   await conn.run(`DELETE FROM events WHERE file_path = ${path}`);
 
   // The cost expression references the projected token/model columns plus the
@@ -361,6 +367,10 @@ async function doReindex(): Promise<ReindexResponse> {
   let removed = 0;
   for (const path of existing.keys()) {
     if (!discoveredPaths.has(path)) {
+      // Delete stale aux rows before clearing events: the subquery reads events
+      // to resolve session ids, so aux deletes must precede the events delete.
+      await conn.run(`DELETE FROM titles   WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${sqlString(path)})`);
+      await conn.run(`DELETE FROM pr_links WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${sqlString(path)})`);
       await conn.run(`DELETE FROM events WHERE file_path = ${sqlString(path)}`);
       await conn.run(`DELETE FROM files WHERE path = ${sqlString(path)}`);
       removed += 1;
