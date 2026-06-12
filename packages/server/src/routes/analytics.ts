@@ -5,6 +5,10 @@
  * cacheHitRatio = cache_read / (cache_read + input). Computed both per-row and
  * for the totals. Optional inclusive date bounds `from` / `to` filter on the
  * event timestamp.
+ *
+ * Token/cost SUMs and messageCount filter on `usage_canonical` so one billed API
+ * call counts once (Claude Code writes a row per content block and copies usage
+ * across fork sessions); messageCount is therefore "billed API calls, deduped".
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -71,12 +75,12 @@ export async function registerAnalyticsRoute(app: FastifyInstance): Promise<void
       conn,
       `SELECT
          ${keyExpr} AS group_key,
-         sum(e.input_tokens) AS input_tokens,
-         sum(e.output_tokens) AS output_tokens,
-         sum(e.cache_write_tokens) AS cache_write_tokens,
-         sum(e.cache_read_tokens) AS cache_read_tokens,
-         sum(e.cost_usd) AS cost_usd,
-         count(*) AS message_count
+         sum(e.input_tokens) FILTER (WHERE e.usage_canonical) AS input_tokens,
+         sum(e.output_tokens) FILTER (WHERE e.usage_canonical) AS output_tokens,
+         sum(e.cache_write_tokens) FILTER (WHERE e.usage_canonical) AS cache_write_tokens,
+         sum(e.cache_read_tokens) FILTER (WHERE e.usage_canonical) AS cache_read_tokens,
+         sum(e.cost_usd) FILTER (WHERE e.usage_canonical) AS cost_usd,
+         count(*) FILTER (WHERE e.usage_canonical) AS message_count
        ${fromSql}
        ${whereSql}
        GROUP BY group_key

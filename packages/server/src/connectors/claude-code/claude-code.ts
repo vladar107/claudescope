@@ -101,7 +101,7 @@ function eventsProjectionSql(filePath: string): string {
   const readFn = `read_ndjson(${path}, ${READ_OPTS}, columns={
     type:'VARCHAR', uuid:'VARCHAR', parentUuid:'VARCHAR', sessionId:'VARCHAR',
     timestamp:'VARCHAR', cwd:'VARCHAR', gitBranch:'VARCHAR', isSidechain:'BOOLEAN',
-    message:'JSON'
+    message:'JSON', forkedFrom:'JSON'
   })`;
 
   return `
@@ -123,7 +123,9 @@ function eventsProjectionSql(filePath: string): string {
       json_extract_string(message, '$.usage.service_tier') AS service_tier,
       COALESCE(isSidechain, FALSE) AS is_sidechain,
       ${TOOL_USE_COUNT_EXPR} AS tool_use_count,
-      ${TEXT_CONTENT_EXPR} AS text_content
+      ${TEXT_CONTENT_EXPR} AS text_content,
+      json_extract_string(message, '$.id') AS message_id,
+      json_extract_string(forkedFrom, '$.sessionId') AS forked_from_session_id
     FROM ${readFn}
     WHERE type IN ('user', 'assistant')`;
 }

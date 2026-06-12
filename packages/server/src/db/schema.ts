@@ -22,7 +22,8 @@
 // so existing indexes pick up the new output. On a version mismatch the index
 // (a derived cache) is discarded and rebuilt from source — see db/duckdb.ts.
 // v5: Codex title fallback (first user message) + `<image …>` placeholder strip.
-export const SCHEMA_VERSION = 5;
+// v6: usage dedup by billed API call (message_id / forked_from_session_id / usage_canonical).
+export const SCHEMA_VERSION = 6;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -59,7 +60,10 @@ export const SCHEMA_DDL: readonly string[] = [
      is_sidechain BOOLEAN DEFAULT FALSE,
      tool_use_count INTEGER DEFAULT 0,
      cost_usd     DOUBLE DEFAULT 0,
-     text_content VARCHAR
+     text_content VARCHAR,
+     message_id   VARCHAR,
+     forked_from_session_id VARCHAR,
+     usage_canonical BOOLEAN DEFAULT TRUE
    )`,
 
   `CREATE TABLE IF NOT EXISTS sessions (
