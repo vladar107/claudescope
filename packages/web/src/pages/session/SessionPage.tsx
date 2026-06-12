@@ -145,7 +145,8 @@ function SessionView({
   // Mount turns progressively: the first chunk renders immediately, the rest
   // stream in during idle time, so a huge session never blocks the first paint
   // behind one giant React commit.
-  const { visibleItems, allMounted, mounted, ensureMounted } = useProgressiveMount(items);
+  const { visibleItems, allMounted, mounted, ensureMounted, sentinelRef } =
+    useProgressiveMount(items);
 
   // subagentId → uuid of the top-level turn its run renders under. Used to
   // mount the right turn before navigating to a match/anchor inside a nested
@@ -318,7 +319,9 @@ function SessionView({
             <ThreadList items={visibleItems} subagentsByToolUseId={subagentsByToolUseId} />
           )}
           {allMounted ? null : (
-            <p className="tv-muted">Rendering {items.length - visibleItems.length} more turns…</p>
+            <p className="tv-muted" ref={sentinelRef}>
+              Rendering {items.length - visibleItems.length} more turns…
+            </p>
           )}
 
           {orphanSubagents.length > 0 ? (
@@ -335,7 +338,7 @@ function SessionView({
         </div>
       </SessionSearchContext.Provider>
     ),
-    [reveal, items, visibleItems, allMounted, subagentsByToolUseId, orphanSubagents],
+    [reveal, items, visibleItems, allMounted, subagentsByToolUseId, orphanSubagents, sentinelRef],
   );
 
   return (
