@@ -6,6 +6,7 @@ import { ClampedText } from './ClampedText.js';
 import { Markdown } from './Markdown.js';
 import { LineDiff } from './LineDiff.js';
 import { extOf, MAX_HIGHLIGHT } from './diff.js';
+import { extractImage } from './image.js';
 
 export interface ToolBlockProps {
   /** The parsed tool interaction (tool_use paired with its tool_result). */
@@ -64,6 +65,17 @@ function renderResultBlocks(blocks: ContentBlock[], forceExpand: boolean) {
       return <Markdown key={i} markdown={false} forceExpand={forceExpand}>{block.text}</Markdown>;
     if (block.type === 'thinking')
       return <Markdown key={i} markdown={false} forceExpand={forceExpand}>{block.thinking}</Markdown>;
+    if (block.type === 'image') {
+      const src = extractImage(block);
+      if (src) {
+        return (
+          <figure key={i} className="tv-attachment">
+            <img src={src} alt="tool result image" />
+            <figcaption className="tv-muted">image</figcaption>
+          </figure>
+        );
+      }
+    }
     return <Markdown key={i} markdown={false} forceExpand={forceExpand}>{stringifyInput(block)}</Markdown>;
   });
 }
@@ -155,11 +167,21 @@ function ToolBody({
     case 'Read': {
       const fp = str(input.file_path);
       const text = resultText(tool.result);
+      // When the result has non-text blocks (e.g. an image from reading a PNG),
+      // resultText is empty — render via ResultSection so image blocks are shown
+      // properly instead of an empty code block.
+      const hasNonTextBlocks = tool.result
+        ? tool.result.content.some((b) => b.type !== 'text' && b.type !== 'thinking')
+        : false;
       return (
         <>
           {fp ? <FileHeader path={fp} /> : null}
           {tool.result ? (
-            <Code code={text} lang={extOf(fp)} forceExpand={forceOpen} />
+            text || !hasNonTextBlocks ? (
+              <Code code={text} lang={extOf(fp)} forceExpand={forceOpen} />
+            ) : (
+              <ResultSection tool={tool} isError={isError} forceExpand={forceOpen} />
+            )
           ) : (
             <ResultSection tool={tool} isError={isError} forceExpand={forceOpen} />
           )}

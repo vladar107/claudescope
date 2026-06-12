@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import type { ThreadBlock } from '@claudescope/shared';
-import { Markdown, ThinkingBlock, ToolBlock } from '../../components';
+import { Markdown, ThinkingBlock, ToolBlock, extractImage } from '../../components';
 import { stripImageMarkers } from './text.js';
 
 /**
@@ -63,24 +63,6 @@ function AttachmentView({ attachment }: { attachment: unknown }) {
       <Markdown markdown={false}>{text}</Markdown>
     </div>
   );
-}
-
-/** Pull a renderable <img src> out of an Anthropic-style image block, if any. */
-function extractImage(value: unknown): string | null {
-  if (!value || typeof value !== 'object') return null;
-  const block = value as { type?: string; source?: unknown };
-  if (block.type !== 'image' || !block.source || typeof block.source !== 'object') return null;
-  const source = block.source as {
-    type?: string;
-    media_type?: string;
-    data?: string;
-    url?: string;
-  };
-  if (source.type === 'url' && source.url) return source.url;
-  if (source.type === 'base64' && source.data && source.media_type) {
-    return `data:${source.media_type};base64,${source.data}`;
-  }
-  return null;
 }
 
 /** True when a thread item carries any non-whitespace renderable block. */
