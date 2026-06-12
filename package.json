@@ -49,8 +49,8 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0",
-    "esbuild": "^0.24.2",
+    "concurrently": "^10.0.3",
+    "esbuild": "^0.25.0",
     "playwright": "^1.49.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
