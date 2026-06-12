@@ -1,8 +1,8 @@
 # 0012 — Cost dedup: billed API calls
 
-- **Status:** in-progress
+- **Status:** done
 - **Date:** 2026-06-12
-- **PR:** <link, once opened>
+- **PR:** [#16](https://github.com/vladar107/claudescope/pull/16)
 
 ## Context
 
@@ -63,13 +63,15 @@ API call exactly once, while leaving raw event data and the thread view untouche
    from each assistant event row.
 3. **Codex + Junie connectors.** Emit `NULL` for both new columns (no change to
    their dedup logic).
-4. **`electCanonicalUsage`.** New function in `data/index.ts`: after each batch
-   of inserts, run a DuckDB UPDATE that sets `usage_canonical` via the election
-   window described above, scoped to the files that changed.
-5. **Filtered sums.** `rebuildSessions` and `/api/analytics` add
-   `WHERE usage_canonical` to all `SUM(input_tokens)` / `SUM(output_tokens)` /
-   `SUM(cache_*)` / `SUM(cost)` aggregates. Row counts (message count) also filter
-   on `usage_canonical`.
+4. **`electCanonicalUsage`.** New function in `data/index.ts`: after a reindex
+   pass that changed anything, run a global DuckDB UPDATE that re-elects
+   `usage_canonical` via the election window described above (a full recompute,
+   cheap at this scale — stays correct across added/edited/removed files).
+5. **Filtered sums.** `rebuildSessions` and `/api/analytics` apply
+   `FILTER (WHERE usage_canonical)` to all `SUM(input_tokens)` /
+   `SUM(output_tokens)` / `SUM(cache_*)` / `SUM(cost)` aggregates. The sessions
+   `message_count` stays unfiltered (it counts transcript rows); only the
+   analytics `messageCount` is deduped (it counts billed calls).
 6. **Integration test.** New `packages/server/test/dedup.integration.test.ts`
    covering: multi-block split, partial-output rows, marked fork pair, legacy
    unmarked fork.
