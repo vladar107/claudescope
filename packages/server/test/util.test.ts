@@ -18,17 +18,26 @@ describe('sqlString', () => {
 });
 
 describe('projectIdFromCwd', () => {
-  it('slugs a cwd into a URL-safe id', () => {
-    expect(projectIdFromCwd('/Users/me/src/my-proj')).toBe('Users-me-src-my-proj');
+  it('slugs a cwd into a URL-safe id with hash suffix', () => {
+    // slug: Users-me-src-my-proj, hash8: sha256('/Users/me/src/my-proj').slice(0,8) = ffb76eab
+    expect(projectIdFromCwd('/Users/me/src/my-proj')).toBe('Users-me-src-my-proj-ffb76eab');
   });
 
-  it('collapses runs of non-alphanumerics and trims edges', () => {
-    expect(projectIdFromCwd('/a//b__c')).toBe('a-b-c');
+  it('collapses runs of non-alphanumerics, trims edges, and appends hash', () => {
+    // slug: a-b-c, hash8: sha256('/a//b__c').slice(0,8) = daf1542d
+    expect(projectIdFromCwd('/a//b__c')).toBe('a-b-c-daf1542d');
   });
 
   it('is stable for the same cwd', () => {
     const cwd = '/Users/x/src/languages-migration';
     expect(projectIdFromCwd(cwd)).toBe(projectIdFromCwd(cwd));
+  });
+
+  it('is collision-resistant: distinct paths with identical slugs get different ids', () => {
+    // Both slug to 'a-b-c' but differ in their hash suffix
+    expect(projectIdFromCwd('/a/b-c')).not.toBe(projectIdFromCwd('/a/b/c'));
+    // Both slug to 'tmp-foo-bar' but differ in their hash suffix
+    expect(projectIdFromCwd('/tmp/foo-bar')).not.toBe(projectIdFromCwd('/tmp/foo_bar'));
   });
 });
 
