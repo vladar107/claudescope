@@ -3,9 +3,10 @@
 A local, **read-only**, **multi-agent** viewer to browse, read, search, and
 analyze AI coding-agent transcripts in one place — [Claude Code](https://claude.com/claude-code) (`~/.claude/projects/**/*.jsonl`),
 [OpenAI Codex](https://openai.com/codex)
-(`~/.codex/sessions/**/rollout-*.jsonl`), and
+(`~/.codex/sessions/**/rollout-*.jsonl`),
 [JetBrains Junie](https://www.jetbrains.com/junie/)
-(`~/.junie/sessions/session-*/events.jsonl`). Sessions are merged by working
+(`~/.junie/sessions/session-*/events.jsonl`), and [pi](https://pi.dev)
+(`~/.pi/agent/sessions/**/*.jsonl`). Sessions are merged by working
 directory into one project per `cwd`, each session tagged with its agent.
 Distributed as a single npm CLI (`@vladar107/claudescope`). This file is the
 source of truth for both humans and agents working in this repo; `AGENTS.md`
@@ -112,8 +113,17 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
 
 - **Thinking blocks render empty** — Claude Code stores only a signature (and
   Codex only encrypted reasoning), not the plaintext. Expected, not a bug.
+  **pi is the exception**: it stores plaintext thinking (plus an opaque
+  `thinkingSignature`), so pi reasoning renders in full.
 - **Codex sessions have no stored title** — the session title falls back to the
-  first user message (see `first_user` in `data/index.ts`).
+  first user message (see `first_user` in `data/index.ts`). Same for **pi**.
+- **pi connector** (`connectors/pi/`) — JSONL like Claude/Codex but `cwd` is on
+  the `session` line and tool results are separate `toolResult` records, so a
+  `prepare()` pass normalizes to canonical NDJSON (Codex pattern). `model` comes
+  per-turn from the assistant message (the `model_change` records are ignored for
+  attribution); the `uuid`/`parentUuid` chain is synthesized over message rows
+  because pi's native chain threads through `model_change`/`thinking_level_change`
+  records. pi has no home-dir memory, so the connector implements no memory.
 - **Junie transcripts read differently** — Junie stores an event-sourced UI
   stream (`events.jsonl`), not a chat log: no assistant prose and no thinking, so
   a session renders as tool/terminal/file blocks plus a final result. Expected,
@@ -129,3 +139,4 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   OIDC). See `CONTRIBUTING.md`.
 
 See `CONTRIBUTING.md` for the full workflow and `README.md` for user-facing docs.
+

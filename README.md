@@ -20,14 +20,15 @@ machine and only ever reads your transcripts.
 | [Claude Code](https://claude.com/claude-code)     | `~/.claude/projects/**/*.jsonl`               |
 | [OpenAI Codex](https://openai.com/codex)          | `~/.codex/sessions/**/rollout-*.jsonl`        |
 | [JetBrains Junie](https://www.jetbrains.com/junie/) | `~/.junie/sessions/session-*/events.jsonl`  |
+| [pi](https://pi.dev)                              | `~/.pi/agent/sessions/**/*.jsonl`             |
 
 Each source is optional — a directory that doesn't exist is simply skipped, so
-Claudescope works whether you use one agent or all three. Adding another is just
+Claudescope works whether you use one agent or all four. Adding another is just
 [adding another connector](#how-it-works).
 
 ## What it can do
 
-- **Multi-agent** — Claude Code, Codex, and Junie sessions side by side, each labeled with an **agent badge**. A project that several agents touched shows one card with all its agent tags; drill in and **filter the session list by agent**.
+- **Multi-agent** — Claude Code, Codex, Junie, and pi sessions side by side, each labeled with an **agent badge**. A project that several agents touched shows one card with all its agent tags; drill in and **filter the session list by agent**.
 - **Browse** every session grouped by project — titles, dates, message/tool counts, token totals, cost, git branch, PR links.
 - **Read** a session as a clean threaded conversation: markdown, syntax-highlighted code, collapsible thinking, paired tool calls + results, **syntax-highlighted red/green diffs** for edits, attachments, and sidechain/subagent turns. A built-in **find-in-session** bar (⌘/Ctrl+F) searches the whole transcript — including collapsed thinking, tool, and subagent content — auto-expanding and highlighting matches, with a user/assistant filter.
 - **Review changes** via a **Files changed** tab that aggregates every edit/write in the session by file, with per-file diffs and +/− counts (diffs load lazily per file).
@@ -172,11 +173,12 @@ All optional — set via environment variables.
 | `CLAUDE_PROJECTS_DIR` | `~/.claude/projects`   | Where to read Claude Code transcripts from. A leading `~` is expanded. |
 | `CODEX_SESSIONS_DIR`  | `~/.codex/sessions`    | Where to read OpenAI Codex transcripts from. A leading `~` is expanded.|
 | `JUNIE_SESSIONS_DIR`  | `~/.junie/sessions`    | Where to read JetBrains Junie transcripts from. A leading `~` is expanded.|
+| `PI_SESSIONS_DIR`     | `~/.pi/agent/sessions` | Where to read pi transcripts from. A leading `~` is expanded.          |
 | `CLAUDESCOPE_HOME`    | `~/.claudescope`       | Where the app keeps its own state (index, pricing copy, logs, PID).    |
 | `REINDEX_INTERVAL_MS` | `15000`                | How often to auto-pick-up new/updated sessions. Set `0` to disable.    |
 
 Each agent source is optional — if a directory doesn't exist it's simply skipped,
-so the app works whether you use one agent or all three.
+so the app works whether you use one agent or all four.
 
 Examples:
 
@@ -185,6 +187,7 @@ claudescope --port 8080                                  # custom port
 CLAUDE_PROJECTS_DIR=/path/to/exported/projects claudescope  # view someone else's transcripts
 CODEX_SESSIONS_DIR=/path/to/codex/sessions claudescope   # point at Codex sessions elsewhere
 JUNIE_SESSIONS_DIR=/path/to/junie/sessions claudescope   # point at Junie sessions elsewhere
+PI_SESSIONS_DIR=/path/to/pi/sessions claudescope         # point at pi sessions elsewhere
 claudescope --no-open                                    # don't pop a browser tab
 ```
 
@@ -279,12 +282,16 @@ served from cache (legitimately high for Claude Code, which re-reads cached cont
   (and Codex only encrypted reasoning), not the plaintext — the app notes this
   explicitly. (Not a bug.)
 - **Codex sessions have no stored title**, so the title falls back to the first
-  user message.
+  user message. The same is true for **pi** sessions.
 - **Junie sessions render differently.** Junie records an event-sourced UI stream
   rather than a chat log, so a session reads as tool / terminal / file blocks plus
   a final result — there's no assistant prose or thinking to show. Pasted
   screenshots are surfaced inline. Older Junie sessions don't record a working
   directory and group under an **"(unknown — Junie)"** project.
+- **pi reasoning renders in full.** Unlike Claude Code / Codex, pi stores the
+  plaintext of its thinking blocks, so they show real reasoning rather than an
+  empty placeholder. pi keeps no memory in its home dir, so it contributes nothing
+  to the memory viewer.
 
 ---
 
@@ -363,7 +370,7 @@ shell, and self-update behavior — and how to report a vulnerability.
 ## Troubleshooting
 
 - **App is empty / "sessions directory not found"** — none of `CLAUDE_PROJECTS_DIR`,
-  `CODEX_SESSIONS_DIR`, or `JUNIE_SESSIONS_DIR` points at real transcripts. Check
+  `CODEX_SESSIONS_DIR`, `JUNIE_SESSIONS_DIR`, or `PI_SESSIONS_DIR` points at real transcripts. Check
   the banner and set them correctly. Any source can be absent; only the present
   ones are indexed.
 - **`Error: listen EADDRINUSE :4317`** — the port is taken; run `claudescope --port <n>`.

@@ -343,10 +343,17 @@ async function doReindex(): Promise<ReindexResponse> {
   const start = Date.now();
   const conn = await getConnection();
   const pricing = loadPricing();
-  // Refresh the pricing join table (cheap; recreated once per run) before any
-  // file loads so the cost expression's exact-id join sees current rates.
-  await syncPricingTable(conn, pricing);
   const costExpr = buildCostExpr(pricing);
+  // The pricing join table is only read by loadFile (its exact-id LEFT JOIN), so
+  // build it lazily on the first file load. A no-op reindex — the common 15s
+  // auto-poll case — then never pays the DROP/CREATE/INSERT, which matters now
+  // that the shipped pricing carries the full OpenAI model lineup.
+  let pricingSynced = false;
+  const ensurePricingTable = async (): Promise<void> => {
+    if (pricingSynced) return;
+    await syncPricingTable(conn, pricing);
+    pricingSynced = true;
+  };
 
   // Discover across every registered connector, tagging each file with its owner.
   const discovered: { file: DiscoveredFile; connector: AgentConnector }[] = [];
@@ -389,6 +396,7 @@ async function doReindex(): Promise<ReindexResponse> {
     // wedge every other session. Skip it (its `files` row keeps the old mtime,
     // so a later edit retries it) and carry on.
     try {
+      await ensurePricingTable();
       await loadFile(conn, connector, file, costExpr);
 
       // Determine the session id from loaded events (filename usually matches,

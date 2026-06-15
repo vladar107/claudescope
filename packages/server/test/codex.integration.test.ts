@@ -20,8 +20,9 @@ const claudeDir = join(work, 'claude-empty');
 
 process.env.CLAUDE_PROJECTS_DIR = claudeDir;
 process.env.CODEX_SESSIONS_DIR = codexDir;
-// Isolate from the real ~/.junie so this Codex-only suite stays deterministic.
+// Isolate from the real ~/.junie and ~/.pi so this Codex-only suite stays deterministic.
 process.env.JUNIE_SESSIONS_DIR = join(work, 'junie-empty');
+process.env.PI_SESSIONS_DIR = join(work, 'pi-empty');
 process.env.DUCKDB_PATH = join(work, 'index.duckdb');
 process.env.CLAUDESCOPE_HOME = join(work, 'home');
 process.env.REINDEX_INTERVAL_MS = '0';
@@ -111,8 +112,8 @@ describe('Codex session indexing', () => {
     const s = (await get('/api/sessions')).json()[0];
     // input 1000 - cached 200 = 800 input; 200 cache_read; 300 output → 1300 total.
     expect(s.totalTokens).toBe(1300);
-    // gpt-5.4: (800*2.5 + 300*15 + 200*0.5) / 1e6 = 0.0066
-    expect(s.totalCostUsd).toBeCloseTo(0.0066, 5);
+    // gpt-5.4 @ official cached 0.25: (800*2.5 + 300*15 + 200*0.25) / 1e6 = 0.00655
+    expect(s.totalCostUsd).toBeCloseTo(0.00655, 5);
   });
 
   it('groups analytics by the OpenAI model', async () => {
