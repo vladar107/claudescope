@@ -2,7 +2,7 @@
 
 - **Status:** done
 - **Date:** 2026-06-15
-- **PR:** <link, once opened>
+- **PR:** https://github.com/vladar107/claudescope/pull/19
 
 ## Context
 
