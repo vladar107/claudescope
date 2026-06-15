@@ -19,6 +19,7 @@ import type {
   AnalyticsTotals,
 } from '@claudescope/shared';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import { readRow } from '../db/row.js';
 import { projectIdFromCwd } from '../data/project-id.js';
 
 /**
@@ -88,11 +89,12 @@ export async function registerAnalyticsRoute(app: FastifyInstance): Promise<void
     );
 
     const resultRows: AnalyticsRow[] = rows.map((r) => {
-      const input = Number(r.input_tokens ?? 0);
-      const output = Number(r.output_tokens ?? 0);
-      const cacheWrite = Number(r.cache_write_tokens ?? 0);
-      const cacheRead = Number(r.cache_read_tokens ?? 0);
-      let key = String(r.group_key ?? '');
+      const rd = readRow(r, 'analytics');
+      const input = rd.num('input_tokens');
+      const output = rd.num('output_tokens');
+      const cacheWrite = rd.num('cache_write_tokens');
+      const cacheRead = rd.num('cache_read_tokens');
+      let key = rd.str('group_key');
       // For project grouping, expose the slug id (matches /api/projects ids).
       if (groupBy === 'project' && key && key !== 'unknown') {
         key = projectIdFromCwd(key);
@@ -104,9 +106,9 @@ export async function registerAnalyticsRoute(app: FastifyInstance): Promise<void
         cacheCreationTokens: cacheWrite,
         cacheReadTokens: cacheRead,
         totalTokens: input + output + cacheWrite + cacheRead,
-        costUsd: Number(r.cost_usd ?? 0),
+        costUsd: rd.num('cost_usd'),
         cacheHitRatio: cacheHitRatio(cacheRead, cacheWrite, input),
-        messageCount: Number(r.message_count ?? 0),
+        messageCount: rd.num('message_count'),
       };
     });
 

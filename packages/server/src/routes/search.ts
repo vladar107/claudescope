@@ -17,6 +17,7 @@ import type {
   SearchType,
 } from '@claudescope/shared';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import { readRow } from '../db/row.js';
 import { projectIdFromCwd } from '../data/project-id.js';
 import { collectMemory } from '../data/memory.js';
 
@@ -106,16 +107,17 @@ async function searchSessions(
   );
 
   return rows.map((r): SearchResult => {
-    const cwd = r.project_cwd != null ? String(r.project_cwd) : '';
-    const text = r.text_content != null ? String(r.text_content) : '';
+    const rd = readRow(r, 'search');
+    const cwd = rd.str('project_cwd');
+    const text = rd.str('text_content');
     return {
-      sessionId: String(r.session_id),
+      sessionId: rd.str('session_id'),
       projectId: cwd ? projectIdFromCwd(cwd) : '',
-      title: r.title != null ? String(r.title) : '',
+      title: rd.str('title'),
       snippet: makeSnippet(text, terms),
-      score: Number(r.score ?? 0),
-      messageUuid: String(r.message_uuid),
-      role: r.role != null ? String(r.role) : '',
+      score: rd.num('score'),
+      messageUuid: rd.str('message_uuid'),
+      role: rd.str('role'),
     };
   });
 }

@@ -13,6 +13,7 @@ import type {
   SessionSort,
 } from '@claudescope/shared';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import { readRow } from '../db/row.js';
 import { displayNameFromCwd, projectIdFromCwd } from '../data/project-id.js';
 import { toIso } from './projects.js';
 import { assembleThread, buildSubagentRuns } from '../data/parser.js';
@@ -27,30 +28,29 @@ const SORT_SQL: Record<SessionSort, string> = {
 };
 
 function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
-  const cwd = r.project_cwd != null ? String(r.project_cwd) : '';
-  const modelsStr = r.models != null ? String(r.models) : '';
+  const rd = readRow(r, 'sessions');
+  const cwd = rd.str('project_cwd');
+  const modelsStr = rd.str('models');
   const meta: SessionMeta = {
-    id: String(r.id),
+    id: rd.str('id'),
     projectId: cwd ? projectIdFromCwd(cwd) : '',
     projectDisplayName: cwd ? displayNameFromCwd(cwd) : '',
-    title: r.title != null ? String(r.title) : '',
-    startedAt: toIso(r.started_at),
-    endedAt: toIso(r.ended_at),
-    messageCount: Number(r.message_count ?? 0),
-    toolCallCount: Number(r.tool_call_count ?? 0),
-    totalTokens: Number(r.total_tokens ?? 0),
-    totalCostUsd: Number(r.total_cost_usd ?? 0),
+    title: rd.str('title'),
+    startedAt: toIso(rd.req('started_at')),
+    endedAt: toIso(rd.req('ended_at')),
+    messageCount: rd.num('message_count'),
+    toolCallCount: rd.num('tool_call_count'),
+    totalTokens: rd.num('total_tokens'),
+    totalCostUsd: rd.num('total_cost_usd'),
     models: modelsStr ? modelsStr.split(',').filter(Boolean) : [],
-    sizeBytes: Number(r.size_bytes ?? 0),
-    hasSidechain: Boolean(r.has_sidechain),
-    connectorId: r.connector_id != null ? String(r.connector_id) : 'claude-code',
+    sizeBytes: rd.num('size_bytes'),
+    hasSidechain: rd.bool('has_sidechain'),
+    connectorId: rd.str('connector_id') || 'claude-code',
   };
-  if (r.git_branch != null && String(r.git_branch).length > 0) {
-    meta.gitBranch = String(r.git_branch);
-  }
-  if (r.pr_url != null && String(r.pr_url).length > 0) {
-    meta.prUrl = String(r.pr_url);
-  }
+  const gitBranch = rd.str('git_branch');
+  if (gitBranch) meta.gitBranch = gitBranch;
+  const prUrl = rd.str('pr_url');
+  if (prUrl) meta.prUrl = prUrl;
   return meta;
 }
 
