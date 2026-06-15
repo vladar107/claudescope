@@ -346,19 +346,21 @@ function SessionView({
       <header className="tv-session__header">
         <div className="tv-session__crumbs">
           <nav className="tv-session__trail" aria-label="Breadcrumb">
+            <Link to="/" className="tv-linkbtn">
+              ← Projects
+            </Link>
             {meta.projectId ? (
-              <Link
-                to={`/projects/${meta.projectId}`}
-                className="tv-linkbtn"
-                title={`All ${meta.projectDisplayName || 'project'} sessions`}
-              >
-                ← {meta.projectDisplayName || 'Sessions'}
-              </Link>
-            ) : (
-              <Link to="/" className="tv-linkbtn">
-                ← Browse
-              </Link>
-            )}
+              <>
+                <span className="tv-muted"> / </span>
+                <Link
+                  to={`/projects/${meta.projectId}`}
+                  className="tv-linkbtn tv-mono"
+                  title={`All ${meta.projectDisplayName || 'project'} sessions`}
+                >
+                  {meta.projectDisplayName || 'project'}
+                </Link>
+              </>
+            ) : null}
           </nav>
           <SubagentJumpMenu subagents={subagents} />
           <ExportMenu data={data} />
