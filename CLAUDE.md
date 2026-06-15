@@ -90,6 +90,11 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
 - **Tests:** run `npm test` and `npm run typecheck` after changes. Add tests only
   when the logic warrants it (the integration suite builds a real DuckDB index
   from synthetic fixtures in a temp dir — never touches real `~/.claude`).
+  **Keep tests focused on the weird stuff** — the hard, bug-prone domain edges,
+  not happy-path glue: malformed/truncated JSONL, subagent correlation, cost
+  dedup-by-`message.id`, stale-cache / index-corruption recovery, pricing refresh
+  and fallback, connector normalization quirks. Don't pad coverage with trivial
+  cases that can't realistically fail.
 - **Commits:** [Conventional Commits](https://www.conventionalcommits.org)
   (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`). **Do not add AI
   co-author / "Generated with" trailers** — keep history clean and human-authored.

@@ -36,7 +36,10 @@ the app is **read-only** over `~/.claude`; its own state lives in `~/.claudescop
 - **Match the existing code** — TypeScript, ESM, surrounding naming and comment
   density. Don't refactor or "improve" code unrelated to your change.
 - **Run `npm test` and `npm run typecheck`** before opening a PR. Add tests when
-  the logic warrants it; don't add tests for trivial changes.
+  the logic warrants it; don't add tests for trivial changes. **Keep tests
+  focused on the weird stuff** — malformed/truncated JSONL, subagent correlation,
+  cost dedup-by-`message.id`, stale-cache / index-corruption recovery, pricing
+  refresh and fallback, connector quirks — not happy-path glue that can't fail.
 - **Validate at boundaries** (user input, external data); trust internal code.
 
 ## Commits & history
