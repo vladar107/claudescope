@@ -121,7 +121,7 @@ describe('Codex session indexing', () => {
   });
 
   it('finds the Codex session via full-text search', async () => {
-    const results = (await get('/api/search?q=needle')).json();
+    const { sessions: results } = (await get('/api/search?q=needle')).json();
     expect(results.some((r: { sessionId: string }) => r.sessionId === 'codex-sess-1')).toBe(true);
   });
 });

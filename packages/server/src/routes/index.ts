@@ -1,7 +1,7 @@
 /**
  * API route registration. Wires the health check plus every feature route per
- * the API contract: projects, sessions (list + detail), search, analytics, and
- * reindex.
+ * the API contract: projects, sessions (list + detail), search, analytics,
+ * sources, memory, and reindex.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -13,6 +13,7 @@ import { registerSessionsRoutes } from './sessions.js';
 import { registerSearchRoute } from './search.js';
 import { registerAnalyticsRoute } from './analytics.js';
 import { registerSourcesRoute } from './sources.js';
+import { registerMemoryRoute } from './memory.js';
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/health', async (): Promise<HealthResponse & { ready: boolean }> => {
@@ -24,6 +25,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await registerSearchRoute(app);
   await registerAnalyticsRoute(app);
   await registerSourcesRoute(app);
+  await registerMemoryRoute(app);
 
   app.post('/api/reindex', async (): Promise<ReindexResponse> => {
     return reindex();

@@ -55,6 +55,17 @@ export const JUNIE_SESSIONS_DIR = expandHome(
   process.env.JUNIE_SESSIONS_DIR ?? join(homedir(), '.junie', 'sessions'),
 );
 
+/**
+ * READ-ONLY agent home directories — the parents of the session/project dirs
+ * above, where each agent keeps its memory (`CLAUDE.md`, `AGENTS.md`, the Codex
+ * `memories/` tree). Derived from the dirs above so the env overrides carry
+ * through. The app MUST NEVER write here. Memory is read **only** from these
+ * home dirs — never from the user's project directories.
+ */
+export const CLAUDE_HOME = dirname(CLAUDE_PROJECTS_DIR);
+export const CODEX_HOME = dirname(CODEX_SESSIONS_DIR);
+export const JUNIE_HOME = dirname(JUNIE_SESSIONS_DIR);
+
 /** Whether to auto-open the default browser on startup (set by the launcher). */
 export const OPEN_BROWSER = process.env.OPEN_BROWSER === '1';
 

@@ -2,24 +2,30 @@
  * Full-text search view (/search).
  *
  * Drives the FTS-backed `/api/search` endpoint with a debounced query box plus
- * project and role/type filters. Results are BM25-ranked and carry server-built
- * HTML snippets with `<mark>` highlights (rendered via dangerouslySetInnerHTML —
- * the server HTML-escapes everything but the marks). Each hit deep-links to the
- * session thread at the matching message anchor: `/sessions/:id#<messageUuid>`.
+ * project, role/type, and scope filters. Results are BM25-ranked and carry
+ * server-built HTML snippets with `<mark>` highlights (rendered via
+ * dangerouslySetInnerHTML — the server HTML-escapes everything but the marks).
+ * Session hits deep-link to the thread at the matching message anchor
+ * (`/sessions/:id#<messageUuid>`); memory hits link to the relevant memory view.
  *
- * Query state lives in the URL (?q=&project=&type=) so searches are shareable
- * and survive reloads.
+ * The scope control selects where search looks: transcripts only (`sessions`,
+ * the default), transcripts plus agent memory (`all`), or memory only (`memory`).
+ *
+ * Query state lives in the URL (?q=&project=&type=&scope=) so searches are
+ * shareable and survive reloads.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type {
+  MemorySearchHit,
   ProjectMeta,
   SearchResult,
+  SearchScope,
   SearchType,
 } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { ErrorBox, Spinner } from '../../components';
+import { AgentBadge, ErrorBox, Spinner } from '../../components';
 import './search.css';
 
 /** Debounce delay (ms) before firing a search after the query box settles. */
@@ -31,9 +37,20 @@ const TYPE_OPTIONS: ReadonlyArray<{ value: SearchType; label: string }> = [
   { value: 'assistant', label: 'Assistant' },
 ];
 
+const SCOPE_OPTIONS: ReadonlyArray<{ value: SearchScope; label: string }> = [
+  { value: 'sessions', label: 'Without memory' },
+  { value: 'all', label: 'Including memory' },
+  { value: 'memory', label: 'Memory only' },
+];
+
 /** Narrow an arbitrary string to a valid SearchType, defaulting to 'all'. */
 function asSearchType(value: string | null): SearchType {
   return value === 'user' || value === 'assistant' ? value : 'all';
+}
+
+/** Narrow an arbitrary string to a valid SearchScope, defaulting to 'sessions'. */
+function asSearchScope(value: string | null): SearchScope {
+  return value === 'all' || value === 'memory' ? value : 'sessions';
 }
 
 /** CSS modifier class for a result's role pill. */
@@ -43,6 +60,14 @@ function roleClass(role: string): string {
   return 'tv-search__role';
 }
 
+/** Memory view route for a hit: project facts deep-link, globals to the agent. */
+function memoryLink(hit: MemorySearchHit): string {
+  if (hit.scope === 'project' && hit.projectId) {
+    return `/memory/${encodeURIComponent(hit.connectorId)}/${encodeURIComponent(hit.projectId)}`;
+  }
+  return `/memory/${encodeURIComponent(hit.connectorId)}`;
+}
+
 export function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -50,14 +75,19 @@ export function SearchPage() {
   const query = searchParams.get('q') ?? '';
   const project = searchParams.get('project') ?? '';
   const type = asSearchType(searchParams.get('type'));
+  const scope = asSearchScope(searchParams.get('scope'));
 
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [sessions, setSessions] = useState<SearchResult[]>([]);
+  const [memory, setMemory] = useState<MemorySearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
   /** True once at least one search has resolved for the current query. */
   const [searched, setSearched] = useState(false);
 
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
+
+  // The role filter only applies to session transcripts; hide it for memory-only.
+  const showRoleFilter = scope !== 'memory';
 
   /** Update one or more URL params, dropping empties to keep the URL clean. */
   function patchParams(patch: Record<string, string>) {
@@ -95,7 +125,8 @@ export function SearchPage() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     if (trimmed === '') {
-      setResults([]);
+      setSessions([]);
+      setMemory([]);
       setLoading(false);
       setError(null);
       setSearched(false);
@@ -108,9 +139,13 @@ export function SearchPage() {
 
     debounceRef.current = setTimeout(() => {
       api
-        .search({ q: trimmed, project: project || undefined, type }, controller.signal)
-        .then((hits) => {
-          setResults(hits);
+        .search(
+          { q: trimmed, project: project || undefined, type, scope },
+          controller.signal,
+        )
+        .then((res) => {
+          setSessions(res.sessions);
+          setMemory(res.memory);
           setSearched(true);
           setLoading(false);
         })
@@ -126,7 +161,7 @@ export function SearchPage() {
       controller.abort();
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query, project, type]);
+  }, [query, project, type, scope]);
 
   const hasQuery = query.trim() !== '';
 
@@ -134,6 +169,12 @@ export function SearchPage() {
     () => [...projects].sort((a, b) => a.displayName.localeCompare(b.displayName)),
     [projects],
   );
+
+  // The active scope decides which sections are visible and what the count means.
+  const showSessions = scope !== 'memory';
+  const showMemory = scope !== 'sessions';
+  const totalCount =
+    (showSessions ? sessions.length : 0) + (showMemory ? memory.length : 0);
 
   return (
     <div className="tv-search">
@@ -175,22 +216,42 @@ export function SearchPage() {
         </div>
 
         <div className="tv-search__field">
-          <label className="tv-search__label" htmlFor="tv-search-type">
-            Role
+          <label className="tv-search__label" htmlFor="tv-search-scope">
+            Scope
           </label>
           <select
-            id="tv-search-type"
+            id="tv-search-scope"
             className="tv-search__select"
-            value={type}
-            onChange={(e) => patchParams({ type: e.target.value })}
+            value={scope}
+            onChange={(e) => patchParams({ scope: e.target.value })}
           >
-            {TYPE_OPTIONS.map((opt) => (
+            {SCOPE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
             ))}
           </select>
         </div>
+
+        {showRoleFilter ? (
+          <div className="tv-search__field">
+            <label className="tv-search__label" htmlFor="tv-search-type">
+              Role
+            </label>
+            <select
+              id="tv-search-type"
+              className="tv-search__select"
+              value={type}
+              onChange={(e) => patchParams({ type: e.target.value })}
+            >
+              {TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
       </div>
 
       {error ? (
@@ -199,7 +260,7 @@ export function SearchPage() {
         <Spinner label="Searching…" />
       ) : !hasQuery ? (
         <p className="tv-search__empty">Type a query above to search across all transcripts.</p>
-      ) : searched && results.length === 0 ? (
+      ) : searched && totalCount === 0 ? (
         <p className="tv-search__empty">
           No matches for <strong>{query}</strong>
           {project ? ' in this project' : ''}.
@@ -207,37 +268,74 @@ export function SearchPage() {
       ) : (
         <>
           <div className="tv-search__meta">
-            {results.length} result{results.length === 1 ? '' : 's'}
-            {results.length >= 50 ? ' (showing top 50)' : ''}
+            {totalCount} result{totalCount === 1 ? '' : 's'}
           </div>
-          <div className="tv-search__results">
-            {results.map((r) => (
-              <Link
-                key={`${r.sessionId}:${r.messageUuid}`}
-                to={`/sessions/${encodeURIComponent(r.sessionId)}#${encodeURIComponent(r.messageUuid)}`}
-                className="tv-card tv-search__result"
-              >
-                <div className="tv-search__result-head">
-                  <span
-                    className={
-                      r.title
-                        ? 'tv-search__result-title'
-                        : 'tv-search__result-title tv-search__result-title--untitled'
-                    }
+
+          {showSessions && sessions.length > 0 ? (
+            <section className="tv-search__section">
+              <h2 className="tv-search__section-title">Sessions ({sessions.length})</h2>
+              <div className="tv-search__results">
+                {sessions.map((r) => (
+                  <Link
+                    key={`${r.sessionId}:${r.messageUuid}`}
+                    to={`/sessions/${encodeURIComponent(r.sessionId)}#${encodeURIComponent(r.messageUuid)}`}
+                    className="tv-card tv-search__result"
                   >
-                    {r.title || 'Untitled session'}
-                  </span>
-                  {r.role ? <span className={roleClass(r.role)}>{r.role}</span> : null}
-                  <span className="tv-search__score">score {r.score.toFixed(2)}</span>
-                </div>
-                <div
-                  className="tv-search__snippet"
-                  // Server snippet is HTML-escaped except <mark> wraps (safe).
-                  dangerouslySetInnerHTML={{ __html: r.snippet }}
-                />
-              </Link>
-            ))}
-          </div>
+                    <div className="tv-search__result-head">
+                      <span
+                        className={
+                          r.title
+                            ? 'tv-search__result-title'
+                            : 'tv-search__result-title tv-search__result-title--untitled'
+                        }
+                      >
+                        {r.title || 'Untitled session'}
+                      </span>
+                      {r.role ? <span className={roleClass(r.role)}>{r.role}</span> : null}
+                      <span className="tv-search__score">score {r.score.toFixed(2)}</span>
+                    </div>
+                    <div
+                      className="tv-search__snippet"
+                      // Server snippet is HTML-escaped except <mark> wraps (safe).
+                      dangerouslySetInnerHTML={{ __html: r.snippet }}
+                    />
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {showMemory && memory.length > 0 ? (
+            <section className="tv-search__section">
+              <h2 className="tv-search__section-title">Memory ({memory.length})</h2>
+              <div className="tv-search__results">
+                {memory.map((hit, i) => (
+                  <Link
+                    key={`${hit.connectorId}:${hit.sourcePath}:${i}`}
+                    to={memoryLink(hit)}
+                    className="tv-card tv-search__result"
+                  >
+                    <div className="tv-search__result-head">
+                      <AgentBadge connectorId={hit.connectorId} />
+                      <span className="tv-chip tv-search__mem-scope">
+                        {hit.scope === 'project' ? 'Project' : 'Global'}
+                        {hit.category ? ` · ${hit.category}` : ''}
+                      </span>
+                      <span className="tv-search__result-title">{hit.title}</span>
+                      {hit.projectDisplayName ? (
+                        <span className="tv-search__mem-project">{hit.projectDisplayName}</span>
+                      ) : null}
+                    </div>
+                    <div
+                      className="tv-search__snippet"
+                      // Server snippet is HTML-escaped except <mark> wraps (safe).
+                      dangerouslySetInnerHTML={{ __html: hit.snippet }}
+                    />
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </>
       )}
     </div>

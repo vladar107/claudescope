@@ -196,7 +196,7 @@ describe('GET /api/sessions/:id', () => {
 
 describe('GET /api/search', () => {
   it('finds a session by full-text content', async () => {
-    const results = (await get('/api/search?q=needle')).json();
+    const { sessions: results } = (await get('/api/search?q=needle')).json();
     expect(results.length).toBeGreaterThan(0);
     expect(results.some((r: { sessionId: string }) => r.sessionId === 'sessA')).toBe(true);
   });

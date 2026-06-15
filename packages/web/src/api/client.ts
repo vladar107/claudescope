@@ -8,9 +8,12 @@ import type {
   AnalyticsGroupBy,
   AnalyticsResponse,
   HealthResponse,
+  MemoryResponse,
+  ProjectMemoryResponse,
   ProjectsResponse,
   ReindexResponse,
   SearchResponse,
+  SearchScope,
   SearchType,
   SessionDetailResponse,
   SessionSort,
@@ -81,6 +84,7 @@ export interface SearchParams {
   q: string;
   project?: string;
   type?: SearchType;
+  scope?: SearchScope;
 }
 
 export interface AnalyticsParams {
@@ -121,7 +125,7 @@ export const api = {
   /** GET /api/search?q=&project=&type= */
   search(params: SearchParams, signal?: AbortSignal): Promise<SearchResponse> {
     return request<SearchResponse>(
-      `/search${qs({ q: params.q, project: params.project, type: params.type })}`,
+      `/search${qs({ q: params.q, project: params.project, type: params.type, scope: params.scope })}`,
       { signal },
     );
   },
@@ -137,6 +141,19 @@ export const api = {
   /** GET /api/sources */
   sources(signal?: AbortSignal): Promise<SourcesResponse> {
     return request<SourcesResponse>('/sources', { signal });
+  },
+
+  /** GET /api/memory */
+  memory(signal?: AbortSignal): Promise<MemoryResponse> {
+    return request<MemoryResponse>('/memory', { signal });
+  },
+
+  /** GET /api/projects/:id/memory */
+  projectMemory(projectId: string, signal?: AbortSignal): Promise<ProjectMemoryResponse> {
+    return request<ProjectMemoryResponse>(
+      `/projects/${encodeURIComponent(projectId)}/memory`,
+      { signal },
+    );
   },
 
   /** POST /api/reindex */

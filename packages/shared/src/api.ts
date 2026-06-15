@@ -115,10 +115,19 @@ export interface SessionsQuery {
 
 export type SearchType = 'user' | 'assistant' | 'all';
 
+/**
+ * Where full-text search looks:
+ * - `sessions` — transcripts only (default; the original behavior).
+ * - `all` — transcripts **and** agent memory.
+ * - `memory` — agent memory only.
+ */
+export type SearchScope = 'sessions' | 'all' | 'memory';
+
 export interface SearchQuery {
   q: string;
   project?: string;
   type?: SearchType;
+  scope?: SearchScope;
 }
 
 export type AnalyticsGroupBy = 'project' | 'model' | 'day' | 'agent';
@@ -150,8 +159,31 @@ export interface SessionDetailResponse {
   subagents: SubagentRun[];
 }
 
+/** A full-text search hit in agent memory (instruction file or distilled fact). */
+export interface MemorySearchHit {
+  connectorId: string;
+  /** Human-friendly agent label. */
+  label: string;
+  /** `global` instruction file/handbook, or a per-project `project` fact. */
+  scope: 'global' | 'project';
+  /** Present for project facts; absent for global memory. */
+  projectId?: string;
+  projectDisplayName?: string;
+  title: string;
+  category?: string;
+  /** Snippet with matched terms in `<mark>` (the server HTML-escapes the rest). */
+  snippet: string;
+  /** Source path, home contracted to `~`. */
+  sourcePath: string;
+  /** Claude facts: the session that produced the fact (deep-link). */
+  originSessionId?: string;
+}
+
 /** GET /api/search */
-export type SearchResponse = SearchResult[];
+export interface SearchResponse {
+  sessions: SearchResult[];
+  memory: MemorySearchHit[];
+}
 
 /** One read-only source directory backing an agent connector. */
 export interface SourceInfo {
@@ -183,3 +215,89 @@ export interface HealthResponse {
   status: 'ok';
   version: string;
 }
+
+// ---------------------------------------------------------------------------
+// Memory
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a piece of memory came from:
+ * - `user-authored` — instruction files the user wrote (CLAUDE.md, AGENTS.md).
+ * - `agent-authored` — memory the agent distilled on its own (Claude facts,
+ *   Codex's memories handbook).
+ */
+export type MemoryProvenance = 'user-authored' | 'agent-authored';
+
+/**
+ * Structural shape of a memory item:
+ * - `fact` — a single typed fact with frontmatter (Claude `memory/*.md`).
+ * - `document` — a named markdown/JSON file rendered whole (Codex `MEMORY.md`).
+ */
+export type MemoryKind = 'fact' | 'document';
+
+/**
+ * One unit of memory from an agent. Read live from disk (never indexed). For
+ * Claude facts, `category` is one of `user` | `feedback` | `project` |
+ * `reference`; other agents may use free-form categories.
+ */
+export interface MemorySource {
+  provenance: MemoryProvenance;
+  kind: MemoryKind;
+  /** Fact name or document label, e.g. `cost-double-counting` or `Codex handbook`. */
+  title: string;
+  /** One-line description (Claude facts), when present. */
+  description?: string;
+  /** Fact type (Claude) or category; see {@link MemorySource}. */
+  category?: string;
+  /** Markdown body, rendered read-only. */
+  markdown: string;
+  /** Source path with the home dir contracted to `~`, for provenance display. */
+  sourcePath: string;
+  /** ISO timestamp of last modification (file mtime). */
+  updatedAt: string;
+  /** Claude: the session that produced this fact — a deep-link target. */
+  originSessionId?: string;
+  /** Claude: `[[wiki-link]]` fact names referenced in the body. */
+  relatedNames?: string[];
+  /** True when the store exists but is an empty scaffold (no content yet). */
+  empty?: boolean;
+}
+
+/** Global, cross-project memory contributed by one connector. */
+export interface GlobalMemory {
+  connectorId: string;
+  /** Human-friendly agent label, e.g. `Claude Code`. */
+  label: string;
+  sources: MemorySource[];
+}
+
+/** Memory for one project from one connector. */
+export interface ProjectAgentMemory {
+  connectorId: string;
+  label: string;
+  sources: MemorySource[];
+}
+
+/** Per-project memory grouped by agent. */
+export interface ProjectMemory {
+  projectId: string;
+  /** Human-friendly project name, when the project is known to the index. */
+  displayName?: string;
+  byAgent: ProjectAgentMemory[];
+}
+
+/** Which projects have any agent memory, with per-connector counts. */
+export interface ProjectMemorySummary {
+  projectId: string;
+  displayName: string;
+  counts: { connectorId: string; count: number }[];
+}
+
+/** GET /api/memory */
+export interface MemoryResponse {
+  global: GlobalMemory[];
+  projects: ProjectMemorySummary[];
+}
+
+/** GET /api/projects/:projectId/memory */
+export type ProjectMemoryResponse = ProjectMemory;

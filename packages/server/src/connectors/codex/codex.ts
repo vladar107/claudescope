@@ -17,6 +17,7 @@ import { CLAUDESCOPE_HOME, CODEX_SESSIONS_DIR } from '../../config.js';
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
+import { codexGlobalMemory } from './memory.js';
 import { parseRollout, toCanonicalRows } from './normalize.js';
 
 const CACHE_DIR = join(CLAUDESCOPE_HOME, 'cache', 'codex');
@@ -98,4 +99,5 @@ export const codexConnector: AgentConnector = {
   eventsProjectionSql,
   auxProjections,
   loadSession,
+  globalMemory: codexGlobalMemory,
 };

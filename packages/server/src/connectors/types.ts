@@ -12,6 +12,7 @@
  * hot path into the TS layer.
  */
 
+import type { MemorySource } from '@claudescope/shared';
 import type { SessionData } from '../data/session-loader.js';
 
 /** A discovered source file with the stats used for incremental change detection. */
@@ -96,4 +97,42 @@ export interface AgentConnector {
    * assembler. `paths` are all files recorded for the session.
    */
   loadSession(sessionId: string, paths: string[]): Promise<SessionData>;
+
+  /**
+   * Optional: the agent's global, cross-project memory — user-authored
+   * instruction file(s) and/or agent-distilled global memory. Read live (NOT
+   * indexed). Returns `[]` when the agent has none.
+   *
+   * INVARIANT: read only from the agent's own home dir (e.g. `~/.claude`,
+   * `~/.codex`, `~/.junie`) — never from the user's project directories.
+   */
+  globalMemory?(): MemorySource[];
+
+  /**
+   * Optional: every agent-authored per-project memory directory this connector
+   * owns, each tagged with the encoded-cwd `slug` that names it. Read live (NOT
+   * indexed); returns `[]` when there are none.
+   *
+   * The connector does NOT attribute facts to Claudescope projects — it just
+   * enumerates its memory dirs. The route attributes each fact to a project via
+   * its `originSessionId` (falling back to the dir `slug` for facts whose origin
+   * session is unknown), because a single memory dir is keyed by the git repo
+   * root and so may hold facts learned across several worktrees/cwds.
+   *
+   * INVARIANT: read only from the agent's own home dir — never from the user's
+   * project directories. (This is why Junie's repo-local `.junie/memory/` is out
+   * of scope: surfacing it would require reading arbitrary project dirs.)
+   */
+  projectMemory?(): AgentMemoryDir[];
+}
+
+/**
+ * One agent-authored per-project memory directory: the facts it holds and the
+ * encoded-cwd `slug` that names it (e.g. Claude's `~/.claude/projects/<slug>/`).
+ * The slug is used by the route as the attribution fallback for facts whose
+ * `originSessionId` can't be resolved to an indexed session.
+ */
+export interface AgentMemoryDir {
+  slug: string;
+  facts: MemorySource[];
 }

@@ -204,7 +204,7 @@ describe('Junie session indexing', () => {
   });
 
   it('finds the Junie session via full-text search on tool labels', async () => {
-    const results = (await get('/api/search?q=needle')).json();
+    const { sessions: results } = (await get('/api/search?q=needle')).json();
     expect(results.some((r: { sessionId: string }) => r.sessionId === SESSION_ID)).toBe(true);
   });
 });

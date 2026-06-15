@@ -17,6 +17,7 @@ import { CLAUDE_PROJECTS_DIR } from '../../config.js';
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
+import { globalMemory, projectMemory } from './memory.js';
 
 /**
  * Shared `read_ndjson` options for the line-delimited Claude transcripts.
@@ -286,4 +287,6 @@ export const claudeCodeConnector: AgentConnector = {
   eventsProjectionSql,
   auxProjections,
   loadSession,
+  globalMemory,
+  projectMemory,
 };
