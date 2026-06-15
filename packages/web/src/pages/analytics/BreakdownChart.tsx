@@ -1,8 +1,13 @@
 /**
- * Horizontal breakdown bars for the active group-by (project | model | day):
- * stacked token segments per group plus the cost shown in the tooltip. Rows are
- * sorted by the visible token sum (desc) — total with cache shown, otherwise
- * input + output — and capped to the top 15 to stay readable.
+ * Horizontal breakdown bars for the active group-by (project | model | day).
+ *
+ * Two independent controls, supplied by the page:
+ *   - `metric` — what the bars render: stacked token segments (input/output/
+ *     cache) or a single cost bar. The x-axis units follow suit.
+ *   - `sortBy` — how rows are ordered (desc): by cost, or by the visible token
+ *     sum (total with cache shown, otherwise input + output).
+ * Either way the full token + cost breakdown stays in the tooltip, and the list
+ * is capped to the top 15 to stay readable.
  */
 
 import { useMemo } from 'react';
@@ -30,6 +35,11 @@ import { shortKey } from './format.js';
 
 const MAX_BARS = 15;
 
+/** What the bars render. */
+export type BreakdownMetric = 'tokens' | 'cost';
+/** How rows are ordered (descending). */
+export type BreakdownSort = 'tokens' | 'cost';
+
 interface Bucket {
   key: string;
   label: string;
@@ -44,15 +54,21 @@ export function BreakdownChart({
   rows,
   groupBy,
   showCache,
+  metric,
+  sortBy,
 }: {
   rows: AnalyticsRow[];
   groupBy: AnalyticsGroupBy;
   showCache: boolean;
+  metric: BreakdownMetric;
+  sortBy: BreakdownSort;
 }) {
-  // Sort by what the bars actually render: with cache hidden, ordering by the
-  // full total would shuffle the visible (input + output) bar lengths.
+  // Order by the chosen sort key. For tokens, sort by what the bars actually
+  // render: with cache hidden, ordering by the full total would shuffle the
+  // visible (input + output) bar lengths.
   const data = useMemo<Bucket[]>(() => {
-    const visible = (b: Bucket) => (showCache ? b.total : b.input + b.output);
+    const sortVal = (b: Bucket) =>
+      sortBy === 'cost' ? b.cost : showCache ? b.total : b.input + b.output;
     return rows
       .map((r) => ({
         key: r.key,
@@ -63,9 +79,9 @@ export function BreakdownChart({
         cost: r.costUsd,
         total: r.totalTokens,
       }))
-      .sort((a, b) => visible(b) - visible(a))
+      .sort((a, b) => sortVal(b) - sortVal(a))
       .slice(0, MAX_BARS);
-  }, [rows, groupBy, showCache]);
+  }, [rows, groupBy, showCache, sortBy]);
 
   // Scale height with the number of bars so labels never overlap.
   const height = Math.max(220, data.length * 34 + 60);
@@ -83,7 +99,7 @@ export function BreakdownChart({
           tick={tick}
           tickLine={false}
           axisLine={{ stroke: colors.grid }}
-          tickFormatter={(v: number) => formatCount(v)}
+          tickFormatter={(v: number) => (metric === 'cost' ? formatCost(v) : formatCount(v))}
         />
         <YAxis
           type="category"
@@ -96,9 +112,16 @@ export function BreakdownChart({
         />
         <Tooltip cursor={{ fill: colors.cursor }} content={<BreakdownTooltip colors={colors} />} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="input" name="Input" stackId="tok" fill={colors.input} isAnimationActive={false} />
-        <Bar dataKey="output" name="Output" stackId="tok" fill={colors.output} radius={showCache ? undefined : [0, 2, 2, 0]} isAnimationActive={false} />
-        {showCache && (
+        {metric === 'cost' && (
+          <Bar dataKey="cost" name="Cost" fill={colors.cost} radius={[0, 2, 2, 0]} isAnimationActive={false} />
+        )}
+        {metric === 'tokens' && (
+          <Bar dataKey="input" name="Input" stackId="tok" fill={colors.input} isAnimationActive={false} />
+        )}
+        {metric === 'tokens' && (
+          <Bar dataKey="output" name="Output" stackId="tok" fill={colors.output} radius={showCache ? undefined : [0, 2, 2, 0]} isAnimationActive={false} />
+        )}
+        {metric === 'tokens' && showCache && (
           <Bar dataKey="cache" name="Cache" stackId="tok" fill={colors.cacheWrite} radius={[0, 2, 2, 0]} isAnimationActive={false} />
         )}
       </BarChart>
