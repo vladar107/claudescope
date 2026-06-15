@@ -167,21 +167,18 @@ function ToolBody({
     case 'Read': {
       const fp = str(input.file_path);
       const text = resultText(tool.result);
-      // When the result has non-text blocks (e.g. an image from reading a PNG),
-      // resultText is empty — render via ResultSection so image blocks are shown
-      // properly instead of an empty code block.
+      // When the result carries non-text blocks (e.g. an image from reading a PNG —
+      // including pi screenshots, whose result has BOTH descriptive text and the
+      // image), render via ResultSection so the image is shown instead of being
+      // suppressed by the text. Plain text/code reads keep the highlighted Code view.
       const hasNonTextBlocks = tool.result
         ? tool.result.content.some((b) => b.type !== 'text' && b.type !== 'thinking')
         : false;
       return (
         <>
           {fp ? <FileHeader path={fp} /> : null}
-          {tool.result ? (
-            text || !hasNonTextBlocks ? (
-              <Code code={text} lang={extOf(fp)} forceExpand={forceOpen} />
-            ) : (
-              <ResultSection tool={tool} isError={isError} forceExpand={forceOpen} />
-            )
+          {tool.result && !hasNonTextBlocks ? (
+            <Code code={text} lang={extOf(fp)} forceExpand={forceOpen} />
           ) : (
             <ResultSection tool={tool} isError={isError} forceExpand={forceOpen} />
           )}

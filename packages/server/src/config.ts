@@ -57,6 +57,16 @@ export const JUNIE_SESSIONS_DIR = expandHome(
 );
 
 /**
+ * READ-ONLY source of pi (`@earendil-works/pi-coding-agent`) sessions. The app
+ * MUST NEVER write here. Defaults to `~/.pi/agent/sessions` (one
+ * `<ts>_<uuid>.jsonl` per session, under a per-`cwd` directory). Override with
+ * PI_SESSIONS_DIR. A leading `~` is expanded.
+ */
+export const PI_SESSIONS_DIR = expandHome(
+  process.env.PI_SESSIONS_DIR ?? join(homedir(), '.pi', 'agent', 'sessions'),
+);
+
+/**
  * READ-ONLY agent home directories — the parents of the session/project dirs
  * above, where each agent keeps its memory (`CLAUDE.md`, `AGENTS.md`, the Codex
  * `memories/` tree). Derived from the dirs above so the env overrides carry
@@ -163,7 +173,7 @@ export const APP_VERSION =
  * shadowing it. A monotonic integer (not a content hash): the user copy is meant
  * to be edited, so only a real shipped change should trigger a reconcile.
  */
-export const PRICING_SCHEMA_VERSION = 1;
+export const PRICING_SCHEMA_VERSION = 2;
 
 /**
  * Reconcile the user-editable pricing file with the shipped default.

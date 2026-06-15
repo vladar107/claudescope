@@ -232,6 +232,11 @@
   background: #3fb9501a;
   color: #56d964;
 }
+.tv-chip--agent.tv-agent--pi {
+  border-color: #8957e566;
+  background: #8957e51a;
+  color: #a371f7;
+}
 /* Light theme: keep the brand tints but darken the text so it stays legible on
    a light surface. */
 :root[data-theme='light'] .tv-chip--agent.tv-agent--claude-code {
@@ -242,4 +247,7 @@
 }
 :root[data-theme='light'] .tv-chip--agent.tv-agent--junie {
   color: #1a7f37;
+}
+:root[data-theme='light'] .tv-chip--agent.tv-agent--pi {
+  color: #6e40c9;
 }

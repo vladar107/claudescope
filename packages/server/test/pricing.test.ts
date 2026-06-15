@@ -40,6 +40,7 @@ process.env.FETCHED_PRICING_PATH = fetchedPath;
 process.env.CLAUDE_PROJECTS_DIR = projectsDir;
 process.env.CODEX_SESSIONS_DIR = join(work, 'codex-empty');
 process.env.JUNIE_SESSIONS_DIR = join(work, 'junie-empty');
+process.env.PI_SESSIONS_DIR = join(work, 'pi-empty');
 process.env.DUCKDB_PATH = dbPath;
 process.env.CLAUDESCOPE_HOME = join(work, 'home');
 process.env.REINDEX_INTERVAL_MS = '0';
