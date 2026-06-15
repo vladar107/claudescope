@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Route, Routes } from 'react-router-dom';
+import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import type { SourceInfo } from '@claudescope/shared';
+import { ErrorBoundary } from './components';
 import { api } from './api/client.js';
 import { useTheme, type ThemeChoice } from './theme/ThemeProvider.js';
 import { BrowsePage } from './pages/browse/BrowsePage.js';
@@ -102,23 +103,28 @@ function Sidebar() {
 
 /** Application shell: left navigation plus the routed page outlet. */
 export function App() {
+  // A render throw on a page degrades to an in-place error (sidebar stays usable);
+  // pathname in resetKeys clears the boundary when the user navigates elsewhere.
+  const { pathname } = useLocation();
   return (
     <div className="tv-app">
       <Sidebar />
       <main className="tv-main">
-        <Routes>
-          <Route path="/" element={<BrowsePage />} />
-          <Route path="/projects/:projectId" element={<ProjectLayout />}>
-            <Route index element={<SessionListPage />} />
-            <Route path="memory" element={<ProjectMemoryPage />} />
-          </Route>
-          <Route path="/sessions/:id" element={<SessionPage />} />
-          <Route path="/search" element={<SearchPage />} />
-          <Route path="/analytics" element={<AnalyticsPage />} />
-          <Route path="/memory" element={<MemoryPage />} />
-          <Route path="/memory/:connectorId" element={<AgentMemoryPage />} />
-          <Route path="/memory/:connectorId/:projectId" element={<AgentProjectMemoryPage />} />
-        </Routes>
+        <ErrorBoundary resetKeys={[pathname]} title="This page failed to render">
+          <Routes>
+            <Route path="/" element={<BrowsePage />} />
+            <Route path="/projects/:projectId" element={<ProjectLayout />}>
+              <Route index element={<SessionListPage />} />
+              <Route path="memory" element={<ProjectMemoryPage />} />
+            </Route>
+            <Route path="/sessions/:id" element={<SessionPage />} />
+            <Route path="/search" element={<SearchPage />} />
+            <Route path="/analytics" element={<AnalyticsPage />} />
+            <Route path="/memory" element={<MemoryPage />} />
+            <Route path="/memory/:connectorId" element={<AgentMemoryPage />} />
+            <Route path="/memory/:connectorId/:projectId" element={<AgentProjectMemoryPage />} />
+          </Routes>
+        </ErrorBoundary>
       </main>
     </div>
   );

@@ -222,6 +222,77 @@ describe('GET /api/analytics', () => {
   });
 });
 
+describe('DTO completeness (alias-drift guard)', () => {
+  // If a SELECT alias or schema column drifts, the typed row reader throws (→ a
+  // failed request) or a field lands on its default. These assert each route's
+  // DTO is fully populated for a known fixture, so a renamed/dropped column fails
+  // loudly here instead of silently shipping 0 / '' values.
+  it('/api/sessions populates every SessionMeta field for sessA', async () => {
+    const sessions = (await get('/api/sessions')).json();
+    const a = sessions.find((s: { id: string }) => s.id === 'sessA');
+    expect(a).toMatchObject({
+      id: 'sessA',
+      projectId: projAId,
+      title: 'Session A',
+      connectorId: 'claude-code',
+      hasSidechain: true,
+      prUrl: 'https://example/pr/7',
+      gitBranch: 'main',
+    });
+    expect(a.projectDisplayName.length).toBeGreaterThan(0);
+    expect(a.startedAt.length).toBeGreaterThan(0);
+    expect(a.endedAt.length).toBeGreaterThan(0);
+    expect(a.messageCount).toBeGreaterThan(0);
+    expect(a.toolCallCount).toBeGreaterThan(0);
+    expect(a.totalTokens).toBeGreaterThan(0);
+    expect(a.totalCostUsd).toBeGreaterThanOrEqual(0);
+    expect(a.sizeBytes).toBeGreaterThan(0);
+    expect(a.models.length).toBeGreaterThan(0);
+  });
+
+  it('/api/projects populates every ProjectMeta field', async () => {
+    const projects = (await get('/api/projects')).json();
+    const a = projects.find((p: { id: string }) => p.id === projAId);
+    expect(a.cwd.length).toBeGreaterThan(0);
+    expect(a.displayName.length).toBeGreaterThan(0);
+    expect(a.sessionCount).toBeGreaterThan(0);
+    expect(a.totalTokens).toBeGreaterThan(0);
+    expect(a.totalCostUsd).toBeGreaterThanOrEqual(0);
+    expect(a.lastActive.length).toBeGreaterThan(0);
+    expect(a.connectorIds.length).toBeGreaterThan(0);
+    expect(a.agents.length).toBeGreaterThan(0);
+    expect(a.agents[0].connectorId.length).toBeGreaterThan(0);
+    expect(a.agents[0].sessionCount).toBeGreaterThan(0);
+  });
+
+  it('/api/analytics populates every AnalyticsRow field', async () => {
+    const { rows } = (await get('/api/analytics?groupBy=model')).json();
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      expect(r.key.length).toBeGreaterThan(0);
+      expect(r.totalTokens).toBe(
+        r.inputTokens + r.outputTokens + r.cacheCreationTokens + r.cacheReadTokens,
+      );
+      expect(r.messageCount).toBeGreaterThan(0);
+      expect(Number.isFinite(r.costUsd)).toBe(true);
+      expect(Number.isFinite(r.cacheHitRatio)).toBe(true);
+    }
+    expect(rows.some((r: { inputTokens: number }) => r.inputTokens > 0)).toBe(true);
+    expect(rows.some((r: { outputTokens: number }) => r.outputTokens > 0)).toBe(true);
+  });
+
+  it('/api/search populates every SearchResult field', async () => {
+    const { sessions: results } = (await get('/api/search?q=needle')).json();
+    const hit = results.find((r: { sessionId: string }) => r.sessionId === 'sessA');
+    expect(hit.messageUuid.length).toBeGreaterThan(0);
+    expect(hit.projectId).toBe(projAId);
+    expect(hit.title).toBe('Session A');
+    expect(hit.role.length).toBeGreaterThan(0);
+    expect(hit.snippet.length).toBeGreaterThan(0);
+    expect(Number.isFinite(hit.score)).toBe(true);
+  });
+});
+
 describe('POST /api/reindex', () => {
   it('is incremental and reports zero changes on a clean re-run', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/reindex' });

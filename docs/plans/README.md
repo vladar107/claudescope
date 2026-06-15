@@ -41,3 +41,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0014 | [Memory viewer (instruction files + per-agent memory)](./0014-memory-viewer.md) | done   |
 | 0015 | [Shared project header (nested layout route)](./0015-shared-project-header.md) | done   |
 | 0016 | [Dep upgrades: vite 8 / vitest 4 / shiki 4 (clear Dependabot)](./0016-dep-upgrades-vite8-shiki4.md) | done   |
+| 0017 | [Maintainer review fixes: resiliency tests, daemon hardening, render & contract guards](./0017-maintainer-review-fixes.md) | done |

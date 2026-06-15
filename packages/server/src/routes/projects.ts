@@ -9,6 +9,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { AgentBreakdown, ProjectMeta } from '@claudescope/shared';
 import { getConnection, queryRows } from '../db/duckdb.js';
+import { readRow } from '../db/row.js';
 import { displayNameFromCwd, projectIdFromCwd } from '../data/project-id.js';
 
 export async function registerProjectsRoute(app: FastifyInstance): Promise<void> {
@@ -46,28 +47,30 @@ export async function registerProjectsRoute(app: FastifyInstance): Promise<void>
 
     const agentsByCwd = new Map<string, AgentBreakdown[]>();
     for (const r of agentRows) {
-      const cwd = String(r.cwd);
+      const rd = readRow(r, 'projects.agents');
+      const cwd = rd.str('cwd');
       const list = agentsByCwd.get(cwd) ?? [];
       list.push({
-        connectorId: String(r.connector_id),
-        sessionCount: Number(r.session_count ?? 0),
-        totalTokens: Number(r.total_tokens ?? 0),
-        totalCostUsd: Number(r.total_cost_usd ?? 0),
+        connectorId: rd.str('connector_id'),
+        sessionCount: rd.num('session_count'),
+        totalTokens: rd.num('total_tokens'),
+        totalCostUsd: rd.num('total_cost_usd'),
       });
       agentsByCwd.set(cwd, list);
     }
 
     return rows.map((r): ProjectMeta => {
-      const cwd = String(r.cwd);
+      const rd = readRow(r, 'projects');
+      const cwd = rd.str('cwd');
       const agents = agentsByCwd.get(cwd) ?? [];
       return {
         id: projectIdFromCwd(cwd),
         cwd,
         displayName: displayNameFromCwd(cwd),
-        sessionCount: Number(r.session_count ?? 0),
-        totalTokens: Number(r.total_tokens ?? 0),
-        totalCostUsd: Number(r.total_cost_usd ?? 0),
-        lastActive: toIso(r.last_active),
+        sessionCount: rd.num('session_count'),
+        totalTokens: rd.num('total_tokens'),
+        totalCostUsd: rd.num('total_cost_usd'),
+        lastActive: toIso(rd.req('last_active')),
         connectorIds: agents.map((a) => a.connectorId),
         agents,
       };

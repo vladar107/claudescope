@@ -23,6 +23,13 @@ export interface FetchedPricing {
 }
 
 export interface PricingConfig {
+  /**
+   * Schema version of the shipped default. Present in the shipped `pricing.json`
+   * and stamped into the seeded/migrated user copy; absent means a legacy (v0)
+   * copy. Used to reconcile an out-of-date user copy with a newer default on
+   * startup. Bumped when the shipped families/default/shape change.
+   */
+  schemaVersion?: number;
   /** Per-model rate table, keyed by exact model id (highest precedence). */
   models: Record<string, ModelRates>;
   /**

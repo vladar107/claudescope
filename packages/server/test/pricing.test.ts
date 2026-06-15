@@ -12,12 +12,14 @@
  * No network, no real ~/.claude* dirs.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
@@ -69,6 +71,7 @@ const bumpMtime = (path: string): void => {
 };
 
 const { loadPricing } = await import('../src/data/pricing.js');
+const { reconcilePricingConfig, PRICING_SCHEMA_VERSION } = await import('../src/config.js');
 
 describe('loadPricing — layered merge', () => {
   beforeAll(() => {
@@ -131,6 +134,89 @@ describe('loadPricing — layered merge', () => {
     bumpMtime(fetchedPath);
     const reloaded = loadPricing();
     expect(reloaded.models['claude-opus-4-8']).toEqual({ input: 7, output: 8, cacheWrite: 9, cacheRead: 10 });
+  });
+});
+
+describe('reconcilePricingConfig — versioned migration', () => {
+  let dir: string;
+  let userPath: string;
+  let defaultPath: string;
+
+  const SHIPPED = {
+    schemaVersion: PRICING_SCHEMA_VERSION,
+    models: {
+      'shared-model': { input: 2, output: 2, cacheWrite: 2, cacheRead: 2 },
+      'shipped-only': { input: 9, output: 9, cacheWrite: 9, cacheRead: 9 },
+    },
+    families: {
+      opus: { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
+      newfam: { input: 7, output: 7, cacheWrite: 7, cacheRead: 7 },
+    },
+    default: { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
+  };
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'claudescope-pricing-migrate-'));
+    userPath = join(dir, 'pricing.json');
+    defaultPath = join(dir, 'pricing.default.json');
+    writeJson(defaultPath, SHIPPED);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('seeds the user copy on first run', () => {
+    reconcilePricingConfig(userPath, defaultPath);
+    expect(existsSync(userPath)).toBe(true);
+    expect(JSON.parse(readFileSync(userPath, 'utf8')).schemaVersion).toBe(PRICING_SCHEMA_VERSION);
+  });
+
+  it('migrates a legacy copy: preserves user edits, adds new shipped keys, backs up', () => {
+    const legacyUser = {
+      // no schemaVersion → treated as v0
+      models: {
+        'shared-model': { input: 99, output: 99, cacheWrite: 99, cacheRead: 99 },
+        'user-only': { input: 1, output: 1, cacheWrite: 1, cacheRead: 1 },
+      },
+      families: { opus: { input: 100, output: 100, cacheWrite: 100, cacheRead: 100 } },
+      default: { input: 42, output: 42, cacheWrite: 42, cacheRead: 42 },
+    };
+    writeJson(userPath, legacyUser);
+
+    reconcilePricingConfig(userPath, defaultPath);
+
+    // The previous file is backed up verbatim.
+    expect(JSON.parse(readFileSync(`${userPath}.bak`, 'utf8'))).toEqual(legacyUser);
+
+    const merged = JSON.parse(readFileSync(userPath, 'utf8'));
+    expect(merged.schemaVersion).toBe(PRICING_SCHEMA_VERSION);
+    // User edits win on shared keys…
+    expect(merged.models['shared-model']).toEqual(legacyUser.models['shared-model']);
+    expect(merged.families.opus).toEqual(legacyUser.families.opus);
+    expect(merged.default).toEqual(legacyUser.default);
+    // …user-only keys survive…
+    expect(merged.models['user-only']).toEqual(legacyUser.models['user-only']);
+    // …and new shipped keys are added.
+    expect(merged.models['shipped-only']).toEqual(SHIPPED.models['shipped-only']);
+    expect(merged.families.newfam).toEqual(SHIPPED.families.newfam);
+  });
+
+  it('is a no-op when the user copy is already current (no rewrite, no backup)', () => {
+    writeJson(userPath, SHIPPED);
+    const before = statSync(userPath).mtimeMs;
+    reconcilePricingConfig(userPath, defaultPath);
+    expect(statSync(userPath).mtimeMs).toBe(before);
+    expect(existsSync(`${userPath}.bak`)).toBe(false);
+  });
+
+  it('leaves a corrupt user file untouched (no throw, no data loss)', () => {
+    writeFileSync(userPath, '{ not valid json');
+    expect(() => reconcilePricingConfig(userPath, defaultPath)).not.toThrow();
+    expect(readFileSync(userPath, 'utf8')).toBe('{ not valid json');
+    expect(existsSync(`${userPath}.bak`)).toBe(false);
   });
 });
 

@@ -1,6 +1,6 @@
 import { Fragment, memo, useContext, useEffect, useRef, useState } from 'react';
 import type { SubagentRun, ThreadBlock, ThreadItem } from '@claudescope/shared';
-import { ClampedText, Collapsible, TokenChips } from '../../components';
+import { ClampedText, Collapsible, ErrorBoundary, ErrorBox, TokenChips } from '../../components';
 import { formatDateTime, shortModel } from '../browse/format.js';
 import { ThreadBlockView, hasRenderableContent } from './blocks.js';
 import { classifySystemText } from './text.js';
@@ -113,7 +113,16 @@ function RevealableBlock({ blockId, block }: { blockId: string; block: ThreadBlo
   const { blockIds } = useContext(SessionSearchContext);
   return (
     <div className="tv-block" data-block-id={blockId}>
-      <ThreadBlockView block={block} forceOpen={blockIds.has(blockId)} />
+      {/* A throw while rendering one block (markdown/Shiki/diff over arbitrary
+          transcript content) degrades to an in-place notice; the rest of the
+          thread keeps rendering. Boundary stays inside .tv-block so the finder's
+          DOM queries still resolve. */}
+      <ErrorBoundary
+        resetKeys={[block]}
+        fallback={(error) => <ErrorBox error={error} title="This block failed to render" />}
+      >
+        <ThreadBlockView block={block} forceOpen={blockIds.has(blockId)} />
+      </ErrorBoundary>
     </div>
   );
 }

@@ -244,6 +244,11 @@ Shipped fallback rates (USD per 1M tokens):
 - Edit `~/.claudescope/pricing.json` to override families, the default rate, or
   pin specific model prices. Re-index (`POST /api/reindex` or `claudescope
   restart`) to recompute stored costs at the new rates.
+- `pricing.json` carries a `schemaVersion`. When an upgrade ships a newer default
+  (new families/models or a changed default rate), the app **reconciles your copy
+  on startup**: it backs the old file up to `pricing.json.bak`, adds the new
+  shipped keys, and **keeps every value you customized**. Your edits are never
+  discarded; a copy you've left current is not rewritten.
 - The `opus`/`sonnet`/`haiku`/`gemini`/`gpt` family rules use **current**
   pricing; the deprecated Opus 4 / 4.1 ($15/$75) and specific GPT-5 versions are
   pinned via exact `models` entries. Add an exact entry to override any model.

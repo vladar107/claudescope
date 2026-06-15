@@ -23,6 +23,7 @@ const SCHEMA_SIGNATURE = createHash('sha1')
   .digest('hex');
 
 let connection: DuckDBConnection | null = null;
+let instance: DuckDBInstance | null = null;
 let connecting: Promise<DuckDBConnection> | null = null;
 
 /** Does a table exist in the open database? */
@@ -54,16 +55,17 @@ async function isStaleSchema(conn: DuckDBConnection): Promise<boolean> {
 }
 
 /** Open the DB file, load extensions, and apply the idempotent schema. */
-async function openAndPrepare(): Promise<DuckDBConnection> {
+async function openAndPrepare(): Promise<{ conn: DuckDBConnection; inst: DuckDBInstance }> {
   mkdirSync(dirname(DUCKDB_PATH), { recursive: true });
-  const instance = await DuckDBInstance.create(DUCKDB_PATH);
-  const conn = await instance.connect();
+  const inst = await DuckDBInstance.create(DUCKDB_PATH);
+  const conn = await inst.connect();
   await conn.run('INSTALL json; LOAD json;');
   await conn.run('INSTALL fts; LOAD fts;');
 
   // A schema-version mismatch means the persisted shape is outdated. The index
   // is a derived cache, so signal a discard+rebuild rather than migrate in place.
   if (await isStaleSchema(conn)) {
+    inst.closeSync();
     throw new Error(`index schema is stale (expected v${SCHEMA_VERSION}); rebuilding`);
   }
 
@@ -74,7 +76,7 @@ async function openAndPrepare(): Promise<DuckDBConnection> {
   await conn.run(
     `INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_signature', '${SCHEMA_SIGNATURE}')`,
   );
-  return conn;
+  return { conn, inst };
 }
 
 /** Delete the persistent DB file and its WAL/temp siblings. */
@@ -100,19 +102,20 @@ export async function getConnection(): Promise<DuckDBConnection> {
   if (connecting) return connecting;
 
   connecting = (async () => {
-    let conn: DuckDBConnection;
+    let opened: { conn: DuckDBConnection; inst: DuckDBInstance };
     try {
-      conn = await openAndPrepare();
+      opened = await openAndPrepare();
     } catch (err) {
       console.warn(
         `[duckdb] failed to open index at ${DUCKDB_PATH}; discarding and rebuilding. Cause:`,
         err instanceof Error ? err.message : err,
       );
       discardCorruptDb();
-      conn = await openAndPrepare();
+      opened = await openAndPrepare();
     }
-    connection = conn;
-    return conn;
+    connection = opened.conn;
+    instance = opened.inst;
+    return opened.conn;
   })();
 
   try {
@@ -122,8 +125,21 @@ export async function getConnection(): Promise<DuckDBConnection> {
   }
 }
 
+/** Close the open connection and release the underlying DB instance (and its
+ *  file lock). Best-effort: a double-close or already-closed handle is ignored. */
 export async function closeConnection(): Promise<void> {
+  try {
+    connection?.disconnectSync();
+  } catch {
+    /* already closed */
+  }
+  try {
+    instance?.closeSync();
+  } catch {
+    /* already closed */
+  }
   connection = null;
+  instance = null;
 }
 
 /**

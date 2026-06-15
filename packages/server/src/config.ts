@@ -1,9 +1,10 @@
 /** Centralized server configuration constants. */
 
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { PricingConfig } from '@claudescope/shared';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -156,12 +157,79 @@ export const APP_VERSION =
   typeof __CLAUDESCOPE_VERSION__ !== 'undefined' ? __CLAUDESCOPE_VERSION__ : '0.0.0-dev';
 
 /**
- * Create the state directory and seed the user-editable pricing file from the
- * shipped default if it doesn't exist yet. Idempotent; call once at boot.
+ * Schema version of the shipped pricing default. Bump when the shipped
+ * `pricing.json` shape — or its families/default rates — change, so an existing
+ * user copy reconciles with the new default on the next boot instead of silently
+ * shadowing it. A monotonic integer (not a content hash): the user copy is meant
+ * to be edited, so only a real shipped change should trigger a reconcile.
+ */
+export const PRICING_SCHEMA_VERSION = 1;
+
+/**
+ * Reconcile the user-editable pricing file with the shipped default.
+ *
+ * Non-destructive and self-healing: on first run it seeds the user copy; when the
+ * shipped schema version is newer than the user's, it backs up the old file to
+ * `<path>.bak`, then merges so NEW shipped keys (models/families) appear while
+ * every value the user customized wins. A corrupt user file is left untouched
+ * (never discard user data). Paths are injectable for tests.
+ */
+export function reconcilePricingConfig(
+  userPath: string = PRICING_PATH,
+  defaultPath: string = DEFAULT_PRICING_PATH,
+): void {
+  // First run: no user copy yet → seed from the default (which carries the version).
+  if (!existsSync(userPath)) {
+    if (existsSync(defaultPath)) copyFileSync(defaultPath, userPath);
+    return;
+  }
+  if (!existsSync(defaultPath)) return; // nothing to reconcile against (dev without a build)
+
+  let user: PricingConfig;
+  let shipped: PricingConfig;
+  try {
+    user = JSON.parse(readFileSync(userPath, 'utf8')) as PricingConfig;
+    shipped = JSON.parse(readFileSync(defaultPath, 'utf8')) as PricingConfig;
+  } catch {
+    // Corrupt user (or default) file: leave the user's file alone — never discard
+    // their edits. loadPricing surfaces a clear error if the base is unreadable.
+    console.warn(`[pricing] could not read ${userPath} for reconciliation; leaving it untouched`);
+    return;
+  }
+
+  const userV = typeof user.schemaVersion === 'number' ? user.schemaVersion : 0;
+  const shippedV =
+    typeof shipped.schemaVersion === 'number' ? shipped.schemaVersion : PRICING_SCHEMA_VERSION;
+  // Up to date (or a user copy claiming to be newer): do nothing. Crucially, do
+  // NOT rewrite — that would bump the mtime and needlessly bust loadPricing's cache.
+  if (userV >= shippedV) return;
+
+  // Back up the current file (single rollback copy), then merge: new shipped keys
+  // are added, but every value the user set wins (user edits are preserved).
+  copyFileSync(userPath, `${userPath}.bak`);
+  const merged: PricingConfig = {
+    schemaVersion: shippedV,
+    models: { ...shipped.models, ...user.models },
+    families: { ...(shipped.families ?? {}), ...(user.families ?? {}) },
+    default: user.default ?? shipped.default,
+  };
+  // Atomic write: stage to a temp file then rename, so a reader never sees a torn
+  // file (same idiom as the pricing-refresh snapshot writer).
+  const tmp = `${userPath}.${process.pid}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(merged, null, 2)}\n`);
+  renameSync(tmp, userPath);
+  console.warn(
+    `[pricing] migrated ${userPath} schema v${userV} → v${shippedV}; ` +
+      `your edits were preserved and the previous file backed up to ${userPath}.bak`,
+  );
+}
+
+/**
+ * Create the state directory and reconcile the user-editable pricing file with
+ * the shipped default (seed on first run; non-destructively migrate a stale
+ * copy). Idempotent; call once at boot.
  */
 export function ensureStateDir(): void {
   mkdirSync(CLAUDESCOPE_HOME, { recursive: true });
-  if (!existsSync(PRICING_PATH) && existsSync(DEFAULT_PRICING_PATH)) {
-    copyFileSync(DEFAULT_PRICING_PATH, PRICING_PATH);
-  }
+  reconcilePricingConfig();
 }
