@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import type { ProjectMeta, SessionMeta, SessionSort } from '@claudescope/shared';
+import { Link } from 'react-router-dom';
+import type { SessionMeta, SessionSort } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
 import { AgentBadge, agentLabel, CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
 import { formatBytes, formatDateTime, shortModel, timeAgo } from './format.js';
-import '../memory/memory.css';
+import { useProjectContext } from './ProjectLayout.js';
 
 const SORT_OPTIONS: { value: SessionSort; label: string }[] = [
   { value: 'recent', label: 'Most recent' },
@@ -22,15 +22,15 @@ function isBenignError(err: unknown): boolean {
 }
 
 /**
- * Sessions for a single project, addressed by `/projects/:projectId`. Sort and
- * agent filter are server-driven (re-fetch on change); the text filter is
- * applied client-side against title / branch / id. Breadcrumbs link back to the
- * project grid, so deep-links and the browser back button both work.
+ * The Sessions tab of a project (`/projects/:projectId`). The breadcrumb, name,
+ * cwd, and the Sessions | Memory tab bar live in {@link ProjectLayout}; this
+ * renders the tab body — sort/filter controls, the agent filter, and the list.
+ * Sort and agent filter are server-driven (re-fetch on change); the text filter
+ * is applied client-side against title / branch / id.
  */
 export function SessionListPage() {
-  const { projectId = '' } = useParams<{ projectId: string }>();
+  const { projectId, project } = useProjectContext();
 
-  const [project, setProject] = useState<ProjectMeta | null>(null);
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [sort, setSort] = useState<SessionSort>('recent');
   const [filter, setFilter] = useState('');
@@ -38,22 +38,6 @@ export function SessionListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [reloadKey, setReloadKey] = useState(0);
-
-  // Project meta (name, cwd, per-agent breakdown). Refetched only when the
-  // project changes; the breakdown drives the agent filter chips.
-  useEffect(() => {
-    const controller = new AbortController();
-    api
-      .listProjects(controller.signal)
-      .then((projects) => {
-        setProject(projects.find((p) => p.id === projectId) ?? null);
-      })
-      .catch((err: unknown) => {
-        if (isBenignError(err)) return;
-        setError(err);
-      });
-    return () => controller.abort();
-  }, [projectId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -84,66 +68,30 @@ export function SessionListPage() {
     });
   }, [sessions, filter]);
 
-  const displayName = project?.displayName ?? sessions[0]?.projectDisplayName ?? projectId;
   const agents = project?.agents ?? [];
 
   return (
-    <section>
-      <div className="tv-browse__crumbs">
-        <Link to="/" className="tv-linkbtn">
-          ← Projects
-        </Link>
-        <span className="tv-muted"> / </span>
-        <span className="tv-mono">{displayName}</span>
-      </div>
-
-      <header className="tv-browse__header">
-        <div>
-          <h1 className="tv-page-title" style={{ marginBottom: 4 }}>
-            {displayName}
-          </h1>
-          {project ? (
-            <div className="tv-muted tv-mono" style={{ fontSize: 'var(--tv-fs-sm)' }}>
-              {project.cwd}
-            </div>
-          ) : null}
-        </div>
-        <div className="tv-browse__controls">
-          <input
-            className="tv-input"
-            type="search"
-            placeholder="Filter sessions…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-          <select
-            className="tv-select"
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SessionSort)}
-            aria-label="Sort sessions"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </header>
-
-      {/* Sessions | Memory tab bar — switches to this project's memory view. */}
-      <div className="tv-memory-tabs" role="tablist" aria-label="Project view">
-        <span className="tv-memory-tabs__tab is-active" role="tab" aria-selected="true">
-          Sessions
-        </span>
-        <Link
-          to={`/projects/${encodeURIComponent(projectId)}/memory`}
-          className="tv-memory-tabs__tab"
-          role="tab"
-          aria-selected="false"
+    <>
+      <div className="tv-browse__controls" style={{ marginBottom: 'var(--tv-space-3)' }}>
+        <input
+          className="tv-input"
+          type="search"
+          placeholder="Filter sessions…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        <select
+          className="tv-select"
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SessionSort)}
+          aria-label="Sort sessions"
         >
-          Memory
-        </Link>
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Agent filter — only meaningful when the project spans 2+ agents. */}
@@ -193,7 +141,7 @@ export function SessionListPage() {
           </ul>
         </>
       )}
-    </section>
+    </>
   );
 }
 

@@ -1,10 +1,7 @@
 /**
- * Per-project memory (`/projects/:projectId/memory`) — every agent's memory for
- * one project, reached from that project's Sessions | Memory tab bar.
- *
- * Renders the same tab bar {@link SessionListPage} uses (Memory active, Sessions
- * linking back to `/projects/:projectId`), so back-navigation returns to the
- * project's sessions rather than to the global Memory landing.
+ * The Memory tab of a project (`/projects/:projectId/memory`) — every agent's
+ * memory for one project. The breadcrumb, name, and the Sessions | Memory tab
+ * bar live in {@link ProjectLayout}; this renders just the tab body.
  *
  * Memory is read LIVE from the agent home dirs on the server (never indexed), so
  * this page just fetches and renders. "No memory" is a normal, first-class state
@@ -12,7 +9,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import type { ProjectMemoryResponse } from '@claudescope/shared';
 import { api } from '../../api/client.js';
 import { ErrorBox, Spinner } from '../../components';
@@ -47,50 +44,24 @@ export function ProjectMemoryPage() {
 
   const byAgent = (data?.byAgent ?? []).filter((a) => a.sources.length > 0);
 
+  if (loading) return <Spinner size="lg" label="Loading memory…" />;
+  if (error) {
+    return <ErrorBox error={error} title="Failed to load memory" onRetry={() => setReloadKey((k) => k + 1)} />;
+  }
+  if (byAgent.length === 0) {
+    return <p className="tv-muted">No memory found for this project yet.</p>;
+  }
+
   return (
-    <section className="tv-memory">
-      <div className="tv-browse__crumbs">
-        <Link to="/" className="tv-linkbtn">
-          ← Projects
-        </Link>
-      </div>
-
-      <h1 className="tv-page-title">Project memory</h1>
-
-      {/* Sessions | Memory tab bar — Memory active; Sessions returns to this
-          project's session list (not the global Memory landing). */}
-      <div className="tv-memory-tabs" role="tablist" aria-label="Project view">
-        <Link
-          to={`/projects/${encodeURIComponent(projectId)}`}
-          className="tv-memory-tabs__tab"
-          role="tab"
-          aria-selected="false"
-        >
-          Sessions
-        </Link>
-        <span className="tv-memory-tabs__tab is-active" role="tab" aria-selected="true">
-          Memory
-        </span>
-      </div>
-
-      {loading ? (
-        <Spinner size="lg" label="Loading memory…" />
-      ) : error ? (
-        <ErrorBox error={error} title="Failed to load memory" onRetry={() => setReloadKey((k) => k + 1)} />
-      ) : byAgent.length === 0 ? (
-        <p className="tv-muted">No memory found for this project yet.</p>
-      ) : (
-        <div className="tv-memory__connectors">
-          {byAgent.map((a) => (
-            <ConnectorMemoryCard
-              key={a.connectorId}
-              connectorId={a.connectorId}
-              label={a.label}
-              sources={a.sources}
-            />
-          ))}
-        </div>
-      )}
-    </section>
+    <div className="tv-memory__connectors">
+      {byAgent.map((a) => (
+        <ConnectorMemoryCard
+          key={a.connectorId}
+          connectorId={a.connectorId}
+          label={a.label}
+          sources={a.sources}
+        />
+      ))}
+    </div>
   );
 }

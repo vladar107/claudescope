@@ -4,6 +4,7 @@ import type { SourceInfo } from '@claudescope/shared';
 import { api } from './api/client.js';
 import { useTheme, type ThemeChoice } from './theme/ThemeProvider.js';
 import { BrowsePage } from './pages/browse/BrowsePage.js';
+import { ProjectLayout } from './pages/browse/ProjectLayout.js';
 import { SessionListPage } from './pages/browse/SessionList.js';
 import { SessionPage } from './pages/session/SessionPage.js';
 import { SearchPage } from './pages/search/SearchPage.js';
@@ -107,8 +108,10 @@ export function App() {
       <main className="tv-main">
         <Routes>
           <Route path="/" element={<BrowsePage />} />
-          <Route path="/projects/:projectId" element={<SessionListPage />} />
-          <Route path="/projects/:projectId/memory" element={<ProjectMemoryPage />} />
+          <Route path="/projects/:projectId" element={<ProjectLayout />}>
+            <Route index element={<SessionListPage />} />
+            <Route path="memory" element={<ProjectMemoryPage />} />
+          </Route>
           <Route path="/sessions/:id" element={<SessionPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
