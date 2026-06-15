@@ -20,7 +20,9 @@ import {
   openSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -29,6 +31,7 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { APP_VERSION, CLAUDE_PROJECTS_DIR, CLAUDESCOPE_HOME, PORT as DEFAULT_PORT } from './config.js';
 import { refreshPricing } from './data/pricing-refresh.js';
+import { openBrowser } from './util/open-browser.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** The server bundle, a sibling of this CLI in the published package. */
@@ -38,8 +41,13 @@ const LOG_FILE = join(CLAUDESCOPE_HOME, 'daemon.log');
 const UPDATE_CHECK_FILE = join(CLAUDESCOPE_HOME, 'update-check.json');
 const PKG = '@vladar107/claudescope';
 const UPDATE_CHECK_TTL_MS = 24 * 60 * 60 * 1000;
+/** Roll the append-only daemon log once it grows past this, so a long-lived or
+ *  crash-looping daemon doesn't grow the log without bound. */
+const LOG_MAX_BYTES = 5 * 1024 * 1024;
+/** How long to wait for a signalled process to actually exit before giving up. */
+const EXIT_WAIT_MS = 5000;
 
-interface DaemonRecord {
+export interface DaemonRecord {
   pid: number;
   port: number;
   url: string;
@@ -48,7 +56,7 @@ interface DaemonRecord {
 }
 
 /** Read the daemon record, or null if absent/corrupt. */
-function readDaemon(): DaemonRecord | null {
+export function readDaemon(): DaemonRecord | null {
   if (!existsSync(DAEMON_FILE)) return null;
   try {
     return JSON.parse(readFileSync(DAEMON_FILE, 'utf8')) as DaemonRecord;
@@ -58,7 +66,7 @@ function readDaemon(): DaemonRecord | null {
 }
 
 /** Is a process with this PID currently alive? */
-function isAlive(pid: number): boolean {
+export function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -68,7 +76,7 @@ function isAlive(pid: number): boolean {
 }
 
 /** Probe the server's health endpoint (short timeout, never throws). */
-async function isHealthy(port: number): Promise<boolean> {
+export async function isHealthy(port: number): Promise<boolean> {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
       signal: AbortSignal.timeout(1500),
@@ -80,7 +88,7 @@ async function isHealthy(port: number): Promise<boolean> {
 }
 
 /** Poll health until ready or the deadline, printing progress dots. */
-async function waitForHealth(port: number, timeoutMs: number): Promise<boolean> {
+export async function waitForHealth(port: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await isHealthy(port)) return true;
@@ -90,18 +98,39 @@ async function waitForHealth(port: number, timeoutMs: number): Promise<boolean> 
   return false;
 }
 
-/** Open a URL in the default browser (best-effort, cross-platform). */
-function openBrowser(url: string): void {
-  const cmd =
-    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+/** Poll until the process is gone or the deadline; returns whether it exited. */
+export async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isAlive(pid)) return true;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return !isAlive(pid);
+}
+
+/** What the recorded daemon (if any) currently is, so callers can decide whether
+ *  to reuse it, clear a stale record, or replace a wedged (alive-but-unhealthy)
+ *  process. Injectable probes keep this pure and unit-testable. */
+export type ExistingState = 'healthy' | 'stale' | 'wedged' | 'none';
+export async function classifyExisting(
+  record: DaemonRecord | null,
+  aliveFn: (pid: number) => boolean,
+  healthyFn: (port: number) => Promise<boolean>,
+): Promise<ExistingState> {
+  if (!record) return 'none';
+  if (!aliveFn(record.pid)) return 'stale';
+  return (await healthyFn(record.port)) ? 'healthy' : 'wedged';
+}
+
+/** Roll the daemon log to `.1` once it exceeds {@link LOG_MAX_BYTES}. Best-effort. */
+function rotateLogIfLarge(): void {
   try {
-    spawn(cmd, [url], {
-      stdio: 'ignore',
-      detached: true,
-      shell: process.platform === 'win32',
-    }).unref();
+    if (existsSync(LOG_FILE) && statSync(LOG_FILE).size > LOG_MAX_BYTES) {
+      rmSync(`${LOG_FILE}.1`, { force: true });
+      renameSync(LOG_FILE, `${LOG_FILE}.1`);
+    }
   } catch {
-    /* non-fatal: the URL is printed regardless */
+    /* non-fatal: logging is best-effort */
   }
 }
 
@@ -110,15 +139,37 @@ async function start(port: number, open: boolean): Promise<void> {
   mkdirSync(CLAUDESCOPE_HOME, { recursive: true });
 
   const existing = readDaemon();
-  if (existing && isAlive(existing.pid) && (await isHealthy(existing.port))) {
+  const state = await classifyExisting(existing, isAlive, isHealthy);
+  if (state === 'healthy' && existing) {
     console.log(`✓ claudescope is already running → ${existing.url}`);
     if (open) openBrowser(existing.url);
     return;
   }
   // Clear a stale record left by a crashed/killed process.
-  if (existing && !isAlive(existing.pid)) rmSync(DAEMON_FILE, { force: true });
+  if (state === 'stale') rmSync(DAEMON_FILE, { force: true });
+  // Alive but unhealthy: a wedged server still holding the port. Replace it —
+  // SIGTERM and wait for it to exit, rather than spawning a second server that
+  // would fail to bind (EADDRINUSE) and leave the old one orphaned.
+  if (state === 'wedged' && existing) {
+    console.log(`claudescope (pid ${existing.pid}) is unresponsive; restarting it…`);
+    try {
+      process.kill(existing.pid, 'SIGTERM');
+    } catch {
+      /* already gone */
+    }
+    if (!(await waitForExit(existing.pid, EXIT_WAIT_MS))) {
+      console.error(
+        `✗ Could not stop the unresponsive process (pid ${existing.pid}). ` +
+          `Kill it manually and retry: kill -9 ${existing.pid}`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    rmSync(DAEMON_FILE, { force: true });
+  }
 
   const url = `http://localhost:${port}`;
+  rotateLogIfLarge();
   const logFd = openSync(LOG_FILE, 'a');
   // Detached + stdio→log + unref: the server keeps running after this CLI exits.
   // OPEN_BROWSER=0 so the daemon never opens a browser; the CLI owns that.
@@ -151,8 +202,9 @@ async function start(port: number, open: boolean): Promise<void> {
   await maybeNotifyUpdate(false);
 }
 
-/** Stop the background server. */
-function stop(): void {
+/** Stop the background server. Waits for the process to actually exit before
+ *  clearing the record so a following `restart`/`update` can rebind the port. */
+async function stop(): Promise<void> {
   const d = readDaemon();
   if (!d || !isAlive(d.pid)) {
     console.log('claudescope is not running.');
@@ -164,6 +216,7 @@ function stop(): void {
   } catch {
     /* already gone */
   }
+  await waitForExit(d.pid, EXIT_WAIT_MS);
   rmSync(DAEMON_FILE, { force: true });
   console.log(`✓ Stopped claudescope (pid ${d.pid}).`);
 }
@@ -284,7 +337,7 @@ async function update(skipConfirm: boolean): Promise<void> {
   }
   // Stop the old daemon, then start via PATH so the freshly-installed binary
   // (new code) supervises the new server, not this now-stale process.
-  stop();
+  await stop();
   console.log('✓ Updated. Restarting…');
   spawnSync('claudescope', ['start'], {
     stdio: 'inherit',
@@ -412,10 +465,10 @@ async function main(): Promise<void> {
       await start(port, open);
       break;
     case 'stop':
-      stop();
+      await stop();
       break;
     case 'restart':
-      stop();
+      await stop();
       await start(port, open);
       break;
     case 'status':
@@ -452,7 +505,22 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+/** True only when this module is the process entrypoint (the real CLI launch),
+ *  so importing it (e.g. from tests) does not execute a command. realpathSync on
+ *  both sides handles the Homebrew bin symlink the same way detectInstallMethod does. */
+function isEntrypoint(): boolean {
+  const argv1 = process.argv[1];
+  if (!argv1) return false;
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntrypoint()) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

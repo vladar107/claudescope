@@ -4,7 +4,6 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import type { FetchedPricing } from '@claudescope/shared';
@@ -22,6 +21,7 @@ import {
 import { registerRoutes } from './routes/index.js';
 import { reindex } from './data/index.js';
 import { refreshPricing } from './data/pricing-refresh.js';
+import { openBrowser } from './util/open-browser.js';
 
 /** How old a fetched-pricing snapshot may be before a boot refresh fires. */
 const PRICING_STALE_MS = 24 * 60 * 60 * 1000;
@@ -38,17 +38,6 @@ function pricingSnapshotIsStale(): boolean {
     return Date.now() - fetchedAt > PRICING_STALE_MS;
   } catch {
     return true; // missing or corrupt → refresh
-  }
-}
-
-/** Open a URL in the user's default browser (best-effort, cross-platform). */
-function openBrowser(url: string): void {
-  const cmd =
-    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
-  try {
-    spawn(cmd, [url], { stdio: 'ignore', detached: true, shell: process.platform === 'win32' }).unref();
-  } catch {
-    /* non-fatal: the URL is printed in the banner regardless */
   }
 }
 
