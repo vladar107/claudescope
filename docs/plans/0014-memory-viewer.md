@@ -1,8 +1,8 @@
 # 0014 — Memory viewer (instruction files + per-agent memory)
 
-- **Status:** proposed <!-- proposed | in-progress | done | superseded | abandoned -->
+- **Status:** done <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-06-15 (revised 2026-06-15 after source- and disk-grounded research; see "Research basis")
-- **PR:** <link, once opened>
+- **PR:** https://github.com/vladar107/claudescope/pull/17
 
 ## Context
 
