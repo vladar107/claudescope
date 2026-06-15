@@ -19,6 +19,7 @@ import type { AnalyticsGroupBy, AnalyticsResponse, AnalyticsTotals } from '@clau
 import { api } from '../../api/client.js';
 import { CostBadge, ErrorBox, Spinner } from '../../components/index.js';
 import { BreakdownChart } from './BreakdownChart.js';
+import type { BreakdownMetric, BreakdownSort } from './BreakdownChart.js';
 import { TimeSeriesChart } from './TimeSeriesChart.js';
 import { formatCount, formatCost, formatPct } from './format.js';
 import './analytics.css';
@@ -28,6 +29,15 @@ const GROUP_OPTIONS: { value: AnalyticsGroupBy; label: string }[] = [
   { value: 'agent', label: 'By agent' },
   { value: 'model', label: 'By model' },
   { value: 'day', label: 'By day' },
+];
+
+const METRIC_OPTIONS: { value: BreakdownMetric; label: string }[] = [
+  { value: 'tokens', label: 'Tokens' },
+  { value: 'cost', label: 'Cost' },
+];
+const SORT_OPTIONS: { value: BreakdownSort; label: string }[] = [
+  { value: 'tokens', label: 'Tokens' },
+  { value: 'cost', label: 'Cost' },
 ];
 
 /** Fetch state for one analytics query. */
@@ -45,6 +55,10 @@ export function AnalyticsPage() {
   const [to, setTo] = useState('');
   // Cache tokens dwarf input/output and clutter the charts — hidden by default.
   const [showCache, setShowCache] = useState(false);
+  // Breakdown chart controls (default to tokens, preserving prior behavior):
+  // `metric` picks what the bars render, `sortBy` picks the row order.
+  const [metric, setMetric] = useState<BreakdownMetric>('tokens');
+  const [sortBy, setSortBy] = useState<BreakdownSort>('tokens');
 
   // The breakdown query follows the active group-by toggle.
   const [breakdown, setBreakdown] = useState<QueryState>(INITIAL);
@@ -182,12 +196,34 @@ export function AnalyticsPage() {
 
             <ChartCard
               title={`Breakdown ${groupByNoun(groupBy)}`}
-              hint="top 15 by total tokens"
+              hint={`top 15 by ${sortBy === 'cost' ? 'cost' : 'tokens'}`}
               loading={breakdown.loading}
               empty={!breakdown.data || breakdown.data.rows.length === 0}
+              actions={
+                <>
+                  <SegmentedControl
+                    label="Metric"
+                    options={METRIC_OPTIONS}
+                    value={metric}
+                    onChange={setMetric}
+                  />
+                  <SegmentedControl
+                    label="Sort by"
+                    options={SORT_OPTIONS}
+                    value={sortBy}
+                    onChange={setSortBy}
+                  />
+                </>
+              }
             >
               {breakdown.data && (
-                <BreakdownChart rows={breakdown.data.rows} groupBy={groupBy} showCache={showCache} />
+                <BreakdownChart
+                  rows={breakdown.data.rows}
+                  groupBy={groupBy}
+                  showCache={showCache}
+                  metric={metric}
+                  sortBy={sortBy}
+                />
               )}
             </ChartCard>
           </div>
@@ -253,6 +289,41 @@ function SummaryCards({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Segmented control (reused by the breakdown chart's Metric / Sort toggles)
+// ---------------------------------------------------------------------------
+
+function SegmentedControl<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="tv-chart-card__control">
+      <span className="tv-chart-card__control-label">{label}</span>
+      <div className="tv-segmented tv-segmented--sm" role="group" aria-label={label}>
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            className={value === opt.value ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
+            aria-pressed={value === opt.value}
+            onClick={() => onChange(opt.value)}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: ReactNode }) {
   return (
     <div className="tv-card tv-stat-card">
@@ -272,19 +343,24 @@ function ChartCard({
   hint,
   loading,
   empty,
+  actions,
   children,
 }: {
   title: string;
   hint?: string;
   loading: boolean;
   empty: boolean;
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section className="tv-card tv-chart-card">
       <div className="tv-chart-card__head">
-        <h2 className="tv-chart-card__title">{title}</h2>
-        {hint && <span className="tv-chart-card__hint">{hint}</span>}
+        <div className="tv-chart-card__heading">
+          <h2 className="tv-chart-card__title">{title}</h2>
+          {hint && <span className="tv-chart-card__hint">{hint}</span>}
+        </div>
+        {actions && <div className="tv-chart-card__actions">{actions}</div>}
       </div>
       {loading ? (
         <div className="tv-chart-empty">

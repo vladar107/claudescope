@@ -124,10 +124,16 @@
 }
 .tv-chart-card__head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--tv-space-3);
   margin-bottom: var(--tv-space-4);
+  flex-wrap: wrap;
+}
+.tv-chart-card__heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tv-space-3);
 }
 .tv-chart-card__title {
   font-size: var(--tv-fs-lg);
@@ -137,6 +143,31 @@
 .tv-chart-card__hint {
   font-size: var(--tv-fs-sm);
   color: var(--tv-fg-faint);
+}
+
+/* Per-chart action controls (e.g. the breakdown Metric / Sort toggles). */
+.tv-chart-card__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--tv-space-4);
+}
+.tv-chart-card__control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+}
+.tv-chart-card__control-label {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Compact variant of the segmented toggle for chart-card headers. */
+.tv-segmented--sm .tv-segmented__btn {
+  padding: var(--tv-space-1) var(--tv-space-3);
+  font-size: var(--tv-fs-sm);
 }
 
 .tv-chart-empty {
