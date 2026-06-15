@@ -7,21 +7,15 @@
  */
 
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import type { FastifyInstance } from 'fastify';
 import type { SourcesResponse } from '@claudescope/shared';
 import { connectors } from '../connectors/registry.js';
-
-/** Contract a leading home-dir path to `~` for display. */
-function tildify(p: string): string {
-  const home = homedir();
-  return p === home ? '~' : p.startsWith(home + '/') ? `~${p.slice(home.length)}` : p;
-}
+import { contractHome } from '../util/paths.js';
 
 export async function registerSourcesRoute(app: FastifyInstance): Promise<void> {
   app.get('/api/sources', async (): Promise<SourcesResponse> => {
     return connectors
       .filter((c) => existsSync(c.sourceDir))
-      .map((c) => ({ id: c.id, label: c.label, path: tildify(c.sourceDir) }));
+      .map((c) => ({ id: c.id, label: c.label, path: contractHome(c.sourceDir) }));
   });
 }

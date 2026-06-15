@@ -8,6 +8,10 @@ import { SessionListPage } from './pages/browse/SessionList.js';
 import { SessionPage } from './pages/session/SessionPage.js';
 import { SearchPage } from './pages/search/SearchPage.js';
 import { AnalyticsPage } from './pages/analytics/AnalyticsPage.js';
+import { MemoryPage } from './pages/memory/MemoryPage.js';
+import { AgentMemoryPage } from './pages/memory/AgentMemoryPage.js';
+import { AgentProjectMemoryPage } from './pages/memory/AgentProjectMemoryPage.js';
+import { ProjectMemoryPage } from './pages/memory/ProjectMemoryPage.js';
 
 interface NavItem {
   to: string;
@@ -19,6 +23,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Browse', icon: '📁', end: true },
+  { to: '/memory', label: 'Memory', icon: '🧠' },
   { to: '/search', label: 'Search', icon: '🔍' },
   { to: '/analytics', label: 'Analytics', icon: '📊' },
 ];
@@ -103,9 +108,13 @@ export function App() {
         <Routes>
           <Route path="/" element={<BrowsePage />} />
           <Route path="/projects/:projectId" element={<SessionListPage />} />
+          <Route path="/projects/:projectId/memory" element={<ProjectMemoryPage />} />
           <Route path="/sessions/:id" element={<SessionPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/memory" element={<MemoryPage />} />
+          <Route path="/memory/:connectorId" element={<AgentMemoryPage />} />
+          <Route path="/memory/:connectorId/:projectId" element={<AgentProjectMemoryPage />} />
         </Routes>
       </main>
     </div>

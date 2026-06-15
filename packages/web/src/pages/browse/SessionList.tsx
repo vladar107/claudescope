@@ -4,6 +4,7 @@ import type { ProjectMeta, SessionMeta, SessionSort } from '@claudescope/shared'
 import { api, ApiError } from '../../api/client.js';
 import { AgentBadge, agentLabel, CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
 import { formatBytes, formatDateTime, shortModel, timeAgo } from './format.js';
+import '../memory/memory.css';
 
 const SORT_OPTIONS: { value: SessionSort; label: string }[] = [
   { value: 'recent', label: 'Most recent' },
@@ -129,6 +130,21 @@ export function SessionListPage() {
           </select>
         </div>
       </header>
+
+      {/* Sessions | Memory tab bar — switches to this project's memory view. */}
+      <div className="tv-memory-tabs" role="tablist" aria-label="Project view">
+        <span className="tv-memory-tabs__tab is-active" role="tab" aria-selected="true">
+          Sessions
+        </span>
+        <Link
+          to={`/projects/${encodeURIComponent(projectId)}/memory`}
+          className="tv-memory-tabs__tab"
+          role="tab"
+          aria-selected="false"
+        >
+          Memory
+        </Link>
+      </div>
 
       {/* Agent filter — only meaningful when the project spans 2+ agents. */}
       {agents.length > 1 ? (

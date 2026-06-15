@@ -1,0 +1,170 @@
+/* ===========================================================================
+   Memory area styles. Scoped under .tv-memory; relies on the global theme
+   variables/utilities from styles/global.css.
+   =========================================================================== */
+
+.tv-memory__lede {
+  margin: calc(-1 * var(--tv-space-2)) 0 var(--tv-space-5);
+  font-size: var(--tv-fs-md);
+  max-width: 64ch;
+}
+
+.tv-memory__section {
+  margin-bottom: var(--tv-space-6);
+}
+.tv-memory__section-title {
+  font-size: var(--tv-fs-lg);
+  font-weight: 600;
+  margin: 0 0 var(--tv-space-3);
+}
+
+.tv-memory__connectors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-5);
+}
+
+/* Agent folder card (landing page) */
+.tv-memory-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+}
+
+/* Project memory list (top-level / per-agent pages) */
+.tv-memory__project-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tv-space-3);
+  color: var(--tv-fg);
+  text-decoration: none;
+}
+.tv-memory__project-main:hover .tv-memory__project-name {
+  color: var(--tv-accent);
+}
+.tv-memory__project-name {
+  font-weight: 600;
+}
+.tv-memory__project-count {
+  gap: 6px;
+}
+.tv-memory__project-count-n {
+  color: var(--tv-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One connector's memory */
+.tv-memory-connector__head {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  margin-bottom: var(--tv-space-3);
+}
+.tv-memory-connector__label {
+  font-size: var(--tv-fs-lg);
+  font-weight: 600;
+}
+
+/* Provenance groups within a connector */
+.tv-memory-group {
+  margin-bottom: var(--tv-space-4);
+}
+.tv-memory-group__title {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--tv-space-2);
+}
+.tv-memory-group__subtitle {
+  font-size: var(--tv-fs-md);
+  font-weight: 600;
+  color: var(--tv-fg-muted);
+  margin: var(--tv-space-3) 0 var(--tv-space-2);
+}
+.tv-memory-group__items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-3);
+}
+
+/* A single memory source card */
+.tv-memory-source__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--tv-space-2);
+  margin-bottom: var(--tv-space-2);
+}
+.tv-memory-source__title {
+  font-weight: 600;
+  font-family: var(--tv-font-mono);
+}
+.tv-memory-source__origin {
+  margin-left: auto;
+  color: var(--tv-accent);
+  font-size: var(--tv-fs-sm);
+  white-space: nowrap;
+}
+.tv-memory-source__desc {
+  margin: 0 0 var(--tv-space-2);
+  font-size: var(--tv-fs-md);
+}
+.tv-memory-source__foot {
+  margin-top: var(--tv-space-3);
+  font-size: var(--tv-fs-sm);
+  word-break: break-all;
+}
+.tv-memory-source__wiki {
+  color: var(--tv-accent);
+}
+/* Inline markdown fragments around wiki-links shouldn't add block spacing. */
+.tv-memory-source__inline {
+  display: inline;
+}
+.tv-memory-source__inline > * {
+  display: inline;
+}
+
+/* Provenance / category chips */
+.tv-memory-chip--user {
+  border-color: var(--tv-accent);
+  color: var(--tv-accent);
+}
+.tv-memory-chip--agent {
+  border-color: #bc8cff55;
+}
+.tv-memory-chip--category {
+  color: var(--tv-fg);
+}
+
+/* Sessions | Memory tab bar on the project view */
+.tv-memory-tabs {
+  display: inline-flex;
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+  overflow: hidden;
+  background: var(--tv-bg-elevated);
+  margin-bottom: var(--tv-space-4);
+}
+.tv-memory-tabs__tab {
+  background: transparent;
+  border: 0;
+  color: var(--tv-fg-muted);
+  padding: var(--tv-space-2) var(--tv-space-4);
+  cursor: pointer;
+  font-size: var(--tv-fs-md);
+  text-decoration: none;
+}
+.tv-memory-tabs__tab + .tv-memory-tabs__tab {
+  border-left: 1px solid var(--tv-border);
+}
+.tv-memory-tabs__tab:hover {
+  background: var(--tv-bg-hover);
+  color: var(--tv-fg);
+}
+.tv-memory-tabs__tab.is-active {
+  background: var(--tv-accent-muted);
+  color: var(--tv-fg);
+}

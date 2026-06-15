@@ -14,7 +14,9 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CLAUDESCOPE_HOME, JUNIE_SESSIONS_DIR } from '../../config.js';
+import type { MemorySource } from '@claudescope/shared';
+import { CLAUDESCOPE_HOME, JUNIE_HOME, JUNIE_SESSIONS_DIR } from '../../config.js';
+import { contractHome } from '../../util/paths.js';
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
@@ -107,6 +109,33 @@ async function loadSession(_sessionId: string, paths: string[]): Promise<Session
   return { mainEvents, subagents: [] };
 }
 
+/**
+ * Junie's global, user-authored instruction file: `~/.junie/AGENTS.md`. Junie's
+ * per-project memory (`<repo>/.junie/memory/`) is repo-local and intentionally
+ * OUT OF SCOPE — surfacing it would require reading arbitrary user project
+ * directories, violating the home-dir-only invariant (see plan 0014); hence no
+ * `projectMemory`. Returns `[]` when the file is absent.
+ */
+function globalMemory(): MemorySource[] {
+  const agentsPath = join(JUNIE_HOME, 'AGENTS.md');
+  try {
+    const markdown = readFileSync(agentsPath, 'utf8');
+    if (!markdown.trim()) return []; // empty file → no memory
+    return [
+      {
+        provenance: 'user-authored',
+        kind: 'document',
+        title: 'AGENTS.md (global)',
+        markdown,
+        sourcePath: contractHome(agentsPath),
+        updatedAt: new Date(statSync(agentsPath).mtimeMs).toISOString(),
+      },
+    ];
+  } catch {
+    return []; // no global instruction file — a normal, first-class empty state
+  }
+}
+
 export const junieConnector: AgentConnector = {
   id: 'junie',
   label: 'Junie',
@@ -116,4 +145,5 @@ export const junieConnector: AgentConnector = {
   eventsProjectionSql,
   auxProjections,
   loadSession,
+  globalMemory,
 };

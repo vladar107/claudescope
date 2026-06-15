@@ -48,6 +48,15 @@
   margin-bottom: var(--tv-space-3);
 }
 
+.tv-search__section {
+  margin-bottom: var(--tv-space-5);
+}
+.tv-search__section-title {
+  font-size: var(--tv-fs-lg);
+  font-weight: 600;
+  margin: 0 0 var(--tv-space-3);
+}
+
 .tv-search__results {
   display: flex;
   flex-direction: column;
@@ -105,6 +114,15 @@
   font-size: var(--tv-fs-sm);
   color: var(--tv-fg-faint);
   font-variant-numeric: tabular-nums;
+}
+
+.tv-search__mem-scope {
+  text-transform: capitalize;
+}
+.tv-search__mem-project {
+  margin-left: auto;
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
 }
 
 .tv-search__snippet {
