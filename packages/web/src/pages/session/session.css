@@ -1,7 +1,9 @@
 /* Session reader — threaded conversation view. Relies on global tokens. */
 
 .tv-session {
-  max-width: 920px;
+  /* Capped for transcript readability, but roomy enough for code blocks, diffs,
+     and tool output — 920px was tight once a session has wide content. */
+  max-width: 1100px;
   margin: 0 auto;
 }
 
