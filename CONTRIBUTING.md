@@ -49,8 +49,8 @@ process is killed mid-write) the app discards and rebuilds it automatically.
 
 Each agent is a **connector** (`packages/server/src/connectors/`). Claude Code
 JSONL is projected per-row; the others (Codex spreads a session across record
-types, Junie records an event-sourced UI stream, pi keeps `cwd`/tool-results on
-separate records, opencode is a single SQLite database) run a `prepare()` pass
+types, Junie and GitHub Copilot CLI record an event-sourced stream, pi keeps
+`cwd`/tool-results on separate records, opencode is a single SQLite database) run a `prepare()` pass
 that normalizes a session to canonical NDJSON first — after that the indexing,
 search, cost, and threading paths are all shared. Adding another agent is adding
 another connector (see [Adding an agent connector](#adding-an-agent-connector)).

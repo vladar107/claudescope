@@ -1,7 +1,7 @@
 # Security Policy
 
 Claudescope is a **local, read-only** viewer for your AI coding-agent transcripts
-— Claude Code, OpenAI Codex, JetBrains Junie, pi, and opencode. It runs on your
+— Claude Code, OpenAI Codex, JetBrains Junie, pi, opencode, and GitHub Copilot CLI. It runs on your
 machine, binds to loopback only, and is designed to touch as little of your
 system as possible. This document describes exactly what it does so you can audit
 it, and how to report anything that looks wrong.
@@ -33,6 +33,7 @@ None of these are misused; they're listed here so you can verify that.
   - `~/.codex/sessions/**` — OpenAI Codex (override: `$CODEX_SESSIONS_DIR`)
   - `~/.junie/sessions/**` — JetBrains Junie (override: `$JUNIE_SESSIONS_DIR`)
   - `~/.pi/agent/sessions/**` — pi (override: `$PI_SESSIONS_DIR`)
+  - `~/.copilot/session-state/**` — GitHub Copilot CLI (override: `$COPILOT_SESSIONS_DIR`)
   - `~/.local/share/opencode/opencode.db` — opencode, a SQLite database opened
     **read-only** via Node's built-in `node:sqlite` (override:
     `$OPENCODE_DATA_DIR` / `$OPENCODE_DB_PATH`)

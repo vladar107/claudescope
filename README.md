@@ -22,9 +22,10 @@ machine and only ever reads your transcripts.
 | [JetBrains Junie](https://www.jetbrains.com/junie/) | `~/.junie/sessions/session-*/events.jsonl`  |
 | [pi](https://pi.dev)                              | `~/.pi/agent/sessions/**/*.jsonl`             |
 | [opencode](https://opencode.ai)                   | `~/.local/share/opencode/opencode.db` (SQLite) |
+| [GitHub Copilot CLI](https://github.com/features/copilot) | `~/.copilot/session-state/**/events.jsonl` |
 
 Each source is optional — a directory that doesn't exist is simply skipped, so
-Claudescope works whether you use one agent or all five. Adding another is just
+Claudescope works whether you use one agent or all six. Adding another is just
 [adding another connector](./CONTRIBUTING.md#adding-an-agent-connector).
 
 ## What it can do
@@ -175,11 +176,12 @@ All optional — set via environment variables.
 | `JUNIE_SESSIONS_DIR`  | `~/.junie/sessions`    | Where to read JetBrains Junie transcripts from. A leading `~` is expanded.|
 | `PI_SESSIONS_DIR`     | `~/.pi/agent/sessions` | Where to read pi transcripts from. A leading `~` is expanded.          |
 | `OPENCODE_DATA_DIR`   | `~/.local/share/opencode` | Dir holding opencode's `opencode.db` (read-only). Honors `$XDG_DATA_HOME`; override the DB path directly with `OPENCODE_DB_PATH`. |
+| `COPILOT_SESSIONS_DIR`| `~/.copilot/session-state` | Where to read GitHub Copilot CLI transcripts from. A leading `~` is expanded. |
 | `CLAUDESCOPE_HOME`    | `~/.claudescope`       | Where the app keeps its own state (index, pricing copy, logs, PID).    |
 | `REINDEX_INTERVAL_MS` | `15000`                | How often to auto-pick-up new/updated sessions. Set `0` to disable.    |
 
 Each agent source is optional — if a directory doesn't exist it's simply skipped,
-so the app works whether you use one agent or all five.
+so the app works whether you use one agent or all six.
 
 Examples:
 
@@ -190,6 +192,7 @@ CODEX_SESSIONS_DIR=/path/to/codex/sessions claudescope   # point at Codex sessio
 JUNIE_SESSIONS_DIR=/path/to/junie/sessions claudescope   # point at Junie sessions elsewhere
 PI_SESSIONS_DIR=/path/to/pi/sessions claudescope         # point at pi sessions elsewhere
 OPENCODE_DATA_DIR=/path/to/opencode claudescope          # point at an opencode data dir elsewhere
+COPILOT_SESSIONS_DIR=/path/to/copilot/session-state claudescope  # point at Copilot CLI sessions elsewhere
 claudescope --no-open                                    # don't pop a browser tab
 ```
 
@@ -299,6 +302,14 @@ served from cache (legitimately high for Claude Code, which re-reads cached cont
   Node's built-in `node:sqlite`. Its reasoning renders in full (plaintext), its
   file edits (made via `apply_patch`) show in the **Files changed** tab and as
   diffs, and pasted screenshots embed. Like pi, it contributes no memory.
+- **GitHub Copilot CLI records an event-sourced stream**
+  (`~/.copilot/session-state/<id>/events.jsonl`). Cost is **session-level** — only
+  a cleanly-closed session reports tokens, so a crashed or still-running one shows
+  no cost. Reasoning is encrypted (renders empty, like Codex). File edits show in
+  the **Files changed** tab; a denied edit is shown but doesn't count as a change.
+  Pasted screenshots embed when screenshot-saving is enabled (otherwise a marker
+  remains). Its global `copilot-instructions.md` appears in the memory viewer; it
+  keeps no per-project memory.
 
 ---
 
@@ -316,7 +327,7 @@ local copy, see [Run from source](#run-from-source) above.
 ## Security & privacy
 
 Claudescope runs entirely on your machine. It treats every agent source
-(`~/.claude`, `~/.codex`, `~/.junie`, `~/.pi`, and opencode's database) as
+(`~/.claude`, `~/.codex`, `~/.junie`, `~/.pi`, `~/.copilot`, and opencode's database) as
 **read-only**, **binds to `127.0.0.1` only**, and sends **no telemetry**. Its only
 outbound requests are a cached npm-registry version check for the update notice
 and a daily fetch of public model pricing rates from LiteLLM (disable with
@@ -329,7 +340,7 @@ shell, and self-update behavior — and how to report a vulnerability.
 ## Troubleshooting
 
 - **App is empty / "sessions directory not found"** — none of `CLAUDE_PROJECTS_DIR`,
-  `CODEX_SESSIONS_DIR`, `JUNIE_SESSIONS_DIR`, `PI_SESSIONS_DIR`, or `OPENCODE_DATA_DIR` points at real transcripts. Check
+  `CODEX_SESSIONS_DIR`, `JUNIE_SESSIONS_DIR`, `PI_SESSIONS_DIR`, `OPENCODE_DATA_DIR`, or `COPILOT_SESSIONS_DIR` points at real transcripts. Check
   the banner and set them correctly. Any source can be absent; only the present
   ones are indexed.
 - **`Error: listen EADDRINUSE :4317`** — the port is taken; run `claudescope --port <n>`.
