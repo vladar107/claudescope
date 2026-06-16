@@ -25,6 +25,7 @@ process.env.CLAUDE_PROJECTS_DIR = claudeDir;
 process.env.CODEX_SESSIONS_DIR = codexDir;
 process.env.JUNIE_SESSIONS_DIR = junieDir;
 process.env.PI_SESSIONS_DIR = join(work, 'pi-empty');
+process.env.OPENCODE_DATA_DIR = join(work, 'opencode-empty');
 process.env.DUCKDB_PATH = join(work, 'index.duckdb');
 process.env.CLAUDESCOPE_HOME = join(work, 'home');
 process.env.REINDEX_INTERVAL_MS = '0';

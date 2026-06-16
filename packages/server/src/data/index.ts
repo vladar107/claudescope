@@ -356,24 +356,46 @@ async function doReindex(): Promise<ReindexResponse> {
   };
 
   // Discover across every registered connector, tagging each file with its owner.
+  // Isolate per-connector discovery failures: a connector that throws (e.g. a
+  // transient SQLite error from the single opencode DB) must NOT abort the whole
+  // reindex, NOR have its previously-indexed sessions pruned just because it
+  // returned nothing this pass. We record it as "failed this pass" and exclude its
+  // files from the prune below (its absence is transient, not a deletion).
   const discovered: { file: DiscoveredFile; connector: AgentConnector }[] = [];
+  const failedConnectors = new Set<string>();
   for (const connector of connectors) {
-    for (const file of connector.discover()) discovered.push({ file, connector });
+    try {
+      for (const file of connector.discover()) discovered.push({ file, connector });
+    } catch (err) {
+      failedConnectors.add(connector.id);
+      console.warn(
+        `claudescope: ${connector.id} discovery failed; preserving its indexed sessions this pass:`,
+        err,
+      );
+    }
   }
 
-  // Build a lookup of already-indexed (path -> mtime,size).
-  const existingRows = await queryRows(conn, 'SELECT path, mtime_ms, size_bytes FROM files');
-  const existing = new Map<string, { mtime: number; size: number }>();
+  // Build a lookup of already-indexed (path -> mtime,size,connector).
+  const existingRows = await queryRows(
+    conn,
+    'SELECT path, mtime_ms, size_bytes, connector_id FROM files',
+  );
+  const existing = new Map<string, { mtime: number; size: number; connectorId: string | null }>();
   for (const r of existingRows) {
-    existing.set(String(r.path), { mtime: Number(r.mtime_ms), size: Number(r.size_bytes) });
+    existing.set(String(r.path), {
+      mtime: Number(r.mtime_ms),
+      size: Number(r.size_bytes),
+      connectorId: r.connector_id != null ? String(r.connector_id) : null,
+    });
   }
 
   const discoveredPaths = new Set(discovered.map((d) => d.file.path));
 
-  // Drop files that no longer exist on disk (and their events).
+  // Drop files that no longer exist on disk (and their events) — but skip files
+  // owned by a connector whose discovery failed this pass (transient, not gone).
   let removed = 0;
-  for (const path of existing.keys()) {
-    if (!discoveredPaths.has(path)) {
+  for (const [path, meta] of existing) {
+    if (!discoveredPaths.has(path) && !(meta.connectorId && failedConnectors.has(meta.connectorId))) {
       // Delete stale aux rows before clearing events: the subquery reads events
       // to resolve session ids, so aux deletes must precede the events delete.
       await conn.run(`DELETE FROM titles   WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${sqlString(path)})`);

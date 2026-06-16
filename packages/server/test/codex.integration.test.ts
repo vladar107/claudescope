@@ -23,6 +23,7 @@ process.env.CODEX_SESSIONS_DIR = codexDir;
 // Isolate from the real ~/.junie and ~/.pi so this Codex-only suite stays deterministic.
 process.env.JUNIE_SESSIONS_DIR = join(work, 'junie-empty');
 process.env.PI_SESSIONS_DIR = join(work, 'pi-empty');
+process.env.OPENCODE_DATA_DIR = join(work, 'opencode-empty');
 process.env.DUCKDB_PATH = join(work, 'index.duckdb');
 process.env.CLAUDESCOPE_HOME = join(work, 'home');
 process.env.REINDEX_INTERVAL_MS = '0';
