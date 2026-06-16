@@ -32,9 +32,11 @@ describe('security headers', () => {
     // Remote http(s) image/connect sources must NOT be allowlisted anywhere.
     expect(csp).not.toContain('http://');
     expect(csp).not.toContain('https://');
-    // script-src must stay strict — no blanket inline allowance.
-    expect(csp).not.toContain("'unsafe-inline' 'unsafe-inline'");
+    // script-src stays strict: WASM (for Shiki) is allowed, but NOT inline
+    // scripts or general eval — so an injected script still can't execute.
+    expect(csp).toContain("'wasm-unsafe-eval'");
     expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(csp).not.toContain("'unsafe-eval'"); // bare unsafe-eval (note: != wasm-unsafe-eval)
 
     await app.close();
   });
