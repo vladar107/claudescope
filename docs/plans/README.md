@@ -45,4 +45,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0018 | [Analytics breakdown by cost (Metric + Sort toggles)](./0018-analytics-breakdown-cost.md) | done |
 | 0019 | [pi connector](./0019-pi-connector.md) | done |
 | 0020 | [opencode connector](./0020-opencode-connector.md) | done |
-| 0021 | [GitHub Copilot CLI connector](./0021-copilot-connector.md) | proposed |
+| 0021 | [GitHub Copilot CLI connector](./0021-copilot-connector.md) | done |

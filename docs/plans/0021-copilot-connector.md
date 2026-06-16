@@ -1,8 +1,8 @@
 # 0021 — GitHub Copilot CLI connector
 
-- **Status:** in-progress <!-- proposed | in-progress | done | superseded | abandoned -->
+- **Status:** done <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-06-16
-- **PR:** <link, once opened>
+- **PR:** https://github.com/vladar107/claudescope/pull/25
 
 ## Context
 
