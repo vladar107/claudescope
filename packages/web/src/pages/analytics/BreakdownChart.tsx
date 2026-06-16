@@ -11,7 +11,7 @@
  */
 
 import { useMemo } from 'react';
-import type { AnalyticsGroupBy, AnalyticsRow } from '@claudescope/shared';
+import type { AnalyticsGroupBy, AnalyticsRow, ProjectMeta } from '@claudescope/shared';
 import {
   Bar,
   CartesianGrid,
@@ -42,7 +42,13 @@ export type BreakdownSort = 'tokens' | 'cost';
 
 interface Bucket {
   key: string;
+  /** Axis tick text (friendly: project name, stripped model id, etc.). */
   label: string;
+  /** Tooltip heading — keeps the raw key for non-project rows (e.g. the full
+   *  dated model id), but the project name for project rows. */
+  tooltipTitle: string;
+  /** Project cwd, shown as a tooltip subtitle to disambiguate same-named projects. */
+  cwd?: string;
   input: number;
   output: number;
   cache: number;
@@ -56,12 +62,15 @@ export function BreakdownChart({
   showCache,
   metric,
   sortBy,
+  projectsById,
 }: {
   rows: AnalyticsRow[];
   groupBy: AnalyticsGroupBy;
   showCache: boolean;
   metric: BreakdownMetric;
   sortBy: BreakdownSort;
+  /** Project id -> metadata, used to label project bars with the Browse name. */
+  projectsById?: Map<string, ProjectMeta>;
 }) {
   // Order by the chosen sort key. For tokens, sort by what the bars actually
   // render: with cache hidden, ordering by the full total would shuffle the
@@ -70,18 +79,33 @@ export function BreakdownChart({
     const sortVal = (b: Bucket) =>
       sortBy === 'cost' ? b.cost : showCache ? b.total : b.input + b.output;
     return rows
-      .map((r) => ({
-        key: r.key,
-        label: shortKey(r.key, groupBy),
-        input: r.inputTokens,
-        output: r.outputTokens,
-        cache: r.cacheCreationTokens + r.cacheReadTokens,
-        cost: r.costUsd,
-        total: r.totalTokens,
-      }))
+      .map((r) => {
+        const project = groupBy === 'project' ? projectsById?.get(r.key) : undefined;
+        const label = project?.displayName ?? shortKey(r.key, groupBy);
+        return {
+          key: r.key,
+          label,
+          tooltipTitle: groupBy === 'project' ? label : r.key,
+          cwd: project?.cwd,
+          input: r.inputTokens,
+          output: r.outputTokens,
+          cache: r.cacheCreationTokens + r.cacheReadTokens,
+          cost: r.costUsd,
+          total: r.totalTokens,
+        };
+      })
       .sort((a, b) => sortVal(b) - sortVal(a))
       .slice(0, MAX_BARS);
-  }, [rows, groupBy, showCache, sortBy]);
+  }, [rows, groupBy, showCache, sortBy, projectsById]);
+
+  // Map each unique row key to its axis label. The YAxis is keyed on `key` (not
+  // `label`) so two distinct projects that share a display name (e.g. two
+  // `viewer` dirs) keep separate bars; the tick formatter renders the label.
+  const labelByKey = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const b of data) m.set(b.key, b.label);
+    return m;
+  }, [data]);
 
   // Scale height with the number of bars so labels never overlap.
   const height = Math.max(220, data.length * 34 + 60);
@@ -103,7 +127,8 @@ export function BreakdownChart({
         />
         <YAxis
           type="category"
-          dataKey="label"
+          dataKey="key"
+          tickFormatter={(k: string) => labelByKey.get(k) ?? k}
           tick={tick}
           tickLine={false}
           axisLine={{ stroke: colors.grid }}
@@ -141,7 +166,8 @@ function BreakdownTooltip(props: {
   const { colors } = props;
   return (
     <TooltipCard
-      title={p.key}
+      title={p.tooltipTitle}
+      subtitle={p.cwd}
       rows={[
         { label: 'Input', value: formatCount(p.input), color: colors.input },
         { label: 'Output', value: formatCount(p.output), color: colors.output },

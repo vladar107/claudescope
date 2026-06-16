@@ -15,7 +15,12 @@
 
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AnalyticsGroupBy, AnalyticsResponse, AnalyticsTotals } from '@claudescope/shared';
+import type {
+  AnalyticsGroupBy,
+  AnalyticsResponse,
+  AnalyticsTotals,
+  ProjectMeta,
+} from '@claudescope/shared';
 import { api } from '../../api/client.js';
 import { CostBadge, ErrorBox, Spinner } from '../../components/index.js';
 import { BreakdownChart } from './BreakdownChart.js';
@@ -60,6 +65,11 @@ export function AnalyticsPage() {
   const [metric, setMetric] = useState<BreakdownMetric>('tokens');
   const [sortBy, setSortBy] = useState<BreakdownSort>('tokens');
 
+  // Project id -> metadata, so the breakdown can label project bars with the
+  // same human-friendly name (and cwd) the Browse tab shows, instead of the
+  // raw stable id. Fetched once; date range / group-by don't affect it.
+  const [projectsById, setProjectsById] = useState<Map<string, ProjectMeta>>(new Map());
+
   // The breakdown query follows the active group-by toggle.
   const [breakdown, setBreakdown] = useState<QueryState>(INITIAL);
   // The time series is always grouped by day (independent of the toggle) so the
@@ -98,6 +108,17 @@ export function AnalyticsPage() {
   }, [groupBy, range.from, range.to]);
 
   useEffect(() => load(), [load]);
+
+  // Load the project list once for id -> displayName mapping. On failure the
+  // breakdown falls back to the raw key, so a missing list never blocks it.
+  useEffect(() => {
+    const ctrl = new AbortController();
+    api
+      .listProjects(ctrl.signal)
+      .then((list) => setProjectsById(new Map(list.map((p) => [p.id, p]))))
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, []);
 
   // Totals are identical across both queries (same filter, different grouping);
   // prefer whichever has loaded.
@@ -223,6 +244,7 @@ export function AnalyticsPage() {
                   showCache={showCache}
                   metric={metric}
                   sortBy={sortBy}
+                  projectsById={projectsById}
                 />
               )}
             </ChartCard>

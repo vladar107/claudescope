@@ -61,12 +61,24 @@ export interface TooltipDatum {
 /**
  * A presentational tooltip body. Chart files build the `title`/`rows` from the
  * recharts payload and hand them here, keeping recharts' loosely-typed payload
- * shape isolated to one spot per chart.
+ * shape isolated to one spot per chart. An optional `subtitle` renders a muted
+ * secondary line under the title (e.g. a project's full cwd).
  */
-export function TooltipCard({ title, rows }: { title: string; rows: TooltipDatum[] }) {
+export function TooltipCard({
+  title,
+  subtitle,
+  rows,
+}: {
+  title: string;
+  subtitle?: ReactNode;
+  rows: TooltipDatum[];
+}) {
   return (
     <div className="tv-chart-tooltip">
       <div className="tv-chart-tooltip__label">{title}</div>
+      {subtitle != null && subtitle !== '' && (
+        <div className="tv-chart-tooltip__sub">{subtitle}</div>
+      )}
       {rows.map((r, i) => (
         <div className="tv-chart-tooltip__row" key={i}>
           <span className="tv-chart-tooltip__row-label">

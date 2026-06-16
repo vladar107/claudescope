@@ -194,6 +194,15 @@
   margin-bottom: var(--tv-space-1);
   font-family: var(--tv-font-mono);
 }
+.tv-chart-tooltip__sub {
+  margin-top: calc(-1 * var(--tv-space-1));
+  margin-bottom: var(--tv-space-1);
+  font-family: var(--tv-font-mono);
+  font-size: 11px;
+  color: var(--tv-fg-muted);
+  word-break: break-all;
+  max-width: 320px;
+}
 .tv-chart-tooltip__row {
   display: flex;
   align-items: center;
