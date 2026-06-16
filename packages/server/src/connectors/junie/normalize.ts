@@ -25,7 +25,7 @@
  */
 
 import { readFileSync, realpathSync } from 'node:fs';
-import { basename, dirname, join, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, sep } from 'node:path';
 import type {
   AssistantEvent,
   ContentBlock,
@@ -136,7 +136,7 @@ function attachmentImages(customAttachments: unknown): ImageBlock[] {
   if (!Array.isArray(customAttachments)) return [];
   const out: ImageBlock[] = [];
   for (const a of customAttachments) {
-    if (typeof a === 'string' && a.startsWith('/')) {
+    if (typeof a === 'string' && isAbsolute(a)) {
       const img = imageBlockFromPath(a);
       if (img) out.push(img);
     }
@@ -144,10 +144,12 @@ function attachmentImages(customAttachments: unknown): ImageBlock[] {
   return out;
 }
 
-// Junie embeds a pasted screenshot as an `@/absolute/path.png` mention in the
+// Junie embeds a pasted screenshot as an `@<absolute-path>.png` mention in the
 // prompt text (not always in customAttachments). Match an absolute path with an
-// image extension so it can be inlined and the raw path cleaned from the text.
-const IMAGE_MENTION_RE = /@(\/\S+?\.(?:png|jpe?g|gif|webp))\b/gi;
+// image extension — POSIX (`/…`) or Windows (`C:\…` / `C:/…`) — so it can be
+// inlined and the raw path cleaned from the text. `\S` stops at whitespace
+// (a pre-existing limitation: paths with spaces aren't matched).
+const IMAGE_MENTION_RE = /@((?:[A-Za-z]:[\\/]|\/)\S+?\.(?:png|jpe?g|gif|webp))\b/gi;
 
 /**
  * Pull `@<image-path>` mentions out of a prompt: inline each as an ImageBlock
@@ -158,7 +160,7 @@ const IMAGE_MENTION_RE = /@(\/\S+?\.(?:png|jpe?g|gif|webp))\b/gi;
 function extractPromptImages(prompt: string): { text: string; images: ImageBlock[] } {
   const images: ImageBlock[] = [];
   const text = prompt.replace(IMAGE_MENTION_RE, (_match, path: string) => {
-    const name = path.split('/').pop() || 'image';
+    const name = path.split(/[/\\]/).pop() || 'image';
     const img = imageBlockFromPath(path);
     if (img) {
       images.push(img);

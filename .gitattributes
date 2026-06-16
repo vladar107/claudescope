@@ -1,0 +1,7 @@
+# Normalize all text files to LF in the working tree on every platform. Some
+# content is byte-sensitive and must not be altered by a Windows CRLF checkout:
+#   - the CSP hash pinned for the inline <script> in packages/web/index.html
+#     (THEME_BOOTSTRAP_SCRIPT_HASH in packages/server/src/security.ts), and
+#   - the shebang'd scripts/*.mjs, which fail to parse with a CRLF shebang.
+# Binary files are auto-detected and left untouched.
+* text=auto eol=lf

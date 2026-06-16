@@ -1,7 +1,8 @@
 # 0022 — Security & quality fixes: image CSP, Junie path containment, deterministic PR link, memory/search logging, Windows support
 
 - **Status:** in-progress <!-- proposed | in-progress | done | superseded | abandoned -->
-  - PR 1 (F3, F4, C7, C8) implemented; PR 2 (C6) pending.
+  - PR 1 (F3, F4, C7, C8) merged (#26; CSP/WASM + collapse-chevron follow-up #27).
+  - PR 2 (C6 — Windows support) implemented; pending `windows-latest` CI validation.
 - **Date:** 2026-06-16
 - **PR:** <link, once opened>
 
@@ -91,7 +92,22 @@ The five items:
   display fixes are known. The bigger value is the Windows CI runner: it exercises
   the real DuckDB path-interpolation, globbing, and fixture paths on Windows and
   will surface anything else that breaks. Treat newly-surfaced Windows failures as
-  in-scope for this item.
+  in-scope for this item. **Implementation note:** beyond the two display helpers,
+  the Junie connector also assumed POSIX paths (`startsWith('/')`, `split('/')`, a
+  `@/…`-only mention regex) — switched to `path.isAbsolute` + both-separator splits
+  + a Windows-aware mention regex (best-effort pending real Windows-Junie data).
+  DuckDB reads use exact file paths (no globs), so a backslash in the SQL string
+  literal should be fine; the runner is the real confirmation.
+  **What the `windows-latest` runner surfaced** (DuckDB *did* read backslash paths
+  fine — Junie/api/codex/pi/opencode integration suites passed on Windows; these
+  were the unanticipated ones, all fixed on-branch):
+  1. The pinned CSP hash and the shebang'd `scripts/*.mjs` broke under git's CRLF
+     checkout (Windows-only `SyntaxError` / hash mismatch) → repo-wide
+     `.gitattributes` (`* text=auto eol=lf`) pins LF on every platform.
+  2. Parallel vitest workers race to `INSTALL` DuckDB extensions into the shared
+     `~/.duckdb` dir, which Windows file-locking rejects. Production is
+     single-process, so this is a test-only artifact → `fileParallelism: false`
+     on win32 only (Linux/macOS keep full parallelism).
 - **PR split (recommended):** ship **F3 + F4 + C7 + C8 as one focused PR** (all
   small, security + correctness, low-risk, easy to review) and **C6 as a separate
   PR** (exploratory — a new CI runner may surface follow-on path bugs and

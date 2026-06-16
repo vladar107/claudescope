@@ -21,8 +21,9 @@ export function projectIdFromCwd(cwd: string): string {
   return slug ? `${slug}-${hash8}` : hash8;
 }
 
-/** Human-friendly project name: the last non-empty path segment of the cwd. */
+/** Human-friendly project name: the last non-empty path segment of the cwd.
+ *  Splits on both `/` and `\` so Windows cwds (`C:\Users\me\proj`) name correctly. */
 export function displayNameFromCwd(cwd: string): string {
-  const segments = cwd.split('/').filter(Boolean);
+  const segments = cwd.split(/[/\\]/).filter(Boolean);
   return segments.length > 0 ? (segments[segments.length - 1] as string) : cwd;
 }
