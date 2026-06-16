@@ -182,8 +182,21 @@ export async function registerSearchRoute(app: FastifyInstance): Promise<void> {
     // Each kind is guarded so a failure in one (e.g. an FTS edge case) still
     // returns the other rather than 500-ing the whole request.
     const sessions =
-      scope === 'memory' ? [] : await searchSessions(q, terms, type, project).catch(() => []);
-    const memory = scope === 'sessions' ? [] : await searchMemory(terms, project).catch(() => []);
+      scope === 'memory'
+        ? []
+        : await searchSessions(q, terms, type, project).catch((err) => {
+            // Don't 500 the whole request, but don't let a real FTS regression
+            // silently look like "no results" either — leave a trace.
+            req.log.warn({ err }, 'session search failed');
+            return [];
+          });
+    const memory =
+      scope === 'sessions'
+        ? []
+        : await searchMemory(terms, project).catch((err) => {
+            req.log.warn({ err }, 'memory search failed');
+            return [];
+          });
 
     return { sessions, memory };
   });

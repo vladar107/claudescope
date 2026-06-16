@@ -55,6 +55,11 @@ function writeFixtures(): string[] {
       { ...baseA, type: 'assistant', uuid: 'a3', parentUuid: 'u2', timestamp: '2026-01-01T10:00:35.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'tool_use', id: 'tu_wf', name: 'Workflow', input: { script: '...' } }], usage: { input_tokens: 30, output_tokens: 15 } } },
       { ...baseA, type: 'user', uuid: 'u3', parentUuid: 'a3', timestamp: '2026-01-01T10:02:00.000Z', isSidechain: false, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_wf', content: 'Workflow launched. Run ID: wf_int1 — done.' }] } },
       { type: 'pr-link', sessionId: 'sessA', prNumber: 7, prRepository: 'me/repo', prUrl: 'https://example/pr/7' },
+      // A second pr-link for the SAME session, lower number, listed AFTER the
+      // first. The old last()-by-file-order picked whatever came last (#3); the
+      // deterministic arg_max/max(prUrl) must still resolve to #7 — verified by the
+      // prUrl assertion in the project listing test below.
+      { type: 'pr-link', sessionId: 'sessA', prNumber: 3, prRepository: 'me/repo', prUrl: 'https://example/pr/3' },
     ]),
   );
 

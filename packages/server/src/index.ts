@@ -19,6 +19,7 @@ import {
   ensureStateDir,
 } from './config.js';
 import { registerRoutes } from './routes/index.js';
+import { registerSecurityHeaders } from './security.js';
 import { reindex } from './data/index.js';
 import { refreshPricing } from './data/pricing-refresh.js';
 import { openBrowser } from './util/open-browser.js';
@@ -47,6 +48,10 @@ async function main(): Promise<void> {
   ensureStateDir();
 
   const app = Fastify({ logger: true });
+
+  // Lock down what the served SPA may load — notably block remote image fetches
+  // from transcript content (see security.ts).
+  registerSecurityHeaders(app);
 
   await registerRoutes(app);
 

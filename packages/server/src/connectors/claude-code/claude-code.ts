@@ -145,9 +145,16 @@ function auxProjections(filePath: string): AuxProjections {
       FROM ${readFn}
       WHERE type = 'ai-title' AND sessionId IS NOT NULL AND aiTitle IS NOT NULL
       GROUP BY sessionId`,
-    // pr-link: latest pr per session.
+    // pr-link: one PR per session, picked deterministically. pr-link records
+    // carry no timestamp, and three independent last() aggregates could both flip
+    // across reindexes and stitch fields from different rows. Keying all three on
+    // the same max(prUrl) row (prUrl is always present per the WHERE) is a stable
+    // total order, so the fields always come from one record and never drop a link.
     prLinks: `
-      SELECT sessionId, last(prNumber), last(prRepository), last(prUrl)
+      SELECT sessionId,
+             arg_max(prNumber, prUrl) AS pr_number,
+             arg_max(prRepository, prUrl) AS pr_repository,
+             max(prUrl) AS pr_url
       FROM ${readFn}
       WHERE type = 'pr-link' AND sessionId IS NOT NULL AND prUrl IS NOT NULL
       GROUP BY sessionId`,

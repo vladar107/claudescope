@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Claudescope</title>
     <!-- Resolve the stored theme choice before first paint to avoid a flash of
-         the wrong theme. Mirrors THEME_STORAGE_KEY in theme/ThemeProvider.tsx. -->
+         the wrong theme. Mirrors THEME_STORAGE_KEY in theme/ThemeProvider.tsx.
+         NOTE: this inline script is allowlisted in the CSP by its SHA-256
+         (THEME_BOOTSTRAP_SCRIPT_HASH in server/src/security.ts). If you edit it,
+         update that hash — security.test.ts fails until they match. -->
     <script>
       (function () {
         try {

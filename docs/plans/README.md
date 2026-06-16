@@ -46,3 +46,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0019 | [pi connector](./0019-pi-connector.md) | done |
 | 0020 | [opencode connector](./0020-opencode-connector.md) | done |
 | 0021 | [GitHub Copilot CLI connector](./0021-copilot-connector.md) | done |
+| 0022 | [Security & quality fixes: image CSP, Junie path containment, deterministic PR link, memory/search logging, Windows support](./0022-security-quality-fixes.md) | proposed |

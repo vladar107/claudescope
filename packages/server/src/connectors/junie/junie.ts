@@ -53,7 +53,10 @@ function discover(): DiscoveredFile[] {
     } catch {
       continue;
     }
-    if (!sessionId) continue;
+    // sessionId is used to build a filesystem path, so reject anything from a
+    // poisoned index.jsonl that could escape JUNIE_SESSIONS_DIR (separators or a
+    // traversal segment). Real Junie ids are a single plain `session-…` segment.
+    if (!sessionId || /[/\\]/.test(sessionId) || sessionId === '.' || sessionId === '..') continue;
     const full = join(JUNIE_SESSIONS_DIR, sessionId, 'events.jsonl');
     try {
       const st = statSync(full);
