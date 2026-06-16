@@ -24,8 +24,8 @@
  * STRICTLY READ-ONLY with respect to ~/.junie — files are only ever read.
  */
 
-import { readFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { readFileSync, realpathSync } from 'node:fs';
+import { basename, dirname, join, sep } from 'node:path';
 import type {
   AssistantEvent,
   ContentBlock,
@@ -33,6 +33,7 @@ import type {
   MessageUsage,
   UserEvent,
 } from '@claudescope/shared';
+import { JUNIE_HOME } from '../../config.js';
 
 export interface JunieSession {
   sessionId: string;
@@ -78,11 +79,44 @@ interface StepAgg {
   status?: string;
 }
 
-/** Map an absolute image path to an inlined base64 ImageBlock, or null. */
+/** Image extensions we will inline (anything else is refused, not read). */
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+
+/** Real path of Junie's home dir, resolved once; attachment reads are confined here. */
+let junieRootReal: string | null = null;
+function junieRoot(): string {
+  if (junieRootReal === null) {
+    try {
+      junieRootReal = realpathSync(JUNIE_HOME);
+    } catch {
+      junieRootReal = JUNIE_HOME; // home absent — containment check below just won't match
+    }
+  }
+  return junieRootReal;
+}
+
+/**
+ * Map an absolute image path to an inlined base64 ImageBlock, or null.
+ *
+ * The path comes from transcript content (`customAttachments` / `@`-mentions),
+ * so it is UNTRUSTED: a poisoned session could name `/Users/you/.ssh/id_rsa` or
+ * `../../etc/passwd`. We therefore (1) require an image extension and (2) resolve
+ * the real path and refuse anything that escapes Junie's own home dir — the only
+ * tree this connector is ever allowed to read.
+ */
 function imageBlockFromPath(path: string): ImageBlock | null {
+  const ext = path.toLowerCase().split('.').pop() ?? '';
+  if (!IMAGE_EXTS.has(ext)) return null; // not an image we inline
+  let real: string;
   try {
-    const data = readFileSync(path).toString('base64');
-    const ext = path.toLowerCase().split('.').pop() ?? '';
+    real = realpathSync(path);
+  } catch {
+    return null; // image vanished, unreadable, or a broken symlink — skip it
+  }
+  const root = junieRoot();
+  if (real !== root && !real.startsWith(root + sep)) return null; // outside ~/.junie — refuse
+  try {
+    const data = readFileSync(real).toString('base64');
     const mediaType =
       ext === 'jpg' || ext === 'jpeg'
         ? 'image/jpeg'
@@ -93,7 +127,7 @@ function imageBlockFromPath(path: string): ImageBlock | null {
             : 'image/png';
     return { type: 'image', source: { type: 'base64', media_type: mediaType, data } };
   } catch {
-    return null; // image vanished or unreadable — skip it
+    return null; // unreadable after resolution — skip it
   }
 }
 

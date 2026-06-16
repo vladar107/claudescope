@@ -20,6 +20,9 @@ const work = mkdtempSync(join(tmpdir(), 'claudescope-junie-'));
 const junieDir = join(work, 'junie');
 const codexDir = join(work, 'codex-empty');
 const claudeDir = join(work, 'claude-empty');
+// A directory OUTSIDE Junie's home, used to plant a file the connector must
+// refuse to read (F4 path-traversal containment).
+const outside = mkdtempSync(join(tmpdir(), 'claudescope-junie-outside-'));
 
 process.env.CLAUDE_PROJECTS_DIR = claudeDir;
 process.env.CODEX_SESSIONS_DIR = codexDir;
@@ -60,6 +63,14 @@ function writeSession(): void {
   writeFileSync(pngPath, Buffer.from(PNG_BASE64, 'base64'));
   writeFileSync(mentionPath, Buffer.from(PNG_BASE64, 'base64'));
 
+  // Two POISONED attachments the connector must refuse (F4): a real PNG OUTSIDE
+  // ~/.junie (arbitrary-file read / traversal), and a non-image file INSIDE the
+  // tree (extension gate). Both hold "secret" bytes that must never be inlined.
+  const secretImg = join(outside, 'secret.png');
+  const secretTxt = join(imgDir, 'secret.txt');
+  writeFileSync(secretImg, Buffer.from(PNG_BASE64, 'base64'));
+  writeFileSync(secretTxt, 'TOP SECRET');
+
   writeFileSync(
     join(junieDir, 'index.jsonl'),
     jsonl([
@@ -82,7 +93,7 @@ function writeSession(): void {
       {
         kind: 'UserPromptEvent',
         prompt: `look at this screenshot @${mentionPath} and the old one @${missingPath}`,
-        customAttachments: [pngPath, { kind: 'OnboardingMigrationAttachment' }],
+        customAttachments: [pngPath, secretImg, secretTxt, { kind: 'OnboardingMigrationAttachment' }],
       },
       { kind: 'SendToAgentEvent' },
       // Token usage for the assistant turn (haiku family → priced via substring).
@@ -170,6 +181,7 @@ afterAll(async () => {
   await app?.close();
   await closeConnection?.();
   rmSync(work, { recursive: true, force: true });
+  rmSync(outside, { recursive: true, force: true });
 });
 
 const get = (url: string) => app.inject({ method: 'GET', url });
@@ -250,8 +262,9 @@ describe('Junie session detail', () => {
       (b: Record<string, unknown>) =>
         b.kind === 'attachment' && (b.attachment as { type?: string })?.type === 'image',
     );
-    // Two present files (the `@mention` one + the customAttachments one); the
-    // purged mention embeds nothing.
+    // Exactly two: the `@mention` one + the in-tree customAttachments PNG. The
+    // poisoned attachments (a PNG outside ~/.junie and an in-tree .txt) are refused
+    // by the F4 containment + extension gate, and the purged mention embeds nothing.
     expect(images).toHaveLength(2);
     for (const img of images) {
       const source = (img.attachment as { source: { type: string; media_type: string; data: string } })
