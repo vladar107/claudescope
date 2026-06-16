@@ -30,7 +30,7 @@ Claudescope works whether you use one agent or all six. Adding another is just
 
 ## What it can do
 
-- **Multi-agent** — Claude Code, Codex, Junie, pi, and opencode sessions side by side, each labeled with an **agent badge**. A project that several agents touched shows one card with all its agent tags; drill in and **filter the session list by agent**.
+- **Multi-agent** — Claude Code, Codex, Junie, pi, opencode, and GitHub Copilot CLI sessions side by side, each labeled with an **agent badge**. A project that several agents touched shows one card with all its agent tags; drill in and **filter the session list by agent**.
 - **Browse** every session grouped by project — titles, dates, message/tool counts, token totals, cost, git branch, PR links.
 - **Read** a session as a clean threaded conversation: markdown, syntax-highlighted code, collapsible thinking, paired tool calls + results, **syntax-highlighted red/green diffs** for edits, attachments, and sidechain/subagent turns. A built-in **find-in-session** bar (⌘/Ctrl+F) searches the whole transcript — including collapsed thinking, tool, and subagent content — auto-expanding and highlighting matches, with a user/assistant filter.
 - **Review changes** via a **Files changed** tab that aggregates every edit/write in the session by file, with per-file diffs and +/− counts (diffs load lazily per file).
@@ -41,8 +41,8 @@ Claudescope works whether you use one agent or all six. Adding another is just
 - **Light & dark themes** — follows your system appearance, with a manual toggle.
 
 > **Privacy:** Everything runs locally on `127.0.0.1`. The app **never** writes to
-> any agent's data — every source (`~/.claude`, `~/.codex`, `~/.junie`, `~/.pi`, and
-> opencode's database) is treated as strictly read-only. Its only persistent
+> any agent's data — every source (`~/.claude`, `~/.codex`, `~/.junie`, `~/.pi`,
+> `~/.copilot`, and opencode's database) is treated as strictly read-only. Its only persistent
 > state lives in `~/.claudescope/` — a DuckDB index, a copy of the pricing file, and
 > a cached pricing snapshot (`pricing.fetched.json`), all safe to delete anytime. The
 > sole outbound requests are an optional daily check for a newer published version
@@ -54,8 +54,8 @@ Claudescope works whether you use one agent or all six. Adding another is just
 ## Screenshots
 
 > The screenshots below use **synthetic demo data** — every project name, path,
-> and message is fabricated (`acme-web` is a multi-agent project: Claude Code +
-> Codex). They render light or dark to match your system.
+> and message is fabricated. `acme-web` is a multi-agent project worked by all
+> six agents at once. They render light or dark to match your system.
 
 **Browse** — every project and its sessions at a glance, each tagged with the
 agents that worked in it: titles, dates, message & tool counts, token totals,
@@ -93,6 +93,17 @@ agent**, with a cache-read breakdown. Click a chart legend to toggle a series.
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/analytics-dark.png">
   <img alt="Token and cost analytics dashboard" src="docs/screenshots/analytics-light.png">
+</picture>
+
+**Remember** — every agent's memory in one place: global instruction files
+(`CLAUDE.md`, `AGENTS.md`, Copilot instructions) and Claude Code's
+**agent-distilled per-project facts**, each with provenance and category. Read
+live from every agent's home dir — never indexed — and Claude facts deep-link
+back to the session that produced them.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/memory-dark.png">
+  <img alt="Memory: each agent's global instruction files and distilled per-project facts in one place" src="docs/screenshots/memory-light.png">
 </picture>
 
 ---
