@@ -28,7 +28,10 @@ export const CONTENT_SECURITY_POLICY = [
   "img-src 'self' data:",
   "connect-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  `script-src 'self' '${THEME_BOOTSTRAP_SCRIPT_HASH}'`,
+  // 'wasm-unsafe-eval' lets Shiki instantiate its WebAssembly regex engine
+  // (oniguruma) for syntax highlighting. It permits WASM compilation only — NOT
+  // general eval() or new Function() — so the anti-XSS guarantee is unchanged.
+  `script-src 'self' 'wasm-unsafe-eval' '${THEME_BOOTSTRAP_SCRIPT_HASH}'`,
   "font-src 'self' data:",
   "object-src 'none'",
   "base-uri 'self'",
