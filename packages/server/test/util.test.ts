@@ -49,4 +49,9 @@ describe('displayNameFromCwd', () => {
   it('falls back to the cwd when there are no segments', () => {
     expect(displayNameFromCwd('/')).toBe('/');
   });
+
+  it('handles Windows backslash separators (and a trailing slash)', () => {
+    expect(displayNameFromCwd('C:\\Users\\me\\my-proj')).toBe('my-proj');
+    expect(displayNameFromCwd('C:\\Users\\me\\my-proj\\')).toBe('my-proj');
+  });
 });
