@@ -25,7 +25,7 @@ machine and only ever reads your transcripts.
 
 Each source is optional — a directory that doesn't exist is simply skipped, so
 Claudescope works whether you use one agent or all five. Adding another is just
-[adding another connector](#how-it-works).
+[adding another connector](./CONTRIBUTING.md#adding-an-agent-connector).
 
 ## What it can do
 
@@ -34,12 +34,14 @@ Claudescope works whether you use one agent or all five. Adding another is just
 - **Read** a session as a clean threaded conversation: markdown, syntax-highlighted code, collapsible thinking, paired tool calls + results, **syntax-highlighted red/green diffs** for edits, attachments, and sidechain/subagent turns. A built-in **find-in-session** bar (⌘/Ctrl+F) searches the whole transcript — including collapsed thinking, tool, and subagent content — auto-expanding and highlighting matches, with a user/assistant filter.
 - **Review changes** via a **Files changed** tab that aggregates every edit/write in the session by file, with per-file diffs and +/− counts (diffs load lazily per file).
 - **Export / share** a session to Markdown — download or copy it, with an optional toggle to **redact** home-dir paths and likely secrets.
+- **Memory** — browse each agent's long-lived **instruction files** (`CLAUDE.md`, `AGENTS.md`, …) and **agent-distilled per-project memory**, read live from each agent's home directory; Claude Code facts deep-link back to the session that produced them.
 - **Search** full-text across all sessions, all agents (DuckDB BM25), with highlighted snippets that deep-link to the exact message.
 - **Analyze** token usage and cost over time, by project, by model, and **by agent** — including cache-hit ratio.
 - **Light & dark themes** — follows your system appearance, with a manual toggle.
 
 > **Privacy:** Everything runs locally on `127.0.0.1`. The app **never** writes to
-> `~/.claude`, `~/.codex`, or `~/.junie` — all are read-only sources. Its only persistent
+> any agent's data — every source (`~/.claude`, `~/.codex`, `~/.junie`, `~/.pi`, and
+> opencode's database) is treated as strictly read-only. Its only persistent
 > state lives in `~/.claudescope/` — a DuckDB index, a copy of the pricing file, and
 > a cached pricing snapshot (`pricing.fetched.json`), all safe to delete anytime. The
 > sole outbound requests are an optional daily check for a newer published version
@@ -52,9 +54,7 @@ Claudescope works whether you use one agent or all five. Adding another is just
 
 > The screenshots below use **synthetic demo data** — every project name, path,
 > and message is fabricated (`acme-web` is a multi-agent project: Claude Code +
-> Codex). They render light or dark to match your system. Regenerate them with
-> **`npm run screenshots`** (seeds the demo data, boots the app, and captures
-> every view in both themes via Playwright).
+> Codex). They render light or dark to match your system.
 
 **Browse** — every project and its sessions at a glance, each tagged with the
 agents that worked in it: titles, dates, message & tool counts, token totals,
@@ -98,39 +98,37 @@ agent**, with a cache-read breakdown. Click a chart legend to toggle a series.
 
 ## Quick start
 
-**Prerequisite:** [Node.js](https://nodejs.org) **22 or newer** (`node -v`).
+Install from any one of three channels — all wrap the same package. However you
+install it, `claudescope` serves the whole app (UI + API) from a single port
+(**http://localhost:4317** by default), runs in the **background**, and opens
+your browser. Run it once and forget it; new sessions appear automatically.
 
-### Install (recommended)
+### npm (recommended)
+
+**Prerequisite:** [Node.js](https://nodejs.org) **22.12 or newer** (`node -v`).
 
 ```bash
 npm install -g @vladar107/claudescope
 claudescope            # starts the app in the background and opens your browser
 ```
 
-`claudescope` serves the whole app (UI + API) from a single port
-(**http://localhost:4317** by default), runs in the **background**, and opens
-your browser. Run it once and forget it; new sessions appear automatically.
+No global install? `npx @vladar107/claudescope` runs the published CLI once
+without installing it.
 
-Try it without installing:
-
-```bash
-npx @vladar107/claudescope
-```
-
-### Other install methods
+### Homebrew (macOS / Linux)
 
 ```bash
-# Homebrew (macOS / Linux)
 brew tap vladar107/tap
 brew install claudescope
-
-# Nix (any platform) — run without installing, or add to a profile
-nix run github:vladar107/claudescope
-nix profile install github:vladar107/claudescope
+claudescope
 ```
 
-All channels wrap the same package; `claudescope update` detects how you
-installed it and points you at the right upgrade command.
+### Nix (any platform)
+
+```bash
+nix run github:vladar107/claudescope               # run without installing
+nix profile install github:vladar107/claudescope   # or add it to your profile
+```
 
 ### Commands
 
@@ -160,7 +158,8 @@ npm install      # installs all workspace dependencies
 npm start        # builds on first run, then serves the app in the foreground
 ```
 
-`npm start` runs in the foreground (`Ctrl-C` to stop) — handy for development.
+`npm start` runs in the foreground (`Ctrl-C` to stop). For the watch-mode dev
+loop and how to contribute, see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ---
 
@@ -303,70 +302,22 @@ served from cache (legitimately high for Claude Code, which re-reads cached cont
 
 ---
 
-## How it works
+## Contributing & development
 
-npm-workspaces monorepo:
-
-| Package            | Role                                                                  |
-| ------------------ | --------------------------------------------------------------------- |
-| `packages/shared`  | TypeScript types — the API + data contract shared by server and web.  |
-| `packages/server`  | Fastify API + DuckDB index (`@duckdb/node-api`). Serves the built UI.  |
-| `packages/web`     | Vite + React UI (react-markdown, Shiki, Recharts).                     |
-
-DuckDB reads the JSONL natively (`read_ndjson`) for indexing, full-text search,
-and analytics; a small TypeScript parser assembles the threaded view for a single
-session. The index is a derived cache — if it's ever corrupted (e.g. the process
-is killed mid-write) the app discards and rebuilds it automatically.
-
-Each agent is a **connector** (`packages/server/src/connectors/`). Claude Code
-JSONL is projected per-row; Codex spreads a session across record types and Junie
-records an event-sourced UI stream, so those connectors normalize a session to
-canonical NDJSON first — after that the indexing, search, cost, and threading
-paths are shared. Adding another agent is adding another connector.
-
----
-
-## Development
-
-```bash
-npm run dev        # server (watch) on :4317 + Vite dev server on :5317 with HMR
-npm run typecheck  # tsc -b across all packages
-npm run build      # production build (shared → web → server)
-npm run serve      # run the built server without rebuilding
-npm test           # run the test suite (Vitest)
-npm run test:watch # watch mode
-```
-
-Tests use [Vitest](https://vitest.dev). Unit tests cover the thread/subagent
-parser and pure helpers; the **integration suite** builds a real DuckDB index
-from synthetic fixtures (in a temp dir / temp DB — your real `~/.claude` is never
-touched) and exercises every API endpoint end-to-end via Fastify `inject()`.
-
-In dev, open the **Vite** URL (http://localhost:5317); it proxies `/api` to the
-server.
-
-### Releasing
-
-The published package is a single bundle assembled by `npm run bundle` (esbuild
-inlines the server + shared lib; the web build and a default pricing file are
-copied alongside; only `@duckdb/node-api` stays an external native dependency).
-Releases are **tag-only** — never published from a laptop:
-
-```bash
-npm version patch        # bumps package.json + creates the vX.Y.Z tag
-git push --follow-tags   # the tag triggers .github/workflows/release.yml → npm publish
-```
-
-The release workflow verifies the tag matches `package.json`, runs the tests,
-bundles, and publishes. Auth uses npm **Trusted Publishing** (OIDC) — no
-`NPM_TOKEN` secret — and provenance is attached automatically.
+Claudescope is open source and contributions are welcome. How it works (the
+DuckDB index, the per-agent **connectors**, and the threading parser), the local
+dev loop, the test suite, **how to add a connector for another agent**, and the
+release process all live in [`CONTRIBUTING.md`](./CONTRIBUTING.md), with
+[`CLAUDE.md`](./CLAUDE.md) as the deeper architectural source of truth. To run a
+local copy, see [Run from source](#run-from-source) above.
 
 ---
 
 ## Security & privacy
 
-Claudescope runs entirely on your machine. It treats `~/.claude`, `~/.codex`, and
-`~/.junie` as **read-only**, **binds to `127.0.0.1` only**, and sends **no telemetry**. Its only
+Claudescope runs entirely on your machine. It treats every agent source
+(`~/.claude`, `~/.codex`, `~/.junie`, `~/.pi`, and opencode's database) as
+**read-only**, **binds to `127.0.0.1` only**, and sends **no telemetry**. Its only
 outbound requests are a cached npm-registry version check for the update notice
 and a daily fetch of public model pricing rates from LiteLLM (disable with
 `PRICING_REFRESH_INTERVAL_MS=0`). See
@@ -382,7 +333,7 @@ shell, and self-update behavior — and how to report a vulnerability.
   the banner and set them correctly. Any source can be absent; only the present
   ones are indexed.
 - **`Error: listen EADDRINUSE :4317`** — the port is taken; run `claudescope --port <n>`.
-- **Node version errors** — you need Node ≥ 22 (`node -v`).
+- **Node version errors** — you need Node ≥ 22.12 (`node -v`).
 - **Stale or wrong data** — delete `~/.claudescope/index.duckdb*` and
   `claudescope restart` to rebuild the index from scratch.
 - **`@duckdb/node-api` install issues** — it ships prebuilt native binaries;

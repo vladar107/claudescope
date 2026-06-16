@@ -1,9 +1,10 @@
 # Security Policy
 
-Claudescope is a **local, read-only** viewer for your Claude Code transcripts.
-It runs on your machine, binds to loopback only, and is designed to touch as
-little of your system as possible. This document describes exactly what it does
-so you can audit it, and how to report anything that looks wrong.
+Claudescope is a **local, read-only** viewer for your AI coding-agent transcripts
+— Claude Code, OpenAI Codex, JetBrains Junie, pi, and opencode. It runs on your
+machine, binds to loopback only, and is designed to touch as little of your
+system as possible. This document describes exactly what it does so you can audit
+it, and how to report anything that looks wrong.
 
 ## Reporting a vulnerability
 
@@ -25,9 +26,19 @@ None of these are misused; they're listed here so you can verify that.
 
 ### Filesystem
 
-- **Reads** your transcripts from `~/.claude/projects/**` (override:
-  `$CLAUDE_PROJECTS_DIR`). This directory is treated as **strictly read-only** —
-  Claudescope never writes to `~/.claude`.
+- **Reads** your transcripts from each agent's own directory, every one treated
+  as **strictly read-only** — Claudescope never writes to any of them. Each
+  source is optional; a directory that doesn't exist is simply skipped:
+  - `~/.claude/projects/**` — Claude Code (override: `$CLAUDE_PROJECTS_DIR`)
+  - `~/.codex/sessions/**` — OpenAI Codex (override: `$CODEX_SESSIONS_DIR`)
+  - `~/.junie/sessions/**` — JetBrains Junie (override: `$JUNIE_SESSIONS_DIR`)
+  - `~/.pi/agent/sessions/**` — pi (override: `$PI_SESSIONS_DIR`)
+  - `~/.local/share/opencode/opencode.db` — opencode, a SQLite database opened
+    **read-only** via Node's built-in `node:sqlite` (override:
+    `$OPENCODE_DATA_DIR` / `$OPENCODE_DB_PATH`)
+- **Reads** agent **memory** live (never indexed) from those same read-only home
+  dirs — long-lived instruction files and any agent-distilled memory — strictly
+  within each agent's own directory, never from your project folders.
 - **Writes** only inside its own state dir `~/.claudescope/` (override:
   `$CLAUDESCOPE_HOME`): the DuckDB index (a rebuildable cache), a user-editable
   `pricing.json`, the daemon PID/port file, and logs.
