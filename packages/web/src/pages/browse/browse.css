@@ -242,6 +242,11 @@
   background: #e3b3411a;
   color: #e3b341;
 }
+.tv-chip--agent.tv-agent--copilot {
+  border-color: #0969da66;
+  background: #0969da1a;
+  color: #58a6ff;
+}
 /* Light theme: keep the brand tints but darken the text so it stays legible on
    a light surface. */
 :root[data-theme='light'] .tv-chip--agent.tv-agent--claude-code {
@@ -258,4 +263,7 @@
 }
 :root[data-theme='light'] .tv-chip--agent.tv-agent--opencode {
   color: #9e6a03;
+}
+:root[data-theme='light'] .tv-chip--agent.tv-agent--copilot {
+  color: #0969da;
 }

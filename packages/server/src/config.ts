@@ -82,6 +82,16 @@ export const OPENCODE_DB_PATH =
   process.env.OPENCODE_DB_PATH ?? join(OPENCODE_DATA_DIR, 'opencode.db');
 
 /**
+ * READ-ONLY source of GitHub Copilot CLI sessions. The app MUST NEVER write here.
+ * Defaults to `~/.copilot/session-state` (one `<uuid>/events.jsonl` per session,
+ * with a sibling `workspace.yaml` and an optional `files/` attachment dir).
+ * Override with COPILOT_SESSIONS_DIR. A leading `~` is expanded.
+ */
+export const COPILOT_SESSIONS_DIR = expandHome(
+  process.env.COPILOT_SESSIONS_DIR ?? join(homedir(), '.copilot', 'session-state'),
+);
+
+/**
  * READ-ONLY agent home directories — the parents of the session/project dirs
  * above, where each agent keeps its memory (`CLAUDE.md`, `AGENTS.md`, the Codex
  * `memories/` tree). Derived from the dirs above so the env overrides carry
@@ -91,6 +101,8 @@ export const OPENCODE_DB_PATH =
 export const CLAUDE_HOME = dirname(CLAUDE_PROJECTS_DIR);
 export const CODEX_HOME = dirname(CODEX_SESSIONS_DIR);
 export const JUNIE_HOME = dirname(JUNIE_SESSIONS_DIR);
+/** `~/.copilot` — holds the global `copilot-instructions.md` memory file. */
+export const COPILOT_HOME = dirname(COPILOT_SESSIONS_DIR);
 
 /** Whether to auto-open the default browser on startup (set by the launcher). */
 export const OPEN_BROWSER = process.env.OPEN_BROWSER === '1';

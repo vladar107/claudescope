@@ -6,8 +6,10 @@ analyze AI coding-agent transcripts in one place — [Claude Code](https://claud
 (`~/.codex/sessions/**/rollout-*.jsonl`),
 [JetBrains Junie](https://www.jetbrains.com/junie/)
 (`~/.junie/sessions/session-*/events.jsonl`), [pi](https://pi.dev)
-(`~/.pi/agent/sessions/**/*.jsonl`), and [opencode](https://opencode.ai)
-(`~/.local/share/opencode/opencode.db`, SQLite). Sessions are merged by working
+(`~/.pi/agent/sessions/**/*.jsonl`), [opencode](https://opencode.ai)
+(`~/.local/share/opencode/opencode.db`, SQLite), and
+[GitHub Copilot CLI](https://github.com/features/copilot)
+(`~/.copilot/session-state/**/events.jsonl`). Sessions are merged by working
 directory into one project per `cwd`, each session tagged with its agent.
 Distributed as a single npm CLI (`@vladar107/claudescope`). This file is the
 source of truth for both humans and agents working in this repo; `AGENTS.md`
@@ -36,7 +38,7 @@ npm-workspaces monorepo (`packages/*`):
 ## Runtime state — critical
 
 - **NEVER write to any agent source** (`~/.claude`, `~/.codex`, `~/.junie`,
-  `~/.pi`, opencode's `opencode.db`). They are read-only data sources — and that
+  `~/.pi`, `~/.copilot`, opencode's `opencode.db`). They are read-only data sources — and that
   includes reading agent memory live from those home dirs.
 - All app-owned state lives in **`~/.claudescope/`** (override: `CLAUDESCOPE_HOME`):
   the DuckDB index, a user-editable `pricing.json` (seeded from a shipped
@@ -138,6 +140,21 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   plaintext. Tokens are per-message (reasoning folded into output). `discover()`
   throws on a present-but-unreadable DB (the indexer isolates a throwing connector
   and preserves its sessions — it never wipes them). No memory.
+- **GitHub Copilot CLI connector** (`connectors/copilot/`) — event-sourced
+  `~/.copilot/session-state/<uuid>/events.jsonl` (Junie/pi-shaped lines of
+  `{type, data, id, timestamp, parentId}`); `prepare()` normalizes to canonical
+  NDJSON. `cwd`/branch from `session.start`, model from `assistant.message`, title
+  from the sibling `workspace.yaml` (`name`). **Tokens live ONLY in
+  `session.shutdown`** (session-level; there is no per-message usage) → attached to
+  the last assistant row, so a crashed/running session (no shutdown) costs zero.
+  Reasoning is encrypted (`reasoningOpaque`) → empty thinking (Codex-style).
+  `edit`/`create`→`Edit`/`Write` **only when the call succeeded** (a denied/failed
+  edit passes through under its raw name, so it never reaches the Files-changed
+  tab); `view`→`Read`, `bash`→`Bash`. Screenshots resolve from
+  `session-state/<uuid>/files/<displayName>` (screenshot-saving must be on) → base64
+  `ImageBlock`, else the inline `[📷 …]` marker remains. Global memory is
+  `~/.copilot/copilot-instructions.md`; "session-level memory" is session-scoped
+  (per-session `session.db` + `files/`), not cross-session, so no project memory.
 - **Junie transcripts read differently** — Junie stores an event-sourced UI
   stream (`events.jsonl`), not a chat log: no assistant prose and no thinking, so
   a session renders as tool/terminal/file blocks plus a final result. Expected,
