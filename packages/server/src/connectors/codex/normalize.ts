@@ -17,7 +17,13 @@
 
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import type { AssistantEvent, ContentBlock, MessageUsage, UserEvent } from '@claudescope/shared';
+import type {
+  AssistantEvent,
+  ContentBlock,
+  MessageUsage,
+  ToolUseBlock,
+  UserEvent,
+} from '@claudescope/shared';
 
 interface CodexLine {
   type?: string;
@@ -76,6 +82,60 @@ function messageBlocks(content: unknown): ContentBlock[] {
     }
   }
   return out;
+}
+
+/** Coerce a parsed `arguments` value to a record (Codex sends a JSON object). */
+function argsRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+/** Render one argv element for display, quoting it when it carries whitespace or
+ *  quotes so the joined command stays unambiguous (and copy-runnable). */
+function quoteArg(v: unknown): string {
+  const s = str(v);
+  return s === '' || /[\s'"\\]/.test(s) ? JSON.stringify(s) : s;
+}
+
+const SHELL_TOOLS = new Set(['exec_command', 'shell', 'local_shell', 'container.exec']);
+
+/**
+ * Map a Codex `function_call` to a canonical `tool_use` block. Codex names its
+ * tools its own way — the shell tool is `exec_command` (arg `cmd`, a string) on
+ * recent CLIs or `shell` / `local_shell` (arg `command`, usually an argv array,
+ * sometimes nested under `action`) on older ones. The web renderer and the
+ * Files-changed extractor key off the Claude tool names (`Bash`/`Read`/`Edit`/…),
+ * so without this every Codex tool renders as raw JSON with no syntax
+ * highlighting. Canonicalize the shell tool to `Bash` (mirrors the
+ * pi/copilot/opencode connectors); other tools (`update_plan`, `write_stdin`,
+ * `apply_patch`, MCP tools, …) — and any shell call whose command we can't
+ * recover (e.g. unparseable `arguments`) — pass through under their raw name so
+ * the payload stays visible rather than collapsing to an empty Bash block.
+ */
+function codexToolUse(name: string, input: unknown, id: string): ToolUseBlock {
+  if (SHELL_TOOLS.has(name)) {
+    const args = argsRecord(input);
+    const action = argsRecord(args.action);
+    // `||` (not `??`) so an empty `cmd` falls through to a populated `command`.
+    const raw = args.cmd || args.command || action.command;
+    const command = Array.isArray(raw) ? raw.map(quoteArg).join(' ') : str(raw);
+    if (command) return { type: 'tool_use', id, name: 'Bash', input: { command } };
+  }
+  return { type: 'tool_use', id, name, input };
+}
+
+/**
+ * Strip Codex's exec-output envelope (`Chunk ID: … / Wall time: … / Process exited
+ * with code N / … / Output:`) down to the captured stdout, so a command's output
+ * renders clean — and, for a file read (`cat`/`sed`/…), highlights like a file. A
+ * non-zero exit keeps the full envelope (the exit code is then the failure signal),
+ * and non-envelope output passes through untouched.
+ */
+function stripExecEnvelope(output: string): string {
+  const m = output.match(
+    /^Chunk ID: [^\n]*\nWall time: [^\n]*\nProcess exited with code (-?\d+)\n(?:[^\n]*\n)*?Output:\n?([\s\S]*)$/,
+  );
+  if (!m) return output;
+  return Number(m[1]) === 0 ? m[2]! : output;
 }
 
 /** Session id from the filename: `rollout-<ts>-<uuid>.jsonl`. */
@@ -201,10 +261,14 @@ export function parseRollout(path: string): CodexSession | null {
       } catch {
         input = { arguments: str(pl.arguments) };
       }
-      blocks.push({ type: 'tool_use', id: str(pl.call_id), name: str(pl.name), input });
+      blocks.push(codexToolUse(str(pl.name), input, str(pl.call_id)));
     } else if (kind === 'function_call_output') {
       open('user', ts);
-      blocks.push({ type: 'tool_result', tool_use_id: str(pl.call_id), content: str(pl.output) });
+      blocks.push({
+        type: 'tool_result',
+        tool_use_id: str(pl.call_id),
+        content: stripExecEnvelope(str(pl.output)),
+      });
     }
   }
   flush();

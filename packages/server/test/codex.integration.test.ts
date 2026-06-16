@@ -54,8 +54,20 @@ function writeRollout(): string {
       { type: 'response_item', timestamp: ts(3), payload: { type: 'reasoning', summary: [], content: null, encrypted_content: 'enc-abc' } },
       { type: 'response_item', timestamp: ts(4), payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"ls -la"}', call_id: 'call_1' } },
       { type: 'response_item', timestamp: ts(5), payload: { type: 'function_call_output', call_id: 'call_1', output: 'file.txt\n' } },
-      { type: 'response_item', timestamp: ts(6), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'found it' }] } },
-      { type: 'event_msg', timestamp: ts(7), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 1000, cached_input_tokens: 200, output_tokens: 300, reasoning_output_tokens: 50, total_tokens: 1300 } }, rate_limits: {} } },
+      // Older-CLI `shell` form: command is an argv array → joined for display, with
+      // a space-bearing element quoted so the boundary survives.
+      { type: 'response_item', timestamp: ts(6), payload: { type: 'function_call', name: 'shell', arguments: '{"command":["bash","-lc","echo hi there"]}', call_id: 'call_2' } },
+      { type: 'response_item', timestamp: ts(7), payload: { type: 'function_call_output', call_id: 'call_2', output: 'hi there\n' } },
+      // A file read via the shell, wrapped in Codex's exec envelope — stripped down
+      // to just the stdout so the UI can highlight it like a file view.
+      { type: 'response_item', timestamp: ts(8), payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"cat src/Foo.cs"}', call_id: 'call_3' } },
+      { type: 'response_item', timestamp: ts(9), payload: { type: 'function_call_output', call_id: 'call_3', output: 'Chunk ID: a894d2\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 84\nOutput:\nusing System;\n\npublic class Foo { }\n' } },
+      // Malformed arguments on a shell tool: no command can be recovered, so the
+      // block stays under its raw name (payload preserved) — NOT an empty Bash block.
+      { type: 'response_item', timestamp: ts(10), payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"ls', call_id: 'call_4' } },
+      { type: 'response_item', timestamp: ts(11), payload: { type: 'function_call_output', call_id: 'call_4', output: 'oops\n' } },
+      { type: 'response_item', timestamp: ts(12), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'found it' }] } },
+      { type: 'event_msg', timestamp: ts(13), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 1000, cached_input_tokens: 200, output_tokens: 300, reasoning_output_tokens: 50, total_tokens: 1300 } }, rate_limits: {} } },
     ]),
   );
   return file;
@@ -141,9 +153,32 @@ describe('Codex session detail', () => {
     );
     expect(flat.some((b: Record<string, unknown>) => b.type === 'thinking')).toBe(true);
 
+    // Codex's shell tool (`exec_command`, arg `cmd`) is canonicalized to `Bash`
+    // with the command under `input.command`, so the web renderer highlights it
+    // as bash instead of dumping the raw JSON args. (Other Codex tools pass
+    // through under their raw name.)
     const tool = flat.find((b: Record<string, unknown>) => b.kind === 'tool');
-    expect(tool).toMatchObject({ name: 'exec_command', id: 'call_1' });
+    expect(tool).toMatchObject({ name: 'Bash', id: 'call_1' });
+    expect((tool.input as { command: string }).command).toBe('ls -la');
     expect(tool.result).toBeTruthy(); // function_call_output paired in
+
+    // Older `shell` argv array → single joined command; the space-bearing element
+    // is quoted so the argv boundary isn't lost.
+    const shellTool = flat.find((b: Record<string, unknown>) => b.id === 'call_2');
+    expect(shellTool.name).toBe('Bash');
+    expect((shellTool.input as { command: string }).command).toBe('bash -lc "echo hi there"');
+
+    // The exec envelope is stripped to just the stdout (so it can highlight as a file).
+    const readTool = flat.find((b: Record<string, unknown>) => b.id === 'call_3');
+    expect((readTool.input as { command: string }).command).toBe('cat src/Foo.cs');
+    const readOut = readTool.result.content[0].text as string;
+    expect(readOut).toContain('using System;');
+    expect(readOut).not.toContain('Chunk ID'); // envelope removed
+
+    // Malformed shell args: stays raw (payload visible), never an empty Bash block.
+    const badTool = flat.find((b: Record<string, unknown>) => b.id === 'call_4');
+    expect(badTool.name).toBe('exec_command');
+    expect(JSON.stringify(badTool.input)).toContain('ls');
 
     // The developer (system) message must not appear as a turn.
     const allText = JSON.stringify(detail.thread);
