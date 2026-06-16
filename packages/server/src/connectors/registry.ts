@@ -8,12 +8,14 @@ import { claudeCodeConnector } from './claude-code/claude-code.js';
 import { codexConnector } from './codex/codex.js';
 import { junieConnector } from './junie/junie.js';
 import { piConnector } from './pi/pi.js';
+import { opencodeConnector } from './opencode/opencode.js';
 
 export const connectors: AgentConnector[] = [
   claudeCodeConnector,
   codexConnector,
   junieConnector,
   piConnector,
+  opencodeConnector,
 ];
 
 /** The connector with the given id, falling back to Claude Code if unknown. */

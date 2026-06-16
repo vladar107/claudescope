@@ -67,6 +67,21 @@ export const PI_SESSIONS_DIR = expandHome(
 );
 
 /**
+ * READ-ONLY source of opencode sessions. The app MUST NEVER write here. Unlike the
+ * other agents, opencode stores everything in ONE SQLite DB. `OPENCODE_DATA_DIR`
+ * defaults to `$XDG_DATA_HOME/opencode` (else `~/.local/share/opencode`) and
+ * `OPENCODE_DB_PATH` is `<dataDir>/opencode.db`. The connector opens the DB
+ * strictly read-only (`node:sqlite`). Override either with its env var; a leading
+ * `~` is expanded.
+ */
+export const OPENCODE_DATA_DIR = expandHome(
+  process.env.OPENCODE_DATA_DIR ??
+    join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'opencode'),
+);
+export const OPENCODE_DB_PATH =
+  process.env.OPENCODE_DB_PATH ?? join(OPENCODE_DATA_DIR, 'opencode.db');
+
+/**
  * READ-ONLY agent home directories — the parents of the session/project dirs
  * above, where each agent keeps its memory (`CLAUDE.md`, `AGENTS.md`, the Codex
  * `memories/` tree). Derived from the dirs above so the env overrides carry

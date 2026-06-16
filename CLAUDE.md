@@ -5,8 +5,9 @@ analyze AI coding-agent transcripts in one place — [Claude Code](https://claud
 [OpenAI Codex](https://openai.com/codex)
 (`~/.codex/sessions/**/rollout-*.jsonl`),
 [JetBrains Junie](https://www.jetbrains.com/junie/)
-(`~/.junie/sessions/session-*/events.jsonl`), and [pi](https://pi.dev)
-(`~/.pi/agent/sessions/**/*.jsonl`). Sessions are merged by working
+(`~/.junie/sessions/session-*/events.jsonl`), [pi](https://pi.dev)
+(`~/.pi/agent/sessions/**/*.jsonl`), and [opencode](https://opencode.ai)
+(`~/.local/share/opencode/opencode.db`, SQLite). Sessions are merged by working
 directory into one project per `cwd`, each session tagged with its agent.
 Distributed as a single npm CLI (`@vladar107/claudescope`). This file is the
 source of truth for both humans and agents working in this repo; `AGENTS.md`
@@ -124,6 +125,17 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   attribution); the `uuid`/`parentUuid` chain is synthesized over message rows
   because pi's native chain threads through `model_change`/`thinking_level_change`
   records. pi has no home-dir memory, so the connector implements no memory.
+- **opencode connector** (`connectors/opencode/`) — the only **SQLite-backed**
+  source: one `opencode.db` (`session`/`message`/`part`), read read-only via
+  `node:sqlite` (built into Node 24 — no dep). Each session is a synthetic
+  `DiscoveredFile` (`<dbPath>#<id>`); `prepare()` extracts it to canonical NDJSON
+  (Codex pattern). File edits arrive via **`apply_patch`** (`state.metadata.files[]`
+  per-file unified diffs) → mapped to canonical `Write`/`Edit`/`MultiEdit` so the
+  Files-changed tab works; `read`→`Read`, `bash`→`Bash`, others passthrough; a
+  pasted screenshot is a `file` part (data-URL) → `ImageBlock`. Reasoning is
+  plaintext. Tokens are per-message (reasoning folded into output). `discover()`
+  throws on a present-but-unreadable DB (the indexer isolates a throwing connector
+  and preserves its sessions — it never wipes them). No memory.
 - **Junie transcripts read differently** — Junie stores an event-sourced UI
   stream (`events.jsonl`), not a chat log: no assistant prose and no thinking, so
   a session renders as tool/terminal/file blocks plus a final result. Expected,
@@ -139,4 +151,5 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   OIDC). See `CONTRIBUTING.md`.
 
 See `CONTRIBUTING.md` for the full workflow and `README.md` for user-facing docs.
+
 

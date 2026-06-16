@@ -21,14 +21,15 @@ machine and only ever reads your transcripts.
 | [OpenAI Codex](https://openai.com/codex)          | `~/.codex/sessions/**/rollout-*.jsonl`        |
 | [JetBrains Junie](https://www.jetbrains.com/junie/) | `~/.junie/sessions/session-*/events.jsonl`  |
 | [pi](https://pi.dev)                              | `~/.pi/agent/sessions/**/*.jsonl`             |
+| [opencode](https://opencode.ai)                   | `~/.local/share/opencode/opencode.db` (SQLite) |
 
 Each source is optional — a directory that doesn't exist is simply skipped, so
-Claudescope works whether you use one agent or all four. Adding another is just
+Claudescope works whether you use one agent or all five. Adding another is just
 [adding another connector](#how-it-works).
 
 ## What it can do
 
-- **Multi-agent** — Claude Code, Codex, Junie, and pi sessions side by side, each labeled with an **agent badge**. A project that several agents touched shows one card with all its agent tags; drill in and **filter the session list by agent**.
+- **Multi-agent** — Claude Code, Codex, Junie, pi, and opencode sessions side by side, each labeled with an **agent badge**. A project that several agents touched shows one card with all its agent tags; drill in and **filter the session list by agent**.
 - **Browse** every session grouped by project — titles, dates, message/tool counts, token totals, cost, git branch, PR links.
 - **Read** a session as a clean threaded conversation: markdown, syntax-highlighted code, collapsible thinking, paired tool calls + results, **syntax-highlighted red/green diffs** for edits, attachments, and sidechain/subagent turns. A built-in **find-in-session** bar (⌘/Ctrl+F) searches the whole transcript — including collapsed thinking, tool, and subagent content — auto-expanding and highlighting matches, with a user/assistant filter.
 - **Review changes** via a **Files changed** tab that aggregates every edit/write in the session by file, with per-file diffs and +/− counts (diffs load lazily per file).
@@ -174,11 +175,12 @@ All optional — set via environment variables.
 | `CODEX_SESSIONS_DIR`  | `~/.codex/sessions`    | Where to read OpenAI Codex transcripts from. A leading `~` is expanded.|
 | `JUNIE_SESSIONS_DIR`  | `~/.junie/sessions`    | Where to read JetBrains Junie transcripts from. A leading `~` is expanded.|
 | `PI_SESSIONS_DIR`     | `~/.pi/agent/sessions` | Where to read pi transcripts from. A leading `~` is expanded.          |
+| `OPENCODE_DATA_DIR`   | `~/.local/share/opencode` | Dir holding opencode's `opencode.db` (read-only). Honors `$XDG_DATA_HOME`; override the DB path directly with `OPENCODE_DB_PATH`. |
 | `CLAUDESCOPE_HOME`    | `~/.claudescope`       | Where the app keeps its own state (index, pricing copy, logs, PID).    |
 | `REINDEX_INTERVAL_MS` | `15000`                | How often to auto-pick-up new/updated sessions. Set `0` to disable.    |
 
 Each agent source is optional — if a directory doesn't exist it's simply skipped,
-so the app works whether you use one agent or all four.
+so the app works whether you use one agent or all five.
 
 Examples:
 
@@ -188,6 +190,7 @@ CLAUDE_PROJECTS_DIR=/path/to/exported/projects claudescope  # view someone else'
 CODEX_SESSIONS_DIR=/path/to/codex/sessions claudescope   # point at Codex sessions elsewhere
 JUNIE_SESSIONS_DIR=/path/to/junie/sessions claudescope   # point at Junie sessions elsewhere
 PI_SESSIONS_DIR=/path/to/pi/sessions claudescope         # point at pi sessions elsewhere
+OPENCODE_DATA_DIR=/path/to/opencode claudescope          # point at an opencode data dir elsewhere
 claudescope --no-open                                    # don't pop a browser tab
 ```
 
@@ -292,6 +295,11 @@ served from cache (legitimately high for Claude Code, which re-reads cached cont
   plaintext of its thinking blocks, so they show real reasoning rather than an
   empty placeholder. pi keeps no memory in its home dir, so it contributes nothing
   to the memory viewer.
+- **opencode is SQLite-backed.** opencode stores all sessions in one read-only
+  SQLite database (`opencode.db`), not per-session files; Claudescope reads it via
+  Node's built-in `node:sqlite`. Its reasoning renders in full (plaintext), its
+  file edits (made via `apply_patch`) show in the **Files changed** tab and as
+  diffs, and pasted screenshots embed. Like pi, it contributes no memory.
 
 ---
 
@@ -370,7 +378,7 @@ shell, and self-update behavior — and how to report a vulnerability.
 ## Troubleshooting
 
 - **App is empty / "sessions directory not found"** — none of `CLAUDE_PROJECTS_DIR`,
-  `CODEX_SESSIONS_DIR`, `JUNIE_SESSIONS_DIR`, or `PI_SESSIONS_DIR` points at real transcripts. Check
+  `CODEX_SESSIONS_DIR`, `JUNIE_SESSIONS_DIR`, `PI_SESSIONS_DIR`, or `OPENCODE_DATA_DIR` points at real transcripts. Check
   the banner and set them correctly. Any source can be absent; only the present
   ones are indexed.
 - **`Error: listen EADDRINUSE :4317`** — the port is taken; run `claudescope --port <n>`.

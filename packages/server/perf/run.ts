@@ -35,6 +35,7 @@ process.env.CLAUDE_PROJECTS_DIR = projectsDir;
 // Isolate from any real ~/.codex / ~/.pi so the bench corpus is exactly what we generate.
 process.env.CODEX_SESSIONS_DIR = join(work, 'codex-empty');
 process.env.PI_SESSIONS_DIR = join(work, 'pi-empty');
+process.env.OPENCODE_DATA_DIR = join(work, 'opencode-empty');
 process.env.DUCKDB_PATH = join(work, 'index.duckdb');
 process.env.CLAUDESCOPE_HOME = join(work, 'home');
 process.env.REINDEX_INTERVAL_MS = '0';

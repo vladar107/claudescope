@@ -44,3 +44,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0017 | [Maintainer review fixes: resiliency tests, daemon hardening, render & contract guards](./0017-maintainer-review-fixes.md) | done |
 | 0018 | [Analytics breakdown by cost (Metric + Sort toggles)](./0018-analytics-breakdown-cost.md) | done |
 | 0019 | [pi connector](./0019-pi-connector.md) | done |
+| 0020 | [opencode connector](./0020-opencode-connector.md) | done |
