@@ -237,7 +237,9 @@ describe('Junie session detail', () => {
     const view = tools.find((b: { name: string }) => b.name === 'view');
     expect(view.result.content[0]).toMatchObject({ type: 'text', text: 'needle found on line 3' });
 
-    const term = tools.find((b: { name: string }) => b.name === 'terminal');
+    // The terminal step is canonicalized to `Bash` so its command renders with
+    // bash highlighting (not raw JSON); the command field is preserved.
+    const term = tools.find((b: { name: string }) => b.name === 'Bash');
     expect((term.input as { command: string }).command).toBe('grep -n needle needle.txt');
     expect(term.result.content[0]).toMatchObject({ type: 'text', text: '3:needle' });
 

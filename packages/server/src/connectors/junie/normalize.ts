@@ -219,7 +219,10 @@ function stepToBlocks(stepId: string, agg: StepAgg, sessionId: string): ContentB
   const resultText = agg.details ?? '';
 
   if (agg.command) {
-    name = 'terminal';
+    // Canonical `Bash` (not a raw `terminal` name) so the command renders with
+    // bash highlighting + an Output section instead of raw JSON — the web
+    // renderer keys off the Claude tool names.
+    name = 'Bash';
     input.command = agg.command;
   } else if (agg.files && agg.files.length > 0) {
     name = 'view';
