@@ -42,9 +42,15 @@ describe('security headers', () => {
   it('allowlists exactly the inline theme-bootstrap script in web/index.html', () => {
     const htmlPath = fileURLToPath(new URL('../../web/index.html', import.meta.url));
     const html = readFileSync(htmlPath, 'utf8');
-    const m = html.match(/<script>([\s\S]*?)<\/script>/);
-    expect(m, 'expected one inline <script> in web/index.html').not.toBeNull();
-    const hash = 'sha256-' + createHash('sha256').update(m![1], 'utf8').digest('base64');
+    // The pre-paint theme bootstrap is the only attribute-less `<script>` (the app
+    // bundle is `<script type="module" src=…>`). Locate it with plain string ops,
+    // not an HTML-filtering regexp (which CodeQL rightly distrusts).
+    const OPEN = '<script>';
+    const start = html.indexOf(OPEN);
+    const end = html.indexOf('</script>', start);
+    expect(start, 'expected an inline <script> in web/index.html').toBeGreaterThanOrEqual(0);
+    const inline = html.slice(start + OPEN.length, end);
+    const hash = 'sha256-' + createHash('sha256').update(inline, 'utf8').digest('base64');
     // If this fails after editing the inline script, update THEME_BOOTSTRAP_SCRIPT_HASH.
     expect(hash).toBe(THEME_BOOTSTRAP_SCRIPT_HASH);
     expect(CONTENT_SECURITY_POLICY).toContain(`'${THEME_BOOTSTRAP_SCRIPT_HASH}'`);
