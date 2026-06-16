@@ -15,8 +15,10 @@
 
 ## Checklist
 
+- [ ] I've read [`CONTRIBUTING.md`](../CONTRIBUTING.md)
+- [ ] I agree to the [Code of Conduct](../CODE_OF_CONDUCT.md)
 - [ ] `npm test` and `npm run typecheck` pass
 - [ ] Conventional commit messages; history is linear (rebased on `main`, no merge commits)
 - [ ] No AI co-author / "Generated with" trailers
-- [ ] Docs updated if behavior changed
+- [ ] Docs updated if behavior changed (incl. README / SECURITY.md / CLAUDE.md if the agent list changed)
 - [ ] Plan committed under `docs/plans/` and linked above (if an agent did the work)

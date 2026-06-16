@@ -6,7 +6,8 @@ them merged. For architecture and conventions, see [`CLAUDE.md`](./CLAUDE.md)
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org) **20 or newer** (`node -v`).
+- [Node.js](https://nodejs.org) **22.12 or newer** (`node -v`) — matches the
+  `engines` field in `package.json`.
 
 ## Setup & dev loop
 
@@ -20,16 +21,49 @@ server. Useful commands:
 
 ```bash
 npm run build       # production build (shared → web → server)
+npm run serve       # run the already-built server without rebuilding
 npm test            # Vitest (run once)   |  npm run test:watch
 npm run typecheck   # tsc -b across all packages
 npm run bundle      # assemble the publishable single package into dist/
+npm run screenshots # regenerate the README screenshots from synthetic demo data
 ```
 
-## Project layout
+`npm run screenshots` seeds the synthetic demo data, boots the app, and captures
+every view in both light and dark themes via Playwright — run it when a UI change
+makes the README screenshots stale.
 
-npm-workspaces monorepo: `packages/shared` (types), `packages/server` (Fastify +
-DuckDB), `packages/web` (Vite + React). See `CLAUDE.md` for details. Key rule:
-the app is **read-only** over `~/.claude`; its own state lives in `~/.claudescope/`.
+## How it works
+
+npm-workspaces monorepo:
+
+| Package           | Role                                                                 |
+| ----------------- | -------------------------------------------------------------------- |
+| `packages/shared` | TypeScript types — the API + data contract shared by server and web. |
+| `packages/server` | Fastify API + DuckDB index (`@duckdb/node-api`); serves the built UI. |
+| `packages/web`    | Vite + React UI (react-markdown, Shiki, Recharts).                   |
+
+DuckDB reads the JSONL natively (`read_ndjson`) for indexing, full-text search,
+and analytics; a small TypeScript parser assembles the threaded view for a single
+session. The index is a **derived cache** — if it's ever corrupted (e.g. the
+process is killed mid-write) the app discards and rebuilds it automatically.
+
+Each agent is a **connector** (`packages/server/src/connectors/`). Claude Code
+JSONL is projected per-row; the others (Codex spreads a session across record
+types, Junie records an event-sourced UI stream, pi keeps `cwd`/tool-results on
+separate records, opencode is a single SQLite database) run a `prepare()` pass
+that normalizes a session to canonical NDJSON first — after that the indexing,
+search, cost, and threading paths are all shared. Adding another agent is adding
+another connector (see [Adding an agent connector](#adding-an-agent-connector)).
+
+Tests use [Vitest](https://vitest.dev). Unit tests cover the thread/subagent
+parser and pure helpers; the **integration suite** builds a real DuckDB index
+from synthetic fixtures in a temp dir / temp DB — your real agent directories are
+never touched — and exercises every API endpoint end-to-end via Fastify
+`inject()`.
+
+**Key rule:** the app is **read-only** over every agent source (`~/.claude`,
+`~/.codex`, `~/.junie`, `~/.pi`, opencode's database); its own state lives in
+`~/.claudescope/`. See [`CLAUDE.md`](./CLAUDE.md) for the full architecture.
 
 ## Making changes
 
@@ -41,6 +75,81 @@ the app is **read-only** over `~/.claude`; its own state lives in `~/.claudescop
   cost dedup-by-`message.id`, stale-cache / index-corruption recovery, pricing
   refresh and fallback, connector quirks — not happy-path glue that can't fail.
 - **Validate at boundaries** (user input, external data); trust internal code.
+
+## Adding an agent connector
+
+Supporting another coding agent means adding one **connector** — the index, FTS,
+cost, threading, and UI paths are all shared, so you only implement the seam.
+Use an existing connector as a template (`connectors/opencode/` is the most
+complete: SQLite source, `prepare()` normalization, file-edit and image mapping).
+Work through this checklist — the starred items are the ones that are easy to
+forget and silently render nothing in the UI.
+
+1. **Implement the `AgentConnector` port** in
+   `packages/server/src/connectors/<agent>/` (interface in
+   [`connectors/types.ts`](./packages/server/src/connectors/types.ts)): `id`,
+   `label`, `sourceDir`, `discover()`, `eventsProjectionSql()`, `loadSession()`,
+   and `auxProjections()` (titles / PR links). If the raw format can't be
+   projected per-row by DuckDB (multiple record types, a separate `cwd`/result
+   record, a SQLite DB), add a `prepare()` pass that normalizes a session to
+   **canonical NDJSON** first (the Codex / pi / opencode pattern). The projection
+   must emit the `CANONICAL_EVENT_COLUMNS` contract.
+
+2. **Register it** in
+   [`connectors/registry.ts`](./packages/server/src/connectors/registry.ts) (the
+   `connectors` array).
+
+3. **Resolve its source dir from an env var** in
+   [`config.ts`](./packages/server/src/config.ts) (e.g. `FOO_SESSIONS_DIR`,
+   defaulting under `homedir()`, run through `expandHome`), and set the
+   connector's `sourceDir` from it. The startup banner / sidebar
+   (`routes/sources.ts`) then lists it automatically.
+
+4. **★ Map tools to canonical names so the reader and tabs work.** The UI keys
+   off canonical tool names, so normalize the agent's tools (see
+   `connectors/opencode/normalize.ts`):
+   - **File edits/writes → `Write` / `Edit` / `MultiEdit`.** This is what feeds
+     the **Files changed** tab and the per-file red/green diffs. An agent that
+     edits via some other mechanism (opencode's `apply_patch`, a custom tool)
+     **must** be translated, or the tab silently shows nothing.
+   - **`read` → `Read`, shell → `Bash`**, so those blocks get the right preview;
+     pass other tools through by name.
+   - **★ Pasted screenshots / images → `ImageBlock`** (`{ type: 'image', source:
+     { type: 'url' | 'base64', … } }`, see
+     [`shared/src/events.ts`](./packages/shared/src/events.ts)), or images won't
+     embed in the transcript.
+
+5. **★ Add the agent badge** — without it the agent shows a raw id with no color:
+   - A short label in `AGENT_LABELS` in
+     [`components/AgentBadge.tsx`](./packages/web/src/components/AgentBadge.tsx).
+   - Brand-color CSS in
+     [`pages/browse/browse.css`](./packages/web/src/pages/browse/browse.css)
+     (`.tv-chip--agent.tv-agent--<id>`). **Use the agent's official/corporate
+     brand hue** (matching the existing ones: Anthropic coral, OpenAI teal-green,
+     JetBrains green, …). Follow the established pattern — border at `<hex>66`,
+     background at `<hex>1a`, a legible accent for the text — and add the
+     `:root[data-theme='light']` override that darkens the text for the light
+     theme.
+
+6. **Memory (optional).** If the agent persists long-lived memory, implement
+   `globalMemory()` and/or `projectMemory()`. **Invariant: read only from the
+   agent's own home dir** — never from the user's project directories. Return
+   `[]` when there's none (the empty state is first-class).
+
+7. **Tests.** Add synthetic fixtures in a temp dir / DB (never touch real agent
+   dirs) and **focus on the weird stuff** — the normalization quirks, malformed /
+   truncated input, cost dedup, threading edges — not happy-path glue.
+
+8. **★ Update every doc that enumerates the agents — keep them in sync:**
+   - [`README.md`](./README.md): the **Supported agents** table, the
+     **Configuration** env-var table, the **Usage notes** (any format quirk worth
+     calling out), and the **privacy + Security & privacy** source lists.
+   - [`SECURITY.md`](./SECURITY.md): the **Filesystem → Reads** list of read-only
+     source dirs.
+   - [`CLAUDE.md`](./CLAUDE.md): the architecture/connector notes and the
+     **Gotchas** + read-only-source list.
+   - The **How it works** list of normalized formats above, if `prepare()` is
+     involved.
 
 ## Commits & history
 

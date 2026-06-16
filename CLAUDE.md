@@ -35,7 +35,9 @@ npm-workspaces monorepo (`packages/*`):
 
 ## Runtime state — critical
 
-- **NEVER write to `~/.claude` or `~/.codex`.** They are read-only data sources.
+- **NEVER write to any agent source** (`~/.claude`, `~/.codex`, `~/.junie`,
+  `~/.pi`, opencode's `opencode.db`). They are read-only data sources — and that
+  includes reading agent memory live from those home dirs.
 - All app-owned state lives in **`~/.claudescope/`** (override: `CLAUDESCOPE_HOME`):
   the DuckDB index, a user-editable `pricing.json` (seeded from a shipped
   default; `loadPricing` falls back to the default if the copy is missing),
@@ -91,7 +93,7 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
 - **Don't touch unrelated code.** No drive-by refactors or "improvements."
 - **Tests:** run `npm test` and `npm run typecheck` after changes. Add tests only
   when the logic warrants it (the integration suite builds a real DuckDB index
-  from synthetic fixtures in a temp dir — never touches real `~/.claude`).
+  from synthetic fixtures in a temp dir — never touches any real agent source).
   **Keep tests focused on the weird stuff** — the hard, bug-prone domain edges,
   not happy-path glue: malformed/truncated JSONL, subagent correlation, cost
   dedup-by-`message.id`, stale-cache / index-corruption recovery, pricing refresh
