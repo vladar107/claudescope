@@ -30,7 +30,10 @@ export interface AttributedMemory {
 function safeGlobal(c: AgentConnector): MemorySource[] {
   try {
     return c.globalMemory?.() ?? [];
-  } catch {
+  } catch (err) {
+    // Connector memory readers already return [] for absent files, so a throw
+    // here is a genuine bug — warn so it doesn't masquerade as an empty Memory tab.
+    console.warn(`[memory] ${c.id} globalMemory failed:`, err);
     return [];
   }
 }
@@ -38,7 +41,8 @@ function safeGlobal(c: AgentConnector): MemorySource[] {
 function safeProject(c: AgentConnector) {
   try {
     return c.projectMemory?.() ?? [];
-  } catch {
+  } catch (err) {
+    console.warn(`[memory] ${c.id} projectMemory failed:`, err);
     return [];
   }
 }
