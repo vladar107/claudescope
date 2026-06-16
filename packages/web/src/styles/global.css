@@ -421,7 +421,10 @@ button {
   color: var(--tv-fg-faint);
   font-size: 10px;
 }
-.tv-collapsible.is-open .tv-collapsible__chevron {
+/* Scope to this collapsible's OWN header chevron — a descendant selector would
+   also rotate the chevrons of nested closed blocks (e.g. tool calls inside an
+   open subagent), making them point down while collapsed. */
+.tv-collapsible.is-open > .tv-collapsible__header > .tv-collapsible__chevron {
   transform: rotate(90deg);
 }
 
