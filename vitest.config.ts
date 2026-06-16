@@ -19,5 +19,11 @@ export default defineConfig({
     // Integration tests build a DuckDB index from fixtures; give them room.
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    // On Windows, parallel workers concurrently `INSTALL` DuckDB extensions into
+    // the shared ~/.duckdb dir, and the OS file-locking fails the simultaneous
+    // move ("Access is denied"). The app is single-process in production, so this
+    // is purely a test-concurrency artifact — serialize test files on Windows
+    // only; Linux/macOS keep full parallelism.
+    fileParallelism: process.platform !== 'win32',
   },
 });

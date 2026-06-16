@@ -98,6 +98,16 @@ The five items:
   + a Windows-aware mention regex (best-effort pending real Windows-Junie data).
   DuckDB reads use exact file paths (no globs), so a backslash in the SQL string
   literal should be fine; the runner is the real confirmation.
+  **What the `windows-latest` runner surfaced** (DuckDB *did* read backslash paths
+  fine — Junie/api/codex/pi/opencode integration suites passed on Windows; these
+  were the unanticipated ones, all fixed on-branch):
+  1. The pinned CSP hash and the shebang'd `scripts/*.mjs` broke under git's CRLF
+     checkout (Windows-only `SyntaxError` / hash mismatch) → repo-wide
+     `.gitattributes` (`* text=auto eol=lf`) pins LF on every platform.
+  2. Parallel vitest workers race to `INSTALL` DuckDB extensions into the shared
+     `~/.duckdb` dir, which Windows file-locking rejects. Production is
+     single-process, so this is a test-only artifact → `fileParallelism: false`
+     on win32 only (Linux/macOS keep full parallelism).
 - **PR split (recommended):** ship **F3 + F4 + C7 + C8 as one focused PR** (all
   small, security + correctness, low-risk, easy to review) and **C6 as a separate
   PR** (exploratory — a new CI runner may surface follow-on path bugs and
