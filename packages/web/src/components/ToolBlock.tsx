@@ -49,6 +49,27 @@ function Code({ code, lang, forceExpand = false }: { code: string; lang?: string
   return <CodeBlock code={code} lang={lang} />;
 }
 
+/** Shell commands whose stdout is verbatim file content (so we can highlight it). */
+const READ_COMMANDS = new Set(['cat', 'bat', 'nl', 'head', 'tail', 'sed', 'less', 'more']);
+
+/**
+ * If a shell command is a simple single-file read (`cat foo.ts`, `sed -n '1,40p'
+ * a.cs`), return the file's extension so the command's OUTPUT can be highlighted
+ * like a file view — many agents (notably Codex) read files via the shell rather
+ * than a dedicated Read tool. Bails on shell metacharacters (pipe/redirect/subshell
+ * — the output is then no longer the raw file) or an unrecognized command; an
+ * unknown/extension-less target yields undefined, leaving the output plain.
+ */
+function readOutputLang(command: string | undefined): string | undefined {
+  if (!command) return undefined;
+  const c = command.trim();
+  if (/[|&;<>`$()]/.test(c)) return undefined;
+  const tokens = c.split(/\s+/);
+  const cmd = (tokens[0] ?? '').split('/').pop() ?? '';
+  if (!READ_COMMANDS.has(cmd)) return undefined;
+  return extOf(tokens[tokens.length - 1]);
+}
+
 function FileHeader({ path, note }: { path: string; note?: string }) {
   return (
     <p className="tv-tool__file tv-mono">
@@ -187,6 +208,10 @@ function ToolBody({
     }
     case 'Bash': {
       const out = resultText(tool.result);
+      // Highlight the output as code when the command just reads a file (so a
+      // `cat`/`sed` of a source file looks like a Read); leave real command logs
+      // and any error output as plain text.
+      const outLang = isError ? undefined : readOutputLang(str(input.command));
       return (
         <>
           {str(input.description) ? (
@@ -196,7 +221,11 @@ function ToolBody({
           {out ? (
             <div className="tv-tool__section">
               <p className="tv-tool__section-label">{isError ? 'Output (error)' : 'Output'}</p>
-              <ClampedText className="tv-code-plain" text={out} code forceExpand={forceOpen} />
+              {outLang ? (
+                <Code code={out} lang={outLang} forceExpand={forceOpen} />
+              ) : (
+                <ClampedText className="tv-code-plain" text={out} code forceExpand={forceOpen} />
+              )}
             </div>
           ) : null}
         </>
