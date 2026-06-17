@@ -44,6 +44,12 @@ export interface SessionMeta {
   /** Human-friendly project name (last path segment of the project cwd). */
   projectDisplayName: string;
   title: string;
+  /**
+   * True when `title` was derived from the (cleaned) first user message rather
+   * than a real stored title — e.g. Codex/pi sessions, which store no title.
+   * Lets the UI mark it "untitled · from first message". Optional/back-compat.
+   */
+  titleDerived?: boolean;
   startedAt: string;
   endedAt: string;
   messageCount: number;
