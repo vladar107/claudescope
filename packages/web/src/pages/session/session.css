@@ -8,7 +8,10 @@
    spans the full content width and pins to the top while scrolling. */
 .tv-session__header {
   position: sticky;
-  top: calc(-1 * var(--tv-space-5));
+  /* Pin flush to the scroll container top. (The page padding now lives on
+     .tv-main__inner, not the scroll container, so a negative offset would lift
+     the header above the viewport and clip the top breadcrumb row.) */
+  top: 0;
   z-index: 5;
   background: var(--tv-bg);
   margin: calc(-1 * var(--tv-space-5)) calc(-1 * var(--tv-space-5)) var(--tv-space-4);
