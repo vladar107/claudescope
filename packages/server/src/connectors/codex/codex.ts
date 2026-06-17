@@ -100,4 +100,8 @@ export const codexConnector: AgentConnector = {
   auxProjections,
   loadSession,
   globalMemory: codexGlobalMemory,
+  resumeSpec: (id) => ({
+    resumeArgv: ['codex', 'resume', id],
+    forkArgv: ['codex', 'fork', id],
+  }),
 };

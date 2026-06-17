@@ -102,4 +102,8 @@ export const piConnector: AgentConnector = {
   eventsProjectionSql,
   auxProjections,
   loadSession,
+  resumeSpec: (id) => ({
+    resumeArgv: ['pi', '--session', id],
+    forkArgv: ['pi', '--fork', id],
+  }),
 };

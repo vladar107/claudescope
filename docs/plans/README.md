@@ -48,3 +48,5 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0021 | [GitHub Copilot CLI connector](./0021-copilot-connector.md) | done |
 | 0022 | [Security & quality fixes: image CSP, Junie path containment, deterministic PR link, memory/search logging, Windows support](./0022-security-quality-fixes.md) | proposed |
 | 0023 | [Structured rendering for command turns (slash/bash tags)](./0023-command-turn-rendering.md) | done |
+| 0024 | [Continue session from transcript (terminal auto-open)](./0024-continue-session.md) | abandoned |
+| 0025 | [Continue session: copy the command](./0025-continue-session-copy-command.md) | done |
