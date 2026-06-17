@@ -318,10 +318,35 @@ button {
 .tv-chip--cache {
   border-color: #3fb95055;
 }
-/* Overflow chip ("+N") for capped lists like <ModelChips>; the rest are in its title. */
+/* Overflow chip ("+N") for capped lists like <ModelChips> — a button that opens
+   a popover listing the remaining items. */
 .tv-chip--more {
-  cursor: default;
+  cursor: pointer;
   color: var(--tv-fg-muted);
+  font-family: inherit;
+}
+.tv-chip--more:hover {
+  color: var(--tv-fg);
+  border-color: var(--tv-border-strong);
+}
+.tv-modelchips__more-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.tv-modelchips__pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tv-space-1);
+  max-width: 260px;
+  padding: var(--tv-space-2);
+  background: var(--tv-bg-elevated);
+  border: 1px solid var(--tv-border-strong);
+  border-radius: var(--tv-radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 /* Per-turn token chips — compact dots (input/output) + grouped cache, matching

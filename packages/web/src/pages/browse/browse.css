@@ -190,7 +190,8 @@
   position: absolute;
   inset: 0;
 }
-.tv-session-row__side a {
+.tv-session-row__side a,
+.tv-session-row__side .tv-modelchips__more-wrap {
   position: relative;
   z-index: 1;
 }
