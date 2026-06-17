@@ -316,6 +316,20 @@ function SessionView({
     () => (
       <SessionSearchContext.Provider value={reveal}>
         <div className="tv-session__thread" ref={threadRef}>
+          {items.length > 0 ? (
+            <div className="tv-token-legend" aria-hidden="true">
+              <span className="tv-token-legend__label">Tokens</span>
+              <span className="tv-token-legend__item">
+                <span className="tv-token-legend__dot tv-token-legend__dot--in" /> input
+              </span>
+              <span className="tv-token-legend__item">
+                <span className="tv-token-legend__dot tv-token-legend__dot--out" /> output
+              </span>
+              <span className="tv-token-legend__item">
+                <span className="tv-token-legend__dot tv-token-legend__dot--cache" /> cache read · write
+              </span>
+            </div>
+          ) : null}
           {items.length === 0 ? (
             <p className="tv-muted">This session has no renderable messages.</p>
           ) : (

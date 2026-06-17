@@ -467,6 +467,22 @@ button {
   border-color: var(--tv-danger);
 }
 
+/* Quiet variant — tool calls demote to one subtle line with a "details" hint,
+   expanding to the full body. (Rule order: this beats `--tool`'s gold icon.) */
+.tv-collapsible--quiet {
+  background: transparent;
+}
+.tv-collapsible--quiet .tv-collapsible__title {
+  font-weight: 500;
+}
+.tv-collapsible--quiet .tv-collapsible__icon {
+  color: var(--tv-fg-faint);
+}
+.tv-collapsible__details {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+}
+
 .tv-tool__section-label {
   font-size: var(--tv-fs-sm);
   color: var(--tv-fg-faint);

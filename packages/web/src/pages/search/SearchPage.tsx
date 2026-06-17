@@ -17,6 +17,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { ChevronDown, MessageSquare } from 'lucide-react';
 import type {
   MemorySearchHit,
   ProjectMeta,
@@ -27,6 +28,98 @@ import type {
 import { api, ApiError } from '../../api/client.js';
 import { AgentBadge, ErrorBox, Spinner } from '../../components';
 import './search.css';
+
+/** A session's matches, grouped from the flat result list. */
+interface SessionGroup {
+  sessionId: string;
+  projectId: string;
+  title: string;
+  matches: SearchResult[];
+}
+
+/** Abbreviated role label for a match pill. */
+function shortRole(role: string): string {
+  if (role === 'assistant') return 'Asst';
+  if (role === 'user') return 'User';
+  return role;
+}
+
+/** A quiet bar standing in for the raw BM25 number; width = score / set max. */
+function RelevanceBar({ ratio }: { ratio: number }) {
+  const pct = Math.max(8, Math.min(100, Math.round(ratio * 100)));
+  const tier = ratio >= 0.5 ? 'high' : 'low';
+  return (
+    <span
+      className={`tv-relbar tv-relbar--${tier}`}
+      title={`relevance ${Math.round(ratio * 100)}%`}
+      aria-hidden="true"
+    >
+      <span className="tv-relbar__fill" style={{ width: `${pct}%` }} />
+    </span>
+  );
+}
+
+/** Number of matches shown before a session group collapses the rest. */
+const GROUP_COLLAPSE = 2;
+
+/** One session card with its matches nested under it. */
+function SearchGroup({
+  group,
+  projectName,
+  maxScore,
+}: {
+  group: SessionGroup;
+  projectName?: string;
+  maxScore: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? group.matches : group.matches.slice(0, GROUP_COLLAPSE);
+  const hidden = group.matches.length - shown.length;
+  return (
+    <div className="tv-card tv-search__group">
+      <div className="tv-search__group-head">
+        <MessageSquare size={15} aria-hidden="true" className="tv-search__group-icon" />
+        <Link
+          to={`/sessions/${encodeURIComponent(group.sessionId)}`}
+          className={
+            group.title
+              ? 'tv-search__group-title'
+              : 'tv-search__group-title tv-search__result-title--untitled'
+          }
+        >
+          {group.title || 'Untitled session'}
+        </Link>
+        {projectName ? <span className="tv-chip">{projectName}</span> : null}
+        <span className="tv-search__group-count">
+          {group.matches.length} match{group.matches.length === 1 ? '' : 'es'}
+        </span>
+      </div>
+      <div className="tv-search__matches">
+        {shown.map((m) => (
+          <Link
+            key={m.messageUuid}
+            to={`/sessions/${encodeURIComponent(group.sessionId)}#${encodeURIComponent(m.messageUuid)}`}
+            className="tv-search__match"
+          >
+            {m.role ? <span className={roleClass(m.role)}>{shortRole(m.role)}</span> : null}
+            <span
+              className="tv-search__snippet"
+              // Server snippet is HTML-escaped except <mark> wraps (safe).
+              dangerouslySetInnerHTML={{ __html: m.snippet }}
+            />
+            <RelevanceBar ratio={m.score / maxScore} />
+          </Link>
+        ))}
+        {hidden > 0 ? (
+          <button type="button" className="tv-search__more" onClick={() => setExpanded(true)}>
+            <ChevronDown size={14} aria-hidden="true" /> Show {hidden} more match
+            {hidden === 1 ? '' : 'es'}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 /** Debounce delay (ms) before firing a search after the query box settles. */
 const SEARCH_DEBOUNCE_MS = 300;
@@ -170,6 +263,27 @@ export function SearchPage() {
     [projects],
   );
 
+  const projectNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of projects) m.set(p.id, p.displayName);
+    return m;
+  }, [projects]);
+
+  // Group the flat session hits by session so one session reads as one card
+  // (not N near-identical rows). Insertion order preserves BM25 ranking.
+  const sessionGroups = useMemo(() => {
+    const map = new Map<string, SessionGroup>();
+    for (const r of sessions) {
+      const g = map.get(r.sessionId);
+      if (g) g.matches.push(r);
+      else map.set(r.sessionId, { sessionId: r.sessionId, projectId: r.projectId, title: r.title, matches: [r] });
+    }
+    return [...map.values()];
+  }, [sessions]);
+
+  // Normalize the relevance bar against the strongest hit in this result set.
+  const maxScore = useMemo(() => sessions.reduce((m, r) => Math.max(m, r.score), 0) || 1, [sessions]);
+
   // The active scope decides which sections are visible and what the count means.
   const showSessions = scope !== 'memory';
   const showMemory = scope !== 'sessions';
@@ -268,38 +382,31 @@ export function SearchPage() {
       ) : (
         <>
           <div className="tv-search__meta">
-            {totalCount} result{totalCount === 1 ? '' : 's'}
+            {showSessions && sessions.length > 0 ? (
+              <>
+                {sessions.length} match{sessions.length === 1 ? '' : 'es'} across{' '}
+                {sessionGroups.length} session{sessionGroups.length === 1 ? '' : 's'}
+                {showMemory && memory.length > 0
+                  ? ` · ${memory.length} in memory`
+                  : ''}
+              </>
+            ) : (
+              <>
+                {totalCount} result{totalCount === 1 ? '' : 's'}
+              </>
+            )}
           </div>
 
-          {showSessions && sessions.length > 0 ? (
+          {showSessions && sessionGroups.length > 0 ? (
             <section className="tv-search__section">
-              <h2 className="tv-search__section-title">Sessions ({sessions.length})</h2>
               <div className="tv-search__results">
-                {sessions.map((r) => (
-                  <Link
-                    key={`${r.sessionId}:${r.messageUuid}`}
-                    to={`/sessions/${encodeURIComponent(r.sessionId)}#${encodeURIComponent(r.messageUuid)}`}
-                    className="tv-card tv-search__result"
-                  >
-                    <div className="tv-search__result-head">
-                      <span
-                        className={
-                          r.title
-                            ? 'tv-search__result-title'
-                            : 'tv-search__result-title tv-search__result-title--untitled'
-                        }
-                      >
-                        {r.title || 'Untitled session'}
-                      </span>
-                      {r.role ? <span className={roleClass(r.role)}>{r.role}</span> : null}
-                      <span className="tv-search__score">score {r.score.toFixed(2)}</span>
-                    </div>
-                    <div
-                      className="tv-search__snippet"
-                      // Server snippet is HTML-escaped except <mark> wraps (safe).
-                      dangerouslySetInnerHTML={{ __html: r.snippet }}
-                    />
-                  </Link>
+                {sessionGroups.map((g) => (
+                  <SearchGroup
+                    key={g.sessionId}
+                    group={g}
+                    projectName={projectNameById.get(g.projectId)}
+                    maxScore={maxScore}
+                  />
                 ))}
               </div>
             </section>
