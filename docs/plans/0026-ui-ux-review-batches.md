@@ -1,8 +1,8 @@
 # 0026 — UI/UX review: hierarchy pass across all screens
 
-- **Status:** in-progress <!-- proposed | in-progress | done | superseded | abandoned -->
+- **Status:** done <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-06-17
-- **PR:** Batch 1 — [#32](https://github.com/vladar107/claudescope/pull/32) · Batch 2 — [#33](https://github.com/vladar107/claudescope/pull/33)
+- **PR:** Batch 1 — [#32](https://github.com/vladar107/claudescope/pull/32) · Batch 2 — [#33](https://github.com/vladar107/claudescope/pull/33) · Batch 3 — [#34](https://github.com/vladar107/claudescope/pull/34)
 
 ## Context
 
