@@ -48,32 +48,24 @@ export function TokenChips(props: TokenChipsProps) {
     );
   }
 
+  // Compact form: colored dots for input/output (matching the thread's token
+  // legend), then grouped cache (read · write), shown only when non-zero.
   return (
-    <span className="tv-chips">
-      <Chip className="tv-chip--input" label="in" value={input} />
-      <Chip className="tv-chip--output" label="out" value={output} />
-      <Chip className="tv-chip--cache" label="cw" value={cacheWrite} hideZero />
-      <Chip className="tv-chip--cache" label="cr" value={cacheRead} hideZero />
-    </span>
-  );
-}
-
-function Chip({
-  className,
-  label,
-  value,
-  hideZero,
-}: {
-  className?: string;
-  label: string;
-  value: number;
-  hideZero?: boolean;
-}) {
-  if (hideZero && value <= 0) return null;
-  return (
-    <span className={className ? `tv-chip ${className}` : 'tv-chip'}>
-      <span className="tv-chip__label">{label}</span>
-      <span className="tv-chip__value">{formatCount(value)}</span>
+    <span className="tv-tok">
+      <span className="tv-tok__seg">
+        <span className="tv-tok__dot tv-tok__dot--in" />
+        {formatCount(input)}
+      </span>
+      <span className="tv-tok__seg">
+        <span className="tv-tok__dot tv-tok__dot--out" />
+        {formatCount(output)}
+      </span>
+      {cacheRead > 0 || cacheWrite > 0 ? (
+        <span className="tv-tok__seg tv-tok__seg--cache">
+          <span className="tv-tok__dot tv-tok__dot--cache" />
+          cache {formatCount(cacheRead)} · {formatCount(cacheWrite)}
+        </span>
+      ) : null}
     </span>
   );
 }

@@ -1,14 +1,11 @@
 /* Session reader — threaded conversation view. Relies on global tokens. */
 
-.tv-session {
-  /* Capped for transcript readability, but roomy enough for code blocks, diffs,
-     and tool output — 920px was tight once a session has wide content. */
-  max-width: 1100px;
-  margin: 0 auto;
-}
+/* The session fills the shared, capped, left-aligned content box
+   (.tv-main__inner) — no separate cap/centering, so its left edge lines up with
+   every other page and the header full-bleeds cleanly to that box's edges. */
 
-/* Sticky header: offsets the .tv-main padding via negative margins so it
-   spans full width and pins to the top while scrolling long sessions. */
+/* Sticky header: offsets the .tv-main__inner padding via negative margins so it
+   spans the full content width and pins to the top while scrolling. */
 .tv-session__header {
   position: sticky;
   top: calc(-1 * var(--tv-space-5));

@@ -255,6 +255,12 @@ button {
 
 .tv-main {
   overflow-y: auto;
+}
+/* Cap + left-align the content so it doesn't stretch edge-to-edge on wide
+   screens (which left titles/meta far apart). The padding lives here, so the
+   session header's negative-margin full-bleed resolves to this box's edges. */
+.tv-main__inner {
+  max-width: 1200px;
   padding: var(--tv-space-5);
 }
 
@@ -308,6 +314,40 @@ button {
 .tv-chip--more {
   cursor: default;
   color: var(--tv-fg-muted);
+}
+
+/* Per-turn token chips — compact dots (input/output) + grouped cache, matching
+   the thread's token legend. */
+.tv-tok {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.tv-tok__seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--tv-fg);
+}
+.tv-tok__seg--cache {
+  color: var(--tv-fg-muted);
+}
+.tv-tok__dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+}
+.tv-tok__dot--in {
+  background: var(--tv-user);
+}
+.tv-tok__dot--out {
+  background: var(--tv-assistant);
+}
+.tv-tok__dot--cache {
+  background: var(--tv-success);
 }
 
 .tv-cost-badge {
@@ -756,7 +796,7 @@ mark {
   :root {
     --tv-nav-width: 188px;
   }
-  .tv-main {
+  .tv-main__inner {
     padding: var(--tv-space-4);
   }
 }

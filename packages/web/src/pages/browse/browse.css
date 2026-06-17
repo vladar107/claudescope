@@ -8,6 +8,10 @@
   margin-bottom: var(--tv-space-4);
   flex-wrap: wrap;
 }
+/* Summary tiles sit top-right beside the title (not as a row below). */
+.tv-browse__header .tv-summary {
+  margin-bottom: 0;
+}
 
 .tv-browse__controls {
   display: flex;

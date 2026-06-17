@@ -114,8 +114,9 @@ export function App() {
     <div className="tv-app">
       <Sidebar />
       <main className="tv-main">
-        <ErrorBoundary resetKeys={[pathname]} title="This page failed to render">
-          <Routes>
+        <div className="tv-main__inner">
+          <ErrorBoundary resetKeys={[pathname]} title="This page failed to render">
+            <Routes>
             <Route path="/" element={<BrowsePage />} />
             <Route path="/projects/:projectId" element={<ProjectLayout />}>
               <Route index element={<SessionListPage />} />
@@ -127,8 +128,9 @@ export function App() {
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/memory/:connectorId" element={<AgentMemoryPage />} />
             <Route path="/memory/:connectorId/:projectId" element={<AgentProjectMemoryPage />} />
-          </Routes>
-        </ErrorBoundary>
+            </Routes>
+          </ErrorBoundary>
+        </div>
       </main>
     </div>
   );
