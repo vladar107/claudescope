@@ -411,7 +411,11 @@
 .tv-session__tabs {
   display: flex;
   gap: var(--tv-space-1);
-  margin-bottom: var(--tv-space-4);
+  /* Full-bleed border (negative side margins cancel the page padding, padding
+     re-insets the tab labels) so this line aligns with the header's full-width
+     dividers above it rather than stopping short at the content edge. */
+  margin: 0 calc(-1 * var(--tv-space-5)) var(--tv-space-4);
+  padding: 0 var(--tv-space-5);
   border-bottom: 1px solid var(--tv-border);
 }
 .tv-tab {
