@@ -315,10 +315,46 @@ export interface ProjectMemorySummary {
   counts: { connectorId: string; count: number }[];
 }
 
+/**
+ * A one-line content preview of a connector's most-recently-updated memory item,
+ * for the memory landing card. Absent on the parent when the agent has no content.
+ */
+export interface MemoryPreview {
+  title: string;
+  category?: string;
+  /** One-line description if present, else a short plain-text excerpt of the body. */
+  description?: string;
+  provenance: MemoryProvenance;
+  kind: MemoryKind;
+  scope: 'global' | 'project';
+}
+
+/**
+ * Per-connector rollup for the memory landing page: counts plus a content
+ * preview, listed for EVERY known agent so the UI can mark agents that keep no
+ * memory store at all (`supported: false`).
+ */
+export interface MemoryConnectorOverview {
+  connectorId: string;
+  label: string;
+  /** False when this agent keeps no memory store at all (no memory provider). */
+  supported: boolean;
+  /** Count of global user-authored instruction files (global sources). */
+  globalFiles: number;
+  /** Number of projects where this agent has any memory. */
+  projectsWithFacts: number;
+  /** Total memory items this agent contributes across all projects. */
+  totalFacts: number;
+  /** Most-recently-updated memory item (by mtime), for a one-line content preview. Absent when the agent has no content. */
+  preview?: MemoryPreview;
+}
+
 /** GET /api/memory */
 export interface MemoryResponse {
   global: GlobalMemory[];
   projects: ProjectMemorySummary[];
+  /** One rollup per known agent connector, for the landing-page cards. */
+  connectors: MemoryConnectorOverview[];
 }
 
 /** GET /api/projects/:projectId/memory */
