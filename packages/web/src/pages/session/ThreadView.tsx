@@ -3,7 +3,7 @@ import type { SubagentRun, ThreadBlock, ThreadItem } from '@claudescope/shared';
 import { ClampedText, Collapsible, ErrorBoundary, ErrorBox, TokenChips } from '../../components';
 import { formatDateTime, shortModel } from '../browse/format.js';
 import { ThreadBlockView, hasRenderableContent } from './blocks.js';
-import { classifySystemText } from './text.js';
+import { classifySystemText, parseCommandTurn, type CommandTurn } from './text.js';
 import { SessionSearchContext } from './SearchContext.js';
 import { blockRevealId } from './search.js';
 
@@ -142,6 +142,10 @@ function classifySystemTurn(item: ThreadItem): string | null {
 /** Compact, collapsed-by-default rendering for a harness/system user turn. */
 function SystemTurn({ item, label }: { item: ThreadItem; label: string }) {
   const text = turnText(item);
+  // Claude Code wraps slash/bash turns in XML-style tags; parse them into clean
+  // command/terminal UI. Non-command system turns (task notifications, system
+  // reminders) and other agents return null → verbatim fallback below.
+  const cmd = parseCommandTurn(text);
   return (
     <article id={item.uuid} className="tv-turn tv-turn--system">
       <div className="tv-turn__gutter" aria-hidden="true">
@@ -152,7 +156,7 @@ function SystemTurn({ item, label }: { item: ThreadItem; label: string }) {
           className="tv-collapsible--system"
           icon="⚙︎"
           title={label}
-          subtitle="system / harness message"
+          subtitle={cmd ? commandSubtitle(cmd) : 'system / harness message'}
           headerExtra={
             item.timestamp ? (
               <a className="tv-turn__time tv-muted" href={`#${item.uuid}`}>
@@ -161,10 +165,68 @@ function SystemTurn({ item, label }: { item: ThreadItem; label: string }) {
             ) : null
           }
         >
-          <ClampedText className="tv-system-turn__pre" text={text} />
+          {cmd ? (
+            <CommandBody cmd={cmd} />
+          ) : (
+            <ClampedText className="tv-system-turn__pre" text={text} />
+          )}
         </Collapsible>
       </div>
     </article>
+  );
+}
+
+/** The actual command, surfaced in the collapsed header so it's legible unexpanded. */
+function commandSubtitle(cmd: CommandTurn) {
+  if (cmd.kind === 'slash')
+    return <span className="tv-mono">{cmd.name + (cmd.args ? ` ${cmd.args}` : '')}</span>;
+  if (cmd.kind === 'bash-input') return <span className="tv-mono">{cmd.command}</span>;
+  return 'system / harness message';
+}
+
+/** Structured body for a parsed command turn — prompt line(s) or terminal output. */
+function CommandBody({ cmd }: { cmd: CommandTurn }) {
+  switch (cmd.kind) {
+    case 'slash':
+      return (
+        <div className="tv-cmd">
+          <code className="tv-cmd__slash">
+            {cmd.name}
+            {cmd.args ? <span className="tv-cmd__args"> {cmd.args}</span> : null}
+          </code>
+        </div>
+      );
+    case 'bash-input':
+      return (
+        <div className="tv-cmd">
+          <code className="tv-cmd__line">
+            <span className="tv-cmd__prompt" aria-hidden="true">$ </span>
+            {cmd.command}
+          </code>
+        </div>
+      );
+    case 'bash-output':
+      return <CommandOutput stdout={cmd.stdout} stderr={cmd.stderr} />;
+    case 'local-output':
+      return <ClampedText className="tv-system-turn__pre" text={cmd.text} />;
+  }
+}
+
+/** stdout/stderr of a bash turn; empty streams are omitted, stderr flagged. */
+function CommandOutput({ stdout, stderr }: { stdout: string; stderr: string }) {
+  const out = stdout.replace(/\s+$/, '');
+  const err = stderr.replace(/\s+$/, '');
+  if (!out && !err) return <p className="tv-system-turn__empty tv-muted">(no output)</p>;
+  return (
+    <>
+      {out ? <ClampedText className="tv-system-turn__pre" text={out} /> : null}
+      {err ? (
+        <div className="tv-cmd__stderr">
+          {out ? <span className="tv-cmd__stderr-label">stderr</span> : null}
+          <ClampedText className="tv-system-turn__pre" text={err} />
+        </div>
+      ) : null}
+    </>
   );
 }
 
