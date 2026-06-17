@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { ProjectMeta } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { AgentBadge, ErrorBox, formatCost, formatCount, Spinner, SummaryStrip } from '../../components';
+import { AgentBadge, ErrorBox, formatCost, formatCount, SearchField, Spinner, SummaryStrip } from '../../components';
 import { timeAgo } from './format.js';
 import './browse.css';
 
@@ -95,12 +95,11 @@ export function BrowsePage() {
           Projects
         </h1>
         <div className="tv-browse__controls">
-          <input
-            className="tv-input"
-            type="search"
-            placeholder="Filter projects…"
+          <SearchField
             value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            onChange={setFilter}
+            placeholder="Filter projects…"
+            ariaLabel="Filter projects"
           />
           <select
             className="tv-select"

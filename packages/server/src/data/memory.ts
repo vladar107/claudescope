@@ -9,7 +9,7 @@
  * the facts that were actually learned in it.
  */
 
-import type { MemorySource } from '@claudescope/shared';
+import type { MemoryConnectorOverview, MemoryPreview, MemorySource } from '@claudescope/shared';
 import { getConnection, queryRows } from '../db/duckdb.js';
 import { connectors } from '../connectors/registry.js';
 import type { AgentConnector } from '../connectors/types.js';
@@ -102,4 +102,101 @@ export async function collectMemory(): Promise<AttributedMemory[]> {
   }
 
   return out;
+}
+
+/**
+ * Whether a connector exposes a memory provider at all. Derived from the
+ * connector port: a memory store exists iff the connector implements
+ * `globalMemory` and/or `projectMemory`. Connectors with neither (pi, opencode)
+ * keep no memory store, so their card is marked `supported: false`.
+ */
+function hasMemoryProvider(c: AgentConnector): boolean {
+  return Boolean(c.globalMemory || c.projectMemory);
+}
+
+/**
+ * Collapse a markdown body to a short single-line excerpt for the preview.
+ * Strips a leading `---` frontmatter block, common inline/structural markdown
+ * (headings, list/quote markers, emphasis, links, inline code), collapses all
+ * whitespace, and truncates to ~140 chars with an ellipsis. Deterministic.
+ */
+function excerptFromMarkdown(markdown: string): string {
+  let body = markdown;
+  // Drop a leading YAML frontmatter block (`---` … `---`).
+  const fm = body.match(/^---\n[\s\S]*?\n---\n?/);
+  if (fm) body = body.slice(fm[0].length);
+  const text = body
+    .replace(/`+/g, '') // inline/fenced code ticks
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1') // links/images → their text
+    .replace(/^\s*[#>\-*+]+\s*/gm, '') // headings, quotes, list markers
+    .replace(/[*_~]/g, '') // emphasis markers
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > 140 ? `${text.slice(0, 139).trimEnd()}…` : text;
+}
+
+/** Map a memory source to a one-line preview, deriving the excerpt when needed. */
+function toPreview(it: AttributedMemory): MemoryPreview {
+  const { source } = it;
+  const description = source.description?.trim() || excerptFromMarkdown(source.markdown) || undefined;
+  return {
+    title: source.title,
+    ...(source.category ? { category: source.category } : {}),
+    ...(description ? { description } : {}),
+    provenance: source.provenance,
+    kind: source.kind,
+    scope: it.scope,
+  };
+}
+
+/**
+ * Roll up {@link collectMemory} items into one {@link MemoryConnectorOverview}
+ * per KNOWN connector (every registered agent, including those with no memory
+ * store). Pure given its `items` input — the route passes `collectMemory()`.
+ *
+ * Counts mirror the web's prior `summarize()`: `globalFiles` = the connector's
+ * global sources; `projectsWithFacts` = distinct projects with ≥1 of its
+ * sources; `totalFacts` = total project sources. `preview` is the connector's
+ * most-recently-updated source (by `source.updatedAt`) across BOTH global and
+ * project items, omitted when it has none. Sort: supported-with-content first,
+ * then supported-empty, then unsupported; ties broken by label.
+ */
+export function buildConnectorOverviews(items: AttributedMemory[]): MemoryConnectorOverview[] {
+  const byConnector = new Map<string, AttributedMemory[]>();
+  for (const it of items) {
+    const list = byConnector.get(it.connectorId);
+    if (list) list.push(it);
+    else byConnector.set(it.connectorId, [it]);
+  }
+
+  const overviews = connectors.map((c): MemoryConnectorOverview => {
+    const mine = byConnector.get(c.id) ?? [];
+    const globalFiles = mine.filter((it) => it.scope === 'global').length;
+    const projectItems = mine.filter((it) => it.scope === 'project');
+    const projectsWithFacts = new Set(projectItems.map((it) => it.projectId)).size;
+
+    // Latest by mtime across all scopes; deterministic tie-break on title so a
+    // stable item wins when two share an `updatedAt`.
+    const latest = mine.reduce<AttributedMemory | undefined>((best, it) => {
+      if (!best) return it;
+      if (it.source.updatedAt > best.source.updatedAt) return it;
+      if (it.source.updatedAt === best.source.updatedAt && it.source.title < best.source.title) return it;
+      return best;
+    }, undefined);
+
+    return {
+      connectorId: c.id,
+      label: c.label,
+      supported: hasMemoryProvider(c),
+      globalFiles,
+      projectsWithFacts,
+      totalFacts: projectItems.length,
+      ...(latest ? { preview: toPreview(latest) } : {}),
+    };
+  });
+
+  // Supported-with-content first, then supported-empty, then unsupported.
+  const rank = (o: MemoryConnectorOverview) =>
+    o.supported && o.preview ? 0 : o.supported ? 1 : 2;
+  return overviews.sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label));
 }

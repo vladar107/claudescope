@@ -18,7 +18,7 @@ function CommandRow({ command }: { command: string }) {
   return (
     <div className="tv-continue__cmd">
       <code className="tv-continue__cmd-text">{command}</code>
-      <button type="button" className="tv-continue__copy" onClick={copy}>
+      <button type="button" className="tv-btn tv-btn--secondary tv-btn--sm" onClick={copy}>
         {copied ? (
           'Copied!'
         ) : (

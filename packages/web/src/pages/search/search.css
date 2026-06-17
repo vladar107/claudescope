@@ -4,7 +4,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--tv-space-3);
-  align-items: flex-end;
+  align-items: center;
   margin-bottom: var(--tv-space-4);
 }
 
@@ -109,11 +109,102 @@
   border-color: #bc8cff55;
 }
 
-.tv-search__score {
-  margin-left: auto;
-  font-size: var(--tv-fs-sm);
+/* Grouped session results — one card per session, matches nested under it. */
+.tv-search__group {
+  padding: 0;
+  overflow: hidden;
+}
+.tv-search__group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  padding: var(--tv-space-3) var(--tv-space-4);
+  border-bottom: 1px solid var(--tv-border);
+}
+.tv-search__group-icon {
+  flex: 0 0 auto;
   color: var(--tv-fg-faint);
-  font-variant-numeric: tabular-nums;
+}
+.tv-search__group-title {
+  font-size: var(--tv-fs-md);
+  font-weight: 600;
+  color: var(--tv-fg);
+  text-decoration: none;
+}
+.tv-search__group-title:hover {
+  text-decoration: underline;
+}
+.tv-search__group-count {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: var(--tv-fs-sm);
+  font-weight: 600;
+  color: var(--tv-accent);
+}
+.tv-search__matches {
+  display: flex;
+  flex-direction: column;
+}
+.tv-search__match {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-3);
+  padding: var(--tv-space-2) var(--tv-space-4);
+  text-decoration: none;
+  color: inherit;
+}
+.tv-search__match + .tv-search__match,
+.tv-search__more {
+  border-top: 1px solid var(--tv-border);
+}
+.tv-search__match:hover {
+  background: var(--tv-bg-hover);
+}
+.tv-search__match .tv-search__role {
+  flex: 0 0 auto;
+}
+.tv-search__match .tv-search__snippet {
+  flex: 1 1 auto;
+}
+.tv-search__more {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-1);
+  width: 100%;
+  background: transparent;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  color: var(--tv-accent);
+  cursor: pointer;
+  padding: var(--tv-space-2) var(--tv-space-4);
+  font-size: var(--tv-fs-sm);
+  font-family: inherit;
+  text-align: left;
+}
+.tv-search__more:hover {
+  background: var(--tv-bg-hover);
+}
+
+/* Relevance bar — a quiet stand-in for the raw BM25 score. */
+.tv-relbar {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--tv-bg-inset);
+  overflow: hidden;
+}
+.tv-relbar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+.tv-relbar--high .tv-relbar__fill {
+  background: var(--tv-success);
+}
+.tv-relbar--low .tv-relbar__fill {
+  background: var(--tv-warning);
 }
 
 .tv-search__mem-scope {

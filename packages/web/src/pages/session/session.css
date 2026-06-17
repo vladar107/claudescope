@@ -1,17 +1,17 @@
 /* Session reader — threaded conversation view. Relies on global tokens. */
 
-.tv-session {
-  /* Capped for transcript readability, but roomy enough for code blocks, diffs,
-     and tool output — 920px was tight once a session has wide content. */
-  max-width: 1100px;
-  margin: 0 auto;
-}
+/* The session fills the shared, capped, left-aligned content box
+   (.tv-main__inner) — no separate cap/centering, so its left edge lines up with
+   every other page and the header full-bleeds cleanly to that box's edges. */
 
-/* Sticky header: offsets the .tv-main padding via negative margins so it
-   spans full width and pins to the top while scrolling long sessions. */
+/* Sticky header: offsets the .tv-main__inner padding via negative margins so it
+   spans the full content width and pins to the top while scrolling. */
 .tv-session__header {
   position: sticky;
-  top: calc(-1 * var(--tv-space-5));
+  /* Pin flush to the scroll container top. (The page padding now lives on
+     .tv-main__inner, not the scroll container, so a negative offset would lift
+     the header above the viewport and clip the top breadcrumb row.) */
+  top: 0;
   z-index: 5;
   background: var(--tv-bg);
   margin: calc(-1 * var(--tv-space-5)) calc(-1 * var(--tv-space-5)) var(--tv-space-4);
@@ -161,6 +161,42 @@
   flex-direction: column;
   gap: var(--tv-space-3);
   padding-bottom: var(--tv-space-6);
+}
+
+/* Token legend — explains the per-turn token chips once, above the thread. */
+.tv-token-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tv-space-1) var(--tv-space-3);
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-muted);
+}
+.tv-token-legend__label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+  color: var(--tv-fg-faint);
+}
+.tv-token-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tv-token-legend__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.tv-token-legend__dot--in {
+  background: var(--tv-user);
+}
+.tv-token-legend__dot--out {
+  background: var(--tv-assistant);
+}
+.tv-token-legend__dot--cache {
+  background: var(--tv-success);
 }
 
 .tv-turn {
@@ -520,26 +556,108 @@
   z-index: 20;
   top: calc(100% + var(--tv-space-1));
   left: 0;
-  width: 220px;
-  padding: var(--tv-space-2);
+  width: 340px;
+  max-width: 86vw;
+  padding: var(--tv-space-3);
   background: var(--tv-bg-elevated);
   border: 1px solid var(--tv-border-strong);
   border-radius: var(--tv-radius);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
-.tv-export__opt {
+.tv-export__head {
   display: flex;
   align-items: center;
   gap: var(--tv-space-2);
-  font-size: var(--tv-fs-sm);
+  font-size: var(--tv-fs-md);
+  margin-bottom: var(--tv-space-3);
+}
+.tv-export__fmt {
+  margin-left: auto;
+  color: var(--tv-fg-muted);
+}
+/* Redact option: a switch + label, then an explanation and a truthful example. */
+.tv-export__redact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-1);
   cursor: pointer;
-  margin-bottom: var(--tv-space-2);
+}
+.tv-export__redact-top {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-md);
+}
+.tv-export__redact-desc {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-muted);
+  line-height: 1.45;
+}
+.tv-export__redact-desc code {
+  font-family: var(--tv-font-mono);
+  font-size: 0.92em;
+}
+.tv-export__example {
+  margin-top: var(--tv-space-1);
+  padding: var(--tv-space-1) var(--tv-space-2);
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius-sm);
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+  white-space: nowrap;
+  overflow-x: auto;
 }
 .tv-export__actions {
   display: flex;
-  gap: var(--tv-space-3);
+  gap: var(--tv-space-2);
+  margin-top: var(--tv-space-3);
+  padding-top: var(--tv-space-3);
   border-top: 1px solid var(--tv-border);
-  padding-top: var(--tv-space-2);
+}
+/* Download (primary) stretches; Copy (secondary) sits beside it. */
+.tv-export__download {
+  flex: 1 1 auto;
+}
+
+/* Toggle switch (the redact option). The real <input> is visually hidden. */
+.tv-switch__input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.tv-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border-strong);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.tv-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--tv-fg-muted);
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.tv-switch__input:checked + .tv-switch {
+  background: var(--tv-success);
+  border-color: var(--tv-success);
+}
+.tv-switch__input:checked + .tv-switch::after {
+  transform: translateX(12px);
+  background: #fff;
+}
+.tv-switch__input:focus-visible + .tv-switch {
+  box-shadow: 0 0 0 2px var(--tv-accent-muted);
 }
 
 /* ── Continue (resume / fork) dropdown ────────────────────────────────── */
@@ -626,21 +744,8 @@
   font-size: var(--tv-fs-sm);
   color: var(--tv-fg);
 }
-.tv-continue__copy {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tv-space-1);
+.tv-continue__cmd .tv-btn {
   flex: 0 0 auto;
-  background: transparent;
-  border: 1px solid var(--tv-border-strong);
-  border-radius: var(--tv-radius-sm);
-  color: var(--tv-accent);
-  cursor: pointer;
-  padding: var(--tv-space-1) var(--tv-space-2);
-  font-size: var(--tv-fs-sm);
-}
-.tv-continue__copy:hover {
-  background: var(--tv-bg-hover);
 }
 
 /* ── In-session finder ────────────────────────────────────────────────── */
@@ -652,7 +757,7 @@
   margin-left: auto; /* pin to the right edge of the crumbs row */
   background: var(--tv-bg-inset);
   border: 1px solid var(--tv-border);
-  border-radius: 999px;
+  border-radius: var(--tv-radius); /* match the shared search field, not a pill */
   padding: 3px 6px 3px 10px;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }

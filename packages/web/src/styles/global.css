@@ -27,6 +27,11 @@
 
   --tv-accent: #58a6ff;
   --tv-accent-muted: #1f6feb33;
+  /* Filled action buttons use a deeper, more saturated blue than the (lighter)
+     link accent, so white text stays legible. */
+  --tv-btn-primary: #1f6feb;
+  --tv-btn-primary-hover: #388bfd;
+  --tv-on-accent: #ffffff;
   --tv-success: #3fb950;
   --tv-warning: #d29922;
   --tv-danger: #f85149;
@@ -90,6 +95,9 @@
 
   --tv-accent: #0969da;
   --tv-accent-muted: #0969da1a;
+  --tv-btn-primary: #0969da;
+  --tv-btn-primary-hover: #0860ca;
+  --tv-on-accent: #ffffff;
   --tv-success: #1a7f37;
   --tv-warning: #9a6700;
   --tv-danger: #cf222e;
@@ -255,6 +263,12 @@ button {
 
 .tv-main {
   overflow-y: auto;
+}
+/* Cap + left-align the content so it doesn't stretch edge-to-edge on wide
+   screens (which left titles/meta far apart). The padding lives here, so the
+   session header's negative-margin full-bleed resolves to this box's edges. */
+.tv-main__inner {
+  max-width: 1200px;
   padding: var(--tv-space-5);
 }
 
@@ -304,10 +318,69 @@ button {
 .tv-chip--cache {
   border-color: #3fb95055;
 }
-/* Overflow chip ("+N") for capped lists like <ModelChips>; the rest are in its title. */
+/* Overflow chip ("+N") for capped lists like <ModelChips> — a button that opens
+   a popover listing the remaining items. */
 .tv-chip--more {
-  cursor: default;
+  cursor: pointer;
   color: var(--tv-fg-muted);
+  font-family: inherit;
+}
+.tv-chip--more:hover {
+  color: var(--tv-fg);
+  border-color: var(--tv-border-strong);
+}
+.tv-modelchips__more-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.tv-modelchips__pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tv-space-1);
+  max-width: 260px;
+  padding: var(--tv-space-2);
+  background: var(--tv-bg-elevated);
+  border: 1px solid var(--tv-border-strong);
+  border-radius: var(--tv-radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* Per-turn token chips — compact dots (input/output) + grouped cache, matching
+   the thread's token legend. */
+.tv-tok {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.tv-tok__seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--tv-fg);
+}
+.tv-tok__seg--cache {
+  color: var(--tv-fg-muted);
+}
+.tv-tok__dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+}
+.tv-tok__dot--in {
+  background: var(--tv-user);
+}
+.tv-tok__dot--out {
+  background: var(--tv-assistant);
+}
+.tv-tok__dot--cache {
+  background: var(--tv-success);
 }
 
 .tv-cost-badge {
@@ -465,6 +538,22 @@ button {
 }
 .tv-collapsible--error {
   border-color: var(--tv-danger);
+}
+
+/* Quiet variant — tool calls demote to one subtle line with a "details" hint,
+   expanding to the full body. (Rule order: this beats `--tool`'s gold icon.) */
+.tv-collapsible--quiet {
+  background: transparent;
+}
+.tv-collapsible--quiet .tv-collapsible__title {
+  font-weight: 500;
+}
+.tv-collapsible--quiet .tv-collapsible__icon {
+  color: var(--tv-fg-faint);
+}
+.tv-collapsible__details {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
 }
 
 .tv-tool__section-label {
@@ -692,6 +781,99 @@ mark {
   padding: var(--tv-space-4);
 }
 
+/* Buttons — one shared vocabulary. Primary = filled deep blue with readable
+   text; secondary = bordered; sm = compact (inline, e.g. a Copy next to code). */
+.tv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tv-space-1);
+  padding: var(--tv-space-2) var(--tv-space-4);
+  border: 1px solid transparent;
+  border-radius: var(--tv-radius);
+  font-family: inherit;
+  font-size: var(--tv-fs-md);
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.tv-btn--primary {
+  background: var(--tv-btn-primary);
+  color: var(--tv-on-accent);
+}
+.tv-btn--primary:hover {
+  background: var(--tv-btn-primary-hover);
+  text-decoration: none;
+}
+.tv-btn--secondary {
+  background: transparent;
+  border-color: var(--tv-border-strong);
+  color: var(--tv-fg);
+}
+.tv-btn--secondary:hover {
+  background: var(--tv-bg-hover);
+  text-decoration: none;
+}
+.tv-btn--sm {
+  padding: var(--tv-space-1) var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+  font-weight: 500;
+}
+
+/* Search/filter field — one shared control (magnifier in-field + clear ×). */
+.tv-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  min-width: 220px;
+  padding: 0 var(--tv-space-2) 0 var(--tv-space-3);
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+}
+.tv-field--grow {
+  flex: 1 1 280px;
+}
+.tv-field:focus-within {
+  border-color: var(--tv-accent);
+  box-shadow: 0 0 0 2px var(--tv-accent-muted);
+}
+.tv-field__icon {
+  flex: 0 0 auto;
+  color: var(--tv-fg-muted);
+}
+.tv-field__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--tv-space-2) 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--tv-fg);
+  font-family: inherit;
+  font-size: var(--tv-fs-md);
+}
+.tv-field__input::placeholder {
+  color: var(--tv-fg-faint);
+}
+.tv-field__clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--tv-radius-sm);
+  color: var(--tv-fg-muted);
+  cursor: pointer;
+}
+.tv-field__clear:hover {
+  color: var(--tv-fg);
+  background: var(--tv-bg-hover);
+}
+
 .tv-muted {
   color: var(--tv-fg-muted);
 }
@@ -740,7 +922,7 @@ mark {
   :root {
     --tv-nav-width: 188px;
   }
-  .tv-main {
+  .tv-main__inner {
     padding: var(--tv-space-4);
   }
 }

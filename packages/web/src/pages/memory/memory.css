@@ -30,6 +30,49 @@
   align-items: center;
   gap: var(--tv-space-2);
 }
+.tv-memory-card__nostore {
+  margin-left: auto;
+  color: var(--tv-fg-faint);
+}
+.tv-memory-card__counts {
+  font-size: var(--tv-fs-sm);
+}
+/* Content preview — a quiet quote rail with a label + the latest item. */
+.tv-memory-card__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--tv-space-1);
+  padding-left: var(--tv-space-3);
+  border-left: 2px solid var(--tv-border-strong);
+}
+.tv-memory-card__preview-label {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+}
+.tv-memory-card__preview-body {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tv-memory-card__empty {
+  font-size: var(--tv-fs-sm);
+  line-height: 1.45;
+}
+/* "No memory store" agents aren't clickable — neutralize the project-card hover. */
+.tv-memory-card--nostore {
+  cursor: default;
+  opacity: 0.9;
+}
+.tv-memory-card--nostore:hover {
+  border-color: var(--tv-border);
+  background: var(--tv-bg-elevated);
+}
 
 /* Project memory list (top-level / per-agent pages) */
 .tv-memory__project-main {

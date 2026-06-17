@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Download } from 'lucide-react';
+import { Copy, Download } from 'lucide-react';
 import type { SessionDetailResponse } from '@claudescope/shared';
 import { sessionToMarkdown } from './export.js';
 
-/** A small "Export" dropdown: download the session as Markdown, or copy it. */
+/** An "Export" dropdown: download the session as Markdown, or copy it. */
 export function ExportMenu({ data }: { data: SessionDetailResponse }) {
   const [open, setOpen] = useState(false);
   const [redact, setRedact] = useState(false);
@@ -58,16 +58,44 @@ export function ExportMenu({ data }: { data: SessionDetailResponse }) {
         <Download size={14} aria-hidden="true" /> Export
       </summary>
       <div className="tv-export__menu">
-        <label className="tv-export__opt">
-          <input type="checkbox" checked={redact} onChange={(e) => setRedact(e.target.checked)} />
-          Redact paths &amp; secrets
+        <div className="tv-export__head">
+          <Download size={16} aria-hidden="true" />
+          <strong>Export session</strong>
+          <span className="tv-chip tv-export__fmt">Markdown ·md</span>
+        </div>
+
+        <label className="tv-export__redact">
+          <span className="tv-export__redact-top">
+            <input
+              type="checkbox"
+              className="tv-switch__input"
+              checked={redact}
+              onChange={(e) => setRedact(e.target.checked)}
+            />
+            <span className="tv-switch" aria-hidden="true" />
+            <strong>Redact paths &amp; secrets</strong>
+          </span>
+          <span className="tv-export__redact-desc">
+            Replaces home-dir paths with <code>~</code> and masks likely tokens / keys before
+            export. Best-effort — an unrecognized secret can still slip through.
+          </span>
+          <span className="tv-export__example tv-mono" aria-hidden="true">
+            /Users/you/… → ~/… · sk-… → «redacted-key»
+          </span>
         </label>
+
         <div className="tv-export__actions">
-          <button type="button" className="tv-linkbtn" onClick={download}>
-            Download .md
+          <button type="button" className="tv-btn tv-btn--primary tv-export__download" onClick={download}>
+            <Download size={14} aria-hidden="true" /> Download .md
           </button>
-          <button type="button" className="tv-linkbtn" onClick={copy}>
-            {copied ? 'Copied!' : 'Copy'}
+          <button type="button" className="tv-btn tv-btn--secondary" onClick={copy}>
+            {copied ? (
+              'Copied!'
+            ) : (
+              <>
+                <Copy size={14} aria-hidden="true" /> Copy
+              </>
+            )}
           </button>
         </div>
       </div>

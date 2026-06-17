@@ -46,7 +46,11 @@ export function timeAgo(iso: string | undefined): string {
   return `${Math.floor(mon / 12)}y ago`;
 }
 
-/** Compact elapsed duration between two ISO timestamps (e.g. "1h 23m", "45m", "30s"). */
+/**
+ * Compact elapsed duration between two ISO timestamps, rolled up to the two
+ * largest sensible units: "30s", "45m", "1h 23m", "3d 4h", "2w 4d". Keeps long
+ * sessions readable (e.g. "436h 55m" → "2w 4d").
+ */
 export function formatDuration(startIso: string | undefined, endIso: string | undefined): string {
   if (!startIso || !endIso) return '';
   const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
@@ -56,8 +60,18 @@ export function formatDuration(startIso: string | undefined, endIso: string | un
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min}m`;
   const hr = Math.floor(min / 60);
-  const rem = min % 60;
-  return rem ? `${hr}h ${rem}m` : `${hr}h`;
+  if (hr < 24) {
+    const m = min % 60;
+    return m ? `${hr}h ${m}m` : `${hr}h`;
+  }
+  const day = Math.floor(hr / 24);
+  if (day < 7) {
+    const h = hr % 24;
+    return h ? `${day}d ${h}h` : `${day}d`;
+  }
+  const week = Math.floor(day / 7);
+  const d = day % 7;
+  return d ? `${week}w ${d}d` : `${week}w`;
 }
 
 /** Human-readable byte size (e.g. "1.3 MB"). */

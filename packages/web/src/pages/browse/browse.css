@@ -8,6 +8,10 @@
   margin-bottom: var(--tv-space-4);
   flex-wrap: wrap;
 }
+/* Summary tiles sit top-right beside the title (not as a row below). */
+.tv-browse__header .tv-summary {
+  margin-bottom: 0;
+}
 
 .tv-browse__controls {
   display: flex;
@@ -143,13 +147,17 @@
   color: var(--tv-fg);
 }
 .tv-agent-filter__btn.is-active {
-  border-color: var(--tv-accent);
-  color: var(--tv-fg);
-  background: var(--tv-accent-muted);
+  border-color: var(--tv-btn-primary);
+  background: var(--tv-btn-primary);
+  color: var(--tv-on-accent);
 }
 .tv-agent-filter__count {
   color: var(--tv-fg-faint);
   font-variant-numeric: tabular-nums;
+}
+.tv-agent-filter__btn.is-active .tv-agent-filter__count {
+  color: var(--tv-on-accent);
+  opacity: 0.8;
 }
 
 /* Session list */
@@ -182,7 +190,8 @@
   position: absolute;
   inset: 0;
 }
-.tv-session-row__side a {
+.tv-session-row__side a,
+.tv-session-row__side .tv-modelchips__more-wrap {
   position: relative;
   z-index: 1;
 }

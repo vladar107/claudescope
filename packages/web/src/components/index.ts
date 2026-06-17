@@ -15,4 +15,5 @@ export { ErrorBoundary, type ErrorBoundaryProps } from './ErrorBoundary.js';
 export { AgentBadge, agentLabel, type AgentBadgeProps } from './AgentBadge.js';
 export { ModelChips, shortModel, type ModelChipsProps } from './ModelChips.js';
 export { SummaryStrip, type SummaryItem } from './SummaryStrip.js';
+export { SearchField, type SearchFieldProps } from './SearchField.js';
 export { extractImage } from './image.js';

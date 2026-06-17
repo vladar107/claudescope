@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { FilePen, FilePlus, FileText, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react';
 import type { ContentBlock, ToolInteraction } from '@claudescope/shared';
 import { Collapsible } from './Collapsible.js';
 import { CodeBlock } from './CodeBlock.js';
@@ -244,30 +245,68 @@ function ToolBody({
   }
 }
 
+/** Per-tool glyph, so a collapsed tool line reads at a glance. */
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  Read: FileText,
+  Edit: FilePen,
+  MultiEdit: FilePen,
+  Write: FilePlus,
+  Bash: SquareTerminal,
+};
+
+/** Strip common id prefixes and clip, so a call id reads as a short tag. */
+function shortToolId(id: string): string {
+  const stripped = id.replace(/^(call_|toolu_|tool_)/i, '');
+  return stripped.length > 10 ? stripped.slice(0, 8) : stripped;
+}
+
+/** A short, quiet descriptor for the collapsed tool line (file name, else call id). */
+function toolDescriptor(tool: ToolInteraction): string {
+  const fp = str(asRecord(tool.input).file_path);
+  if (fp) return fp.split(/[/\\]/).filter(Boolean).pop() ?? fp;
+  return tool.id ? `call · ${shortToolId(tool.id)}` : '';
+}
+
 /**
- * Collapsible shell for a single tool call. The body is tool-aware: Edit/
- * MultiEdit render a red/green diff, Write/Read/Bash render syntax-highlighted
- * code, and everything else falls back to highlighted JSON + text.
+ * Collapsible shell for a single tool call — quiet by default (one line: an
+ * icon, the tool name, a short descriptor, and a "details" hint), expanding to
+ * the tool-aware body: Edit/MultiEdit render a red/green diff, Write/Read/Bash
+ * render syntax-highlighted code, and everything else highlighted JSON + text.
  */
 export function ToolBlock({ tool, defaultOpen = false, forceOpen = false }: ToolBlockProps) {
   const isError = tool.result?.isError === true;
-  const className = isError ? 'tv-collapsible--tool tv-collapsible--error' : 'tv-collapsible--tool';
   const [userOpen, setUserOpen] = useState(defaultOpen);
+  const open = userOpen || forceOpen;
+  const Icon = TOOL_ICONS[tool.name] ?? Wrench;
+  const className = [
+    'tv-collapsible--tool',
+    'tv-collapsible--quiet',
+    isError ? 'tv-collapsible--error' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <Collapsible
       className={className}
-      open={userOpen || forceOpen}
+      open={open}
       onToggle={setUserOpen}
-      icon="⚙"
+      icon={<Icon size={14} aria-hidden="true" />}
       title={tool.name}
-      subtitle={tool.id}
+      subtitle={toolDescriptor(tool)}
       headerExtra={
-        isError ? (
-          <span className="tv-chip" style={{ color: 'var(--tv-danger)' }}>
-            error
-          </span>
-        ) : null
+        <>
+          {isError ? (
+            <span className="tv-chip" style={{ color: 'var(--tv-danger)' }}>
+              error
+            </span>
+          ) : null}
+          {!open ? (
+            <span className="tv-collapsible__details" aria-hidden="true">
+              details
+            </span>
+          ) : null}
+        </>
       }
     >
       <ToolBody tool={tool} isError={isError} forceOpen={forceOpen} />
