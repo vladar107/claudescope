@@ -50,3 +50,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0023 | [Structured rendering for command turns (slash/bash tags)](./0023-command-turn-rendering.md) | done |
 | 0024 | [Continue session from transcript (terminal auto-open)](./0024-continue-session.md) | abandoned |
 | 0025 | [Continue session: copy the command](./0025-continue-session-copy-command.md) | done |
+| 0026 | [UI/UX review: hierarchy pass across all screens](./0026-ui-ux-review-batches.md) | in-progress |

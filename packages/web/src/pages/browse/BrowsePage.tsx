@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { ProjectMeta } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { AgentBadge, CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
+import { AgentBadge, ErrorBox, formatCost, formatCount, Spinner, SummaryStrip } from '../../components';
 import { timeAgo } from './format.js';
 import './browse.css';
 
@@ -74,6 +74,20 @@ export function BrowsePage() {
     return sortProjects(base, sort);
   }, [projects, filter, sort]);
 
+  // Portfolio totals — computed over ALL projects (not the filtered view) so the
+  // summary stays a stable anchor regardless of the filter box.
+  const portfolio = useMemo(() => {
+    const agents = new Set<string>();
+    let sessions = 0;
+    let cost = 0;
+    for (const p of projects) {
+      p.connectorIds.forEach((id) => agents.add(id));
+      sessions += p.sessionCount;
+      cost += p.totalCostUsd;
+    }
+    return { projects: projects.length, sessions, cost, agents: agents.size };
+  }, [projects]);
+
   return (
     <section>
       <header className="tv-browse__header">
@@ -103,6 +117,17 @@ export function BrowsePage() {
         </div>
       </header>
 
+      {!loading && !error && projects.length > 0 ? (
+        <SummaryStrip
+          items={[
+            { label: 'Projects', value: formatCount(portfolio.projects) },
+            { label: 'Sessions', value: formatCount(portfolio.sessions) },
+            { label: 'Spend', value: formatCost(portfolio.cost) },
+            { label: 'Agents', value: formatCount(portfolio.agents) },
+          ]}
+        />
+      ) : null}
+
       {loading ? (
         <Spinner size="lg" label="Loading projects…" />
       ) : error ? (
@@ -125,20 +150,27 @@ export function BrowsePage() {
 function ProjectCard({ project }: { project: ProjectMeta }) {
   return (
     <Link to={`/projects/${project.id}`} className="tv-card tv-project-card">
-      <div className="tv-project-card__name">{project.displayName}</div>
+      <div className="tv-project-card__top">
+        <div className="tv-project-card__name">{project.displayName}</div>
+        <span className="tv-project-card__time tv-muted">{timeAgo(project.lastActive)}</span>
+      </div>
       <div className="tv-project-card__cwd tv-muted tv-mono">{project.cwd}</div>
-      <div className="tv-project-card__stats">
+      {/* Agents (badges) read at a glance; the numbers live in their own muted
+          meta line below so the two stop competing. */}
+      <div className="tv-project-card__agents">
         {project.connectorIds.map((id) => (
           <AgentBadge key={id} connectorId={id} />
         ))}
-        <span className="tv-chip">
-          <span className="tv-chip__label">sessions</span>
-          <span className="tv-chip__value">{project.sessionCount}</span>
-        </span>
-        <TokenChips totalOnly total={project.totalTokens} />
-        <CostBadge usd={project.totalCostUsd} />
       </div>
-      <div className="tv-project-card__footer tv-muted">{timeAgo(project.lastActive)}</div>
+      <div className="tv-project-card__meta tv-muted">
+        <span>
+          {project.sessionCount} session{project.sessionCount === 1 ? '' : 's'}
+        </span>
+        <span>·</span>
+        <span>{formatCount(project.totalTokens)} tokens</span>
+        <span>·</span>
+        <span className="tv-project-card__cost">{formatCost(project.totalCostUsd)}</span>
+      </div>
     </Link>
   );
 }

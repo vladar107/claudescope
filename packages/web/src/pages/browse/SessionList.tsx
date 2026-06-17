@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { SessionMeta, SessionSort } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { AgentBadge, agentLabel, CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
-import { formatBytes, formatDateTime, shortModel, timeAgo } from './format.js';
+import { AgentBadge, agentLabel, ErrorBox, formatCost, formatCount, ModelChips, Spinner } from '../../components';
+import { formatBytes, formatDateTime, timeAgo } from './format.js';
 import { useProjectContext } from './ProjectLayout.js';
 
 const SORT_OPTIONS: { value: SessionSort; label: string }[] = [
@@ -177,17 +177,17 @@ function SessionRow({ session }: { session: SessionMeta }) {
         </div>
       </Link>
       <div className="tv-session-row__side">
-        <div className="tv-chips">
+        {/* One tidy meta line: agent + models, then the numbers with cost bold. */}
+        <div className="tv-session-row__meta-line">
           <AgentBadge connectorId={session.connectorId} />
-          {session.models.map((m) => (
-            <span key={m} className="tv-chip tv-chip--model">
-              {shortModel(m)}
-            </span>
-          ))}
-        </div>
-        <div className="tv-session-row__numbers">
-          <TokenChips totalOnly total={session.totalTokens} />
-          <CostBadge usd={session.totalCostUsd} />
+          <ModelChips models={session.models} />
+          <span className="tv-session-row__sep" aria-hidden="true">
+            │
+          </span>
+          <span className="tv-session-row__tokens tv-muted">
+            {formatCount(session.totalTokens)}
+          </span>
+          <span className="tv-session-row__cost">{formatCost(session.totalCostUsd)}</span>
         </div>
         {session.prUrl ? (
           <a

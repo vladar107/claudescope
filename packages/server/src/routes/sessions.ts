@@ -49,6 +49,7 @@ function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
     hasSidechain: rd.bool('has_sidechain'),
     connectorId: rd.str('connector_id') || 'claude-code',
   };
+  if (rd.bool('title_derived')) meta.titleDerived = true;
   const gitBranch = rd.str('git_branch');
   if (gitBranch) meta.gitBranch = gitBranch;
   const prUrl = rd.str('pr_url');

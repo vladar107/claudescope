@@ -46,6 +46,20 @@ export function timeAgo(iso: string | undefined): string {
   return `${Math.floor(mon / 12)}y ago`;
 }
 
+/** Compact elapsed duration between two ISO timestamps (e.g. "1h 23m", "45m", "30s"). */
+export function formatDuration(startIso: string | undefined, endIso: string | undefined): string {
+  if (!startIso || !endIso) return '';
+  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  const rem = min % 60;
+  return rem ? `${hr}h ${rem}m` : `${hr}h`;
+}
+
 /** Human-readable byte size (e.g. "1.3 MB"). */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
@@ -59,11 +73,6 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(value < 10 && unit > 0 ? 1 : 0)} ${units[unit]}`;
 }
 
-/** Shorten a model id for chip display (drops the date suffix). */
-export function shortModel(model: string): string {
-  if (model === '<synthetic>') return 'synthetic';
-  // e.g. "claude-opus-4-8-20250101" -> "opus-4-8"
-  const stripped = model.replace(/^claude-/, '');
-  const m = /^([a-z]+-\d+-\d+)/.exec(stripped);
-  return m?.[1] ?? stripped;
-}
+// `shortModel` now lives with the shared <ModelChips> component; re-exported
+// here so existing browse/session imports keep their path.
+export { shortModel } from '../../components/ModelChips.js';

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
+import { Cpu, FolderOpen, LineChart, Monitor, Moon, Search, Sun, type LucideIcon } from 'lucide-react';
 import type { SourceInfo } from '@claudescope/shared';
 import { ErrorBoundary } from './components';
 import { api } from './api/client.js';
@@ -18,22 +19,22 @@ import { ProjectMemoryPage } from './pages/memory/ProjectMemoryPage.js';
 interface NavItem {
   to: string;
   label: string;
-  icon: string;
+  icon: LucideIcon;
   /** `end` for routes that should only match exactly (the index route). */
   end?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: '/', label: 'Browse', icon: '📁', end: true },
-  { to: '/memory', label: 'Memory', icon: '🧠' },
-  { to: '/search', label: 'Search', icon: '🔍' },
-  { to: '/analytics', label: 'Analytics', icon: '📊' },
+  { to: '/', label: 'Browse', icon: FolderOpen, end: true },
+  { to: '/memory', label: 'Memory', icon: Cpu },
+  { to: '/search', label: 'Search', icon: Search },
+  { to: '/analytics', label: 'Analytics', icon: LineChart },
 ];
 
-const THEME_OPTIONS: { value: ThemeChoice; label: string; icon: string }[] = [
-  { value: 'system', label: 'System', icon: '🖥' },
-  { value: 'light', label: 'Light', icon: '☀' },
-  { value: 'dark', label: 'Dark', icon: '🌙' },
+const THEME_OPTIONS: { value: ThemeChoice; label: string; icon: LucideIcon }[] = [
+  { value: 'system', label: 'System', icon: Monitor },
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
 ];
 
 /** Segmented System / Light / Dark theme control. */
@@ -41,18 +42,21 @@ function ThemeToggle() {
   const { theme, setTheme } = useTheme();
   return (
     <div className="tv-theme-toggle" role="group" aria-label="Theme">
-      {THEME_OPTIONS.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          className={theme === o.value ? 'tv-theme-toggle__btn is-active' : 'tv-theme-toggle__btn'}
-          onClick={() => setTheme(o.value)}
-          title={`${o.label} theme`}
-          aria-pressed={theme === o.value}
-        >
-          <span aria-hidden="true">{o.icon}</span>
-        </button>
-      ))}
+      {THEME_OPTIONS.map((o) => {
+        const Icon = o.icon;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            className={theme === o.value ? 'tv-theme-toggle__btn is-active' : 'tv-theme-toggle__btn'}
+            onClick={() => setTheme(o.value)}
+            title={`${o.label} theme`}
+            aria-pressed={theme === o.value}
+          >
+            <Icon size={15} aria-hidden="true" />
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -76,15 +80,15 @@ function Sidebar() {
       <NavLink to="/" className="tv-nav__brand" end>
         Claudescope
       </NavLink>
-      {NAV_ITEMS.map((item) => (
+      {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
         <NavLink
-          key={item.to}
-          to={item.to}
-          end={item.end}
+          key={to}
+          to={to}
+          end={end}
           className={({ isActive }) => (isActive ? 'tv-nav__link is-active' : 'tv-nav__link')}
         >
-          <span aria-hidden="true">{item.icon}</span>
-          {item.label}
+          <Icon size={16} aria-hidden="true" />
+          {label}
         </NavLink>
       ))}
       <div className="tv-nav__spacer" />

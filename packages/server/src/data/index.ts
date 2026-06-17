@@ -21,6 +21,7 @@ import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { connectors } from '../connectors/registry.js';
 import type { AgentConnector, DiscoveredFile } from '../connectors/types.js';
 import { loadPricing } from './pricing.js';
+import { cleanFallbackTitle } from './title.js';
 
 /** Tracks whether the initial index build has finished (server readiness). */
 let ready = false;
@@ -257,24 +258,14 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
         bool_or(is_sidechain) AS has_sidechain,
         list_distinct(list(model) FILTER (WHERE model IS NOT NULL)) AS model_list
       FROM events GROUP BY session_id
-    ),
-    first_user AS (
-      -- Title fallback: the first user turn's text, whitespace-collapsed and
-      -- clipped. Used when there's no explicit ai-title (e.g. all Codex
-      -- sessions, and Claude sessions that were never auto-titled).
-      SELECT session_id, snippet FROM (
-        SELECT
-          session_id,
-          trim(left(regexp_replace(text_content, '\\s+', ' ', 'g'), 80)) AS snippet,
-          row_number() OVER (PARTITION BY session_id ORDER BY ts ASC NULLS LAST) AS rn
-        FROM events
-        WHERE role = 'user' AND text_content IS NOT NULL AND length(trim(text_content)) > 0
-      ) WHERE rn = 1
     )
     SELECT
       a.session_id AS id,
       mc.cwd AS project_cwd,
-      COALESCE(NULLIF(t.title, ''), NULLIF(fu.snippet, ''), '') AS title,
+      -- Real stored ai-title only; the cleaned first-message fallback (and the
+      -- title_derived flag) is applied by applyFallbackTitles below.
+      COALESCE(NULLIF(t.title, ''), '') AS title,
+      FALSE AS title_derived,
       a.started_at,
       a.ended_at,
       a.message_count,
@@ -294,7 +285,6 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
     FROM agg a
     LEFT JOIN modal_cwd mc ON mc.session_id = a.session_id
     LEFT JOIN titles t ON t.session_id = a.session_id
-    LEFT JOIN first_user fu ON fu.session_id = a.session_id
     LEFT JOIN pr_links p ON p.session_id = a.session_id
     LEFT JOIN file_size fs ON fs.session_id = a.session_id
     LEFT JOIN session_connector sc ON sc.session_id = a.session_id
@@ -308,6 +298,44 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
       ORDER BY ts DESC NULLS LAST LIMIT 1
     )
   `);
+
+  await applyFallbackTitles(conn);
+}
+
+/**
+ * Fill in fallback titles for sessions with no real stored title, by cleaning
+ * the first user message in TS (see {@link cleanFallbackTitle}). Runs after the
+ * derived `sessions` rebuild, so it only touches rows whose `title` came back
+ * empty. Cleaning happens in TS — not SQL — so markup/wrapper-blob stripping can
+ * be tested as a pure function and stays deterministic across re-index.
+ *
+ * The raw first user turn per untitled session is fetched in one query (capped
+ * to a few KB per row — cleaning only needs the head), then each cleaned title
+ * is written back with `title_derived = TRUE`.
+ */
+async function applyFallbackTitles(conn: DuckDBConnection): Promise<void> {
+  const rows = await queryRows(
+    conn,
+    `
+    SELECT session_id, raw FROM (
+      SELECT
+        e.session_id,
+        left(e.text_content, 4096) AS raw,
+        row_number() OVER (PARTITION BY e.session_id ORDER BY e.ts ASC NULLS LAST) AS rn
+      FROM events e
+      JOIN sessions s ON s.id = e.session_id AND COALESCE(s.title, '') = ''
+      WHERE e.role = 'user' AND e.text_content IS NOT NULL AND length(trim(e.text_content)) > 0
+    ) WHERE rn = 1
+    `,
+  );
+
+  for (const r of rows) {
+    const title = cleanFallbackTitle(r.raw != null ? String(r.raw) : null);
+    if (title.length === 0) continue;
+    await conn.run(
+      `UPDATE sessions SET title = ${sqlString(title)}, title_derived = TRUE WHERE id = ${sqlString(String(r.session_id))}`,
+    );
+  }
 }
 
 /** (Re)build the BM25 full-text index over event text. */

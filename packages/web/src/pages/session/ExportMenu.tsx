@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Download } from 'lucide-react';
 import type { SessionDetailResponse } from '@claudescope/shared';
 import { sessionToMarkdown } from './export.js';
 
@@ -54,7 +55,7 @@ export function ExportMenu({ data }: { data: SessionDetailResponse }) {
           setOpen((o) => !o);
         }}
       >
-        ⤓ Export
+        <Download size={14} aria-hidden="true" /> Export
       </summary>
       <div className="tv-export__menu">
         <label className="tv-export__opt">

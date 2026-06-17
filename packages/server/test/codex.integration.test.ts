@@ -105,8 +105,10 @@ describe('Codex session indexing', () => {
     expect(sessions.map((s: { id: string }) => s.id)).toEqual(['codex-sess-1']);
     expect(sessions[0].models).toContain('gpt-5.4');
     expect(sessions[0].connectorId).toBe('codex');
-    // Codex has no ai-title, so the title falls back to the first user message.
+    // Codex has no ai-title, so the title falls back to the (cleaned) first user
+    // message and is flagged derived so the UI can mark it "from first message".
     expect(sessions[0].title).toBe('find the needle in this codex haystack');
+    expect(sessions[0].titleDerived).toBe(true);
   });
 
   it('tags the project with its agent and groups analytics by agent', async () => {

@@ -23,7 +23,8 @@
 // (a derived cache) is discarded and rebuilt from source — see db/duckdb.ts.
 // v5: Codex title fallback (first user message) + `<image …>` placeholder strip.
 // v6: usage dedup by billed API call (message_id / forked_from_session_id / usage_canonical).
-export const SCHEMA_VERSION = 6;
+// v7: fallback title cleaning (strip markup/wrapper blobs) + `title_derived` flag.
+export const SCHEMA_VERSION = 7;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -70,6 +71,9 @@ export const SCHEMA_DDL: readonly string[] = [
      id            VARCHAR PRIMARY KEY,
      project_cwd   VARCHAR,
      title         VARCHAR,
+     -- TRUE when title was derived from the first user message (cleaned) rather
+     -- than a real stored title -- lets the UI mark it "from first message".
+     title_derived BOOLEAN DEFAULT FALSE,
      started_at    TIMESTAMP,
      ended_at      TIMESTAMP,
      message_count BIGINT DEFAULT 0,

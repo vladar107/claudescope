@@ -22,7 +22,7 @@ import type {
   ProjectMeta,
 } from '@claudescope/shared';
 import { api } from '../../api/client.js';
-import { CostBadge, ErrorBox, Spinner } from '../../components/index.js';
+import { ErrorBox, Spinner } from '../../components/index.js';
 import { BreakdownChart } from './BreakdownChart.js';
 import type { BreakdownMetric, BreakdownSort } from './BreakdownChart.js';
 import { TimeSeriesChart } from './TimeSeriesChart.js';
@@ -287,14 +287,35 @@ function SummaryCards({
   }
   if (!totals) return null;
 
+  // Reconcile the headline: total = input + output + cache. Cache reads usually
+  // dominate, which is why the big number looks unexplained without the split.
+  const cacheTokens = totals.cacheReadTokens + totals.cacheCreationTokens;
+  const cacheReadShare = totals.totalTokens > 0 ? totals.cacheReadTokens / totals.totalTokens : 0;
+
   return (
     <div className="tv-analytics__cards">
       <StatCard
         label="Total tokens"
         value={formatCount(totals.totalTokens)}
-        sub={`${formatCount(totals.inputTokens)} in · ${formatCount(totals.outputTokens)} out`}
+        sub={
+          <span className="tv-stat-card__tokens">
+            <TokenMiniBar
+              input={totals.inputTokens}
+              output={totals.outputTokens}
+              cache={cacheTokens}
+            />
+            <span>
+              {formatCount(totals.inputTokens)} in · {formatCount(totals.outputTokens)} out ·{' '}
+              {formatCount(cacheTokens)} cache
+            </span>
+          </span>
+        }
       />
-      <StatCard label="Total cost" value={formatCost(totals.costUsd)} sub={<CostBadge usd={totals.costUsd} />} />
+      <StatCard
+        label="Total cost"
+        value={formatCost(totals.costUsd)}
+        sub={`list-price estimate · ${formatPct(cacheReadShare)} of tokens cache-read`}
+      />
       <StatCard
         label="Assistant messages"
         value={formatCount(totals.messageCount)}
@@ -353,6 +374,23 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: R
       <span className="tv-stat-card__value">{value}</span>
       {sub != null && <span className="tv-stat-card__sub">{sub}</span>}
     </div>
+  );
+}
+
+/**
+ * A thin stacked bar showing how the total token count splits into input /
+ * output / cache, so the headline number visibly reconciles. Spans (not divs)
+ * so it nests inside the card's sub `<span>`; cache is muted since it dominates.
+ */
+function TokenMiniBar({ input, output, cache }: { input: number; output: number; cache: number }) {
+  const total = input + output + cache || 1;
+  const pct = (n: number) => `${(n / total) * 100}%`;
+  return (
+    <span className="tv-tokenbar" aria-hidden="true">
+      <span className="tv-tokenbar__seg tv-tokenbar__in" style={{ width: pct(input) }} />
+      <span className="tv-tokenbar__seg tv-tokenbar__out" style={{ width: pct(output) }} />
+      <span className="tv-tokenbar__seg tv-tokenbar__cache" style={{ width: pct(cache) }} />
+    </span>
   );
 }
 

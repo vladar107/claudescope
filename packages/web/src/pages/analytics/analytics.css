@@ -115,6 +115,32 @@
   font-size: var(--tv-fs-sm);
   color: var(--tv-fg-muted);
 }
+/* Total-tokens breakdown: a mini reconcile bar above the in/out/cache legend. */
+.tv-stat-card__tokens {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-1);
+}
+.tv-tokenbar {
+  display: flex;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--tv-bg-inset);
+}
+.tv-tokenbar__seg {
+  height: 100%;
+}
+.tv-tokenbar__in {
+  background: var(--tv-accent);
+}
+.tv-tokenbar__out {
+  background: var(--tv-assistant);
+}
+.tv-tokenbar__cache {
+  background: var(--tv-border-strong);
+}
 
 /* Chart cards */
 .tv-analytics__charts {

@@ -340,9 +340,10 @@ describe('stale aux row cleanup', () => {
 
     await reindex();
 
-    // Confirm the ai-title is picked up on first index.
+    // Confirm the ai-title is picked up on first index (a real title, not derived).
     const before = (await get('/api/sessions/sessC')).json();
     expect(before.meta.title).toBe('AI Generated Title');
+    expect(before.meta.titleDerived).toBeFalsy();
 
     // Rewrite the file WITHOUT the ai-title line. Change the content slightly
     // so mtime+size differ and the (mtime,size) check triggers a reload.
@@ -356,10 +357,12 @@ describe('stale aux row cleanup', () => {
 
     await reindex();
 
-    // The stale ai-title must be gone; title should fall back to first user message.
+    // The stale ai-title must be gone; title should fall back to the first user
+    // message and now be flagged derived.
     const after = (await get('/api/sessions/sessC')).json();
     expect(after.meta.title).not.toBe('AI Generated Title');
     expect(after.meta.title).toContain('first user message for sessC');
+    expect(after.meta.titleDerived).toBe(true);
   });
 });
 

@@ -1,4 +1,5 @@
 import { Fragment, memo, useContext, useEffect, useRef, useState } from 'react';
+import { Puzzle } from 'lucide-react';
 import type { SubagentRun, ThreadBlock, ThreadItem } from '@claudescope/shared';
 import { ClampedText, Collapsible, ErrorBoundary, ErrorBox, TokenChips } from '../../components';
 import { formatDateTime, shortModel } from '../browse/format.js';
@@ -322,7 +323,8 @@ export function SubagentJumpMenu({ subagents }: { subagents: SubagentRun[] }) {
           setOpen((o) => !o);
         }}
       >
-        🧩 Subagents <span className="tv-subagent-menu__count">{subagents.length}</span>
+        <Puzzle size={14} aria-hidden="true" /> Subagents{' '}
+        <span className="tv-subagent-menu__count">{subagents.length}</span>
       </summary>
       <ul className="tv-subagent-menu__list">
         {subagents.map((s) => (

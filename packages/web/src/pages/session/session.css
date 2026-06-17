@@ -48,22 +48,111 @@
   min-width: 0;
 }
 
-.tv-session__title {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 var(--tv-space-2);
-  display: flex;
+/* Refresh + (matches the menu summaries) — a quiet accent action in the top bar. */
+.tv-session__action {
+  display: inline-flex;
   align-items: center;
-  gap: var(--tv-space-2);
-  line-height: 1.3;
+  gap: var(--tv-space-1);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-accent);
+}
+.tv-session__action:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.tv-session__action:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 
-.tv-session__meta {
+/* Tier one: title row, with the PR action promoted to the right. */
+.tv-session__titlebar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--tv-space-3);
+  margin-bottom: var(--tv-space-2);
+}
+.tv-session__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--tv-space-2);
+  line-height: 1.3;
+  word-break: break-word;
+}
+/* "untitled · from first message" — an honest, quiet marker, not a real title. */
+.tv-session__derived {
+  font-weight: 400;
+  color: var(--tv-fg-faint);
+}
+/* PR as a real bordered action, not a chip lost in the meta row. */
+.tv-session__pr-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-1);
+  flex: 0 0 auto;
+  padding: var(--tv-space-1) var(--tv-space-3);
+  border: 1px solid var(--tv-accent);
+  border-radius: var(--tv-radius-sm);
+  color: var(--tv-accent);
   font-size: var(--tv-fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tv-session__pr-btn:hover {
+  background: var(--tv-accent-muted);
+  text-decoration: none;
+}
+
+/* Tier one stats: cost is the boldest figure; models + tokens + duration follow. */
+.tv-session__primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-md);
+  margin-bottom: var(--tv-space-2);
+}
+.tv-session__sep {
+  color: var(--tv-border-strong);
+}
+.tv-session__cost {
+  font-size: var(--tv-fs-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tv-session__tokens {
+  color: var(--tv-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tier two: counts, branch, timestamps, size — muted, below a divider. The
+   divider is full-bleed (negative side margins cancel the header padding) so it
+   matches the header's full-width bottom border; a padded divider read as a
+   shorter "middle" line sandwiched between two full-width ones. */
+.tv-session__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tv-space-2) var(--tv-space-3);
+  font-size: var(--tv-fs-sm);
+  border-top: 1px solid var(--tv-border);
+  margin: 0 calc(-1 * var(--tv-space-5));
+  padding: var(--tv-space-2) var(--tv-space-5) 0;
+}
+.tv-session__meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-1);
 }
 
 /* Thread */
@@ -248,6 +337,9 @@
   display: inline-block;
 }
 .tv-subagent-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-1);
   cursor: pointer;
   list-style: none;
   font-size: var(--tv-fs-sm);
@@ -319,7 +411,11 @@
 .tv-session__tabs {
   display: flex;
   gap: var(--tv-space-1);
-  margin-bottom: var(--tv-space-4);
+  /* Full-bleed border (negative side margins cancel the page padding, padding
+     re-insets the tab labels) so this line aligns with the header's full-width
+     dividers above it rather than stopping short at the content edge. */
+  margin: 0 calc(-1 * var(--tv-space-5)) var(--tv-space-4);
+  padding: 0 var(--tv-space-5);
   border-bottom: 1px solid var(--tv-border);
 }
 .tv-tab {
@@ -407,6 +503,9 @@
   display: inline-block;
 }
 .tv-export > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-1);
   cursor: pointer;
   list-style: none;
   font-size: var(--tv-fs-sm);
@@ -450,6 +549,9 @@
   display: inline-block;
 }
 .tv-continue > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-1);
   cursor: pointer;
   list-style: none;
   font-size: var(--tv-fs-sm);
@@ -464,36 +566,81 @@
   z-index: 20;
   top: calc(100% + var(--tv-space-1));
   left: 0;
-  width: 340px;
-  max-width: 80vw;
-  padding: var(--tv-space-2);
+  width: 380px;
+  max-width: 86vw;
+  padding: var(--tv-space-3);
   background: var(--tv-bg-elevated);
   border: 1px solid var(--tv-border-strong);
   border-radius: var(--tv-radius);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
-.tv-continue__hint {
-  margin: 0 0 var(--tv-space-2);
+.tv-continue__head {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-md);
+}
+.tv-continue__lead {
+  margin: var(--tv-space-1) 0 var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-muted);
+}
+.tv-continue__ctx {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tv-space-1);
+  padding-bottom: var(--tv-space-3);
+  border-bottom: 1px solid var(--tv-border);
+}
+/* Each option (Resume / Fork) reads as its own block, explained in a line. */
+.tv-continue__opt {
+  padding-top: var(--tv-space-3);
+}
+.tv-continue__opt-head {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-md);
+}
+.tv-continue__opt-desc {
+  margin: var(--tv-space-1) 0 var(--tv-space-2);
   font-size: var(--tv-fs-sm);
   color: var(--tv-fg-muted);
 }
 .tv-continue__cmd {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--tv-space-2);
-  margin-bottom: var(--tv-space-2);
 }
+/* Full command — wraps, never truncated. */
 .tv-continue__cmd-text {
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
-  white-space: nowrap;
-  padding: var(--tv-space-1) var(--tv-space-2);
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: var(--tv-space-2);
   background: var(--tv-bg-inset);
   border: 1px solid var(--tv-border);
   border-radius: var(--tv-radius-sm);
   font-size: var(--tv-fs-sm);
   color: var(--tv-fg);
+}
+.tv-continue__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-1);
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--tv-border-strong);
+  border-radius: var(--tv-radius-sm);
+  color: var(--tv-accent);
+  cursor: pointer;
+  padding: var(--tv-space-1) var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+}
+.tv-continue__copy:hover {
+  background: var(--tv-bg-hover);
 }
 
 /* ── In-session finder ────────────────────────────────────────────────── */
@@ -514,6 +661,8 @@
   box-shadow: 0 0 0 2px var(--tv-accent-muted);
 }
 .tv-finder__icon {
+  display: inline-flex;
+  align-items: center;
   color: var(--tv-fg-muted);
   font-size: var(--tv-fs-md);
 }
