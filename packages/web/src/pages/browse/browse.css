@@ -74,26 +74,47 @@
   background: var(--tv-bg-hover);
   text-decoration: none;
 }
+.tv-project-card__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tv-space-3);
+}
 .tv-project-card__name {
   font-size: var(--tv-fs-lg);
   font-weight: 600;
   word-break: break-word;
 }
+.tv-project-card__time {
+  flex: 0 0 auto;
+  font-size: var(--tv-fs-sm);
+}
 .tv-project-card__cwd {
   font-size: var(--tv-fs-sm);
   word-break: break-all;
 }
-.tv-project-card__stats {
+/* Agent badges on their own row… */
+.tv-project-card__agents {
   display: flex;
   flex-wrap: wrap;
   gap: var(--tv-space-1);
   align-items: center;
   margin-top: var(--tv-space-1);
 }
-.tv-project-card__footer {
+/* …numbers in a muted meta line pinned to the bottom, with cost the bold figure. */
+.tv-project-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tv-space-2);
+  align-items: center;
   font-size: var(--tv-fs-sm);
   margin-top: auto;
   padding-top: var(--tv-space-1);
+}
+.tv-project-card__cost {
+  color: var(--tv-fg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Agent filter — shown inside a project that spans multiple agents. */
@@ -142,6 +163,7 @@
 }
 
 .tv-session-row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -151,6 +173,18 @@
 }
 .tv-session-row:hover {
   border-color: var(--tv-border-strong);
+}
+/* Make the WHOLE card the click target, not just the inner text: the main link
+   stretches an invisible overlay across the row. The right-hand meta sits under
+   it (clicks still open the session); only the PR link is lifted above. */
+.tv-session-row__main::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.tv-session-row__side a {
+  position: relative;
+  z-index: 1;
 }
 .tv-session-row__main {
   display: flex;
@@ -185,10 +219,25 @@
   gap: var(--tv-space-2);
   flex-shrink: 0;
 }
-.tv-session-row__numbers {
+/* One tidy meta line on the right: agent + models · tokens · cost (cost bold). */
+.tv-session-row__meta-line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+}
+.tv-session-row__sep {
+  color: var(--tv-border-strong);
+}
+.tv-session-row__tokens {
+  font-variant-numeric: tabular-nums;
+}
+.tv-session-row__cost {
+  color: var(--tv-fg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .tv-chip--model {

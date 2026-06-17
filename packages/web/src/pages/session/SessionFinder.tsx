@@ -1,4 +1,5 @@
 import type { RefObject } from 'react';
+import { Search } from 'lucide-react';
 import type { RoleFilter } from './search.js';
 
 export interface SessionFinderProps {
@@ -32,7 +33,9 @@ export function SessionFinder({
   const hasQuery = query.trim().length >= 2;
   return (
     <div className="tv-finder" role="search">
-      <span className="tv-finder__icon" aria-hidden="true">⌕</span>
+      <span className="tv-finder__icon" aria-hidden="true">
+        <Search size={14} />
+      </span>
       <input
         ref={inputRef}
         type="text"

@@ -304,6 +304,11 @@ button {
 .tv-chip--cache {
   border-color: #3fb95055;
 }
+/* Overflow chip ("+N") for capped lists like <ModelChips>; the rest are in its title. */
+.tv-chip--more {
+  cursor: default;
+  color: var(--tv-fg-muted);
+}
 
 .tv-cost-badge {
   display: inline-flex;
@@ -694,6 +699,36 @@ mark {
   font-family: var(--tv-font-mono);
 }
 
+/* Summary strip — compact stat tiles anchoring a list view (portfolio / project). */
+.tv-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tv-space-2);
+  margin-bottom: var(--tv-space-4);
+}
+.tv-summary__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 92px;
+  padding: var(--tv-space-2) var(--tv-space-3);
+  background: var(--tv-bg-elevated);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+}
+.tv-summary__label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tv-fg-faint);
+}
+.tv-summary__value {
+  font-size: var(--tv-fs-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
 /* --------------------------------------------------------------------------
    Responsive — desktop-first, adapting down to small laptops. The project /
    analytics grids already reflow (auto-fill/auto-fit), so this mainly tightens
@@ -715,15 +750,12 @@ mark {
     --tv-nav-width: 56px;
   }
   /* Collapse nav items to their icons. `font-size: 0` hides the bare label text
-     node while the icon span re-asserts its own size. */
+     node; the icon is an SVG with intrinsic dimensions, so it stays visible. */
   .tv-nav__link {
     justify-content: center;
     gap: 0;
     font-size: 0;
     padding: var(--tv-space-2);
-  }
-  .tv-nav__link > span[aria-hidden] {
-    font-size: var(--tv-fs-md);
   }
   .tv-nav__brand {
     font-size: 0;

@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { ChevronRight } from 'lucide-react';
 
 /**
  * Generic collapsible panel used as the shell for tool and thinking blocks.
@@ -62,7 +63,7 @@ export function Collapsible({
         onClick={toggle}
       >
         <span className="tv-collapsible__chevron" aria-hidden="true">
-          ▶
+          <ChevronRight size={14} />
         </span>
         {icon ? <span className="tv-collapsible__icon">{icon}</span> : null}
         <span className="tv-collapsible__title">{title}</span>

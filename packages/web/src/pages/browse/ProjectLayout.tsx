@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useOutletContext, useParams } from 'react-router-dom';
 import type { ProjectMeta } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
+import { formatCost, formatCount, SummaryStrip } from '../../components';
 import '../memory/memory.css';
 
 export interface ProjectOutletContext {
@@ -76,6 +77,17 @@ export function ProjectLayout() {
           ) : null}
         </div>
       </header>
+
+      {project ? (
+        <SummaryStrip
+          items={[
+            { label: 'Sessions', value: formatCount(project.sessionCount) },
+            { label: 'Tokens', value: formatCount(project.totalTokens) },
+            { label: 'Cost', value: formatCost(project.totalCostUsd) },
+            { label: 'Agents', value: formatCount(project.connectorIds.length) },
+          ]}
+        />
+      ) : null}
 
       <div className="tv-memory-tabs" role="tablist" aria-label="Project view">
         <NavLink to={`/projects/${encodeURIComponent(projectId)}`} end className={tabClass} role="tab">

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { ArrowUpRight, GitBranch, GitPullRequest, MessageSquare, RefreshCw, Wrench } from 'lucide-react';
 import type { SessionDetailResponse, SubagentRun } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { AgentBadge, CostBadge, ErrorBox, Spinner, TokenChips } from '../../components';
-import { formatBytes, formatDateTime, shortModel } from '../browse/format.js';
+import { AgentBadge, ErrorBox, formatCost, formatCount, ModelChips, Spinner } from '../../components';
+import { formatBytes, formatDateTime, formatDuration } from '../browse/format.js';
 import { hasRenderableContent } from './blocks.js';
 import { SubagentBlock, SubagentJumpMenu, ThreadList, useHashTarget } from './ThreadView.js';
 import { useProgressiveMount } from './useProgressiveMount.js';
@@ -119,6 +120,7 @@ function SessionView({
 }) {
   const { meta, thread, subagents } = data;
   const title = meta.title || 'Untitled session';
+  const duration = formatDuration(meta.startedAt, meta.endedAt);
   const [searchParams] = useSearchParams();
 
   // Only render turns that actually carry visible content.
@@ -364,11 +366,18 @@ function SessionView({
             ) : null}
           </nav>
           <SubagentJumpMenu subagents={subagents} />
-          {data.resume ? <ContinueMenu resume={data.resume} /> : null}
+          {data.resume ? (
+            <ContinueMenu
+              resume={data.resume}
+              connectorId={meta.connectorId}
+              projectName={meta.projectDisplayName}
+              branch={meta.gitBranch}
+            />
+          ) : null}
           <ExportMenu data={data} />
           <button
             type="button"
-            className="tv-linkbtn"
+            className="tv-session__action"
             onClick={onRefresh}
             disabled={refreshing}
             title="Reload the latest messages without losing your place (⌘R)"
@@ -376,7 +385,9 @@ function SessionView({
             {refreshing ? (
               <Spinner size="sm" label="Refreshing…" />
             ) : (
-              <>⟳ Refresh</>
+              <>
+                <RefreshCw size={14} aria-hidden="true" /> Refresh
+              </>
             )}
           </button>
           <SessionFinder
@@ -391,41 +402,67 @@ function SessionView({
             inputRef={inputRef}
           />
         </div>
-        <h1 className="tv-session__title" title={title}>
-          {title}
-          {meta.hasSidechain ? (
-            <span className="tv-chip tv-chip--sidechain" title="Includes subagent/sidechain transcripts">
-              {subagents.length} subagent{subagents.length === 1 ? '' : 's'}
-            </span>
-          ) : null}
-        </h1>
-        <div className="tv-session__meta">
-          <AgentBadge connectorId={meta.connectorId} />
-          <span className="tv-muted">{formatDateTime(meta.startedAt)}</span>
-          <span className="tv-muted">→ {formatDateTime(meta.endedAt)}</span>
-          <span className="tv-muted">{meta.messageCount} msgs</span>
-          <span className="tv-muted">{meta.toolCallCount} tools</span>
-          {meta.gitBranch ? <span className="tv-mono tv-muted">⎇ {meta.gitBranch}</span> : null}
-          <span className="tv-muted">{formatBytes(meta.sizeBytes)}</span>
-          <span className="tv-chips">
-            {meta.models.map((m) => (
-              <span key={m} className="tv-chip tv-chip--model">
-                {shortModel(m)}
+
+        {/* Tier one: the title, with the PR action promoted to the right. */}
+        <div className="tv-session__titlebar">
+          <h1 className="tv-session__title" title={title}>
+            {title}
+            {meta.titleDerived ? (
+              <span
+                className="tv-chip tv-session__derived"
+                title="No stored title — derived from the first message"
+              >
+                untitled · from first message
               </span>
-            ))}
-          </span>
-          <TokenChips totalOnly total={meta.totalTokens} />
-          <CostBadge usd={meta.totalCostUsd} />
+            ) : null}
+            {meta.hasSidechain ? (
+              <span className="tv-chip tv-chip--sidechain" title="Includes subagent/sidechain transcripts">
+                {subagents.length} subagent{subagents.length === 1 ? '' : 's'}
+              </span>
+            ) : null}
+          </h1>
           {meta.prUrl ? (
             <a
               href={meta.prUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="tv-chip tv-chip--pr"
+              className="tv-session__pr-btn"
             >
-              PR ↗
+              <GitPullRequest size={14} aria-hidden="true" /> PR
+              <ArrowUpRight size={12} aria-hidden="true" />
             </a>
           ) : null}
+        </div>
+
+        {/* Tier one stats: agent + models, then cost (the bold figure) + tokens + duration. */}
+        <div className="tv-session__primary">
+          <AgentBadge connectorId={meta.connectorId} />
+          <ModelChips models={meta.models} />
+          <span className="tv-session__sep" aria-hidden="true">
+            │
+          </span>
+          <span className="tv-session__cost">{formatCost(meta.totalCostUsd)}</span>
+          <span className="tv-session__tokens">{formatCount(meta.totalTokens)} tokens</span>
+          {duration ? <span className="tv-muted">{duration}</span> : null}
+        </div>
+
+        {/* Tier two: counts, branch, timestamps, size — present, not loud. */}
+        <div className="tv-session__meta tv-muted">
+          <span className="tv-session__meta-item">
+            <MessageSquare size={13} aria-hidden="true" /> {meta.messageCount} messages
+          </span>
+          <span className="tv-session__meta-item">
+            <Wrench size={13} aria-hidden="true" /> {meta.toolCallCount} tools
+          </span>
+          {meta.gitBranch ? (
+            <span className="tv-session__meta-item tv-mono" title="git branch">
+              <GitBranch size={13} aria-hidden="true" /> {meta.gitBranch}
+            </span>
+          ) : null}
+          <span>
+            {formatDateTime(meta.startedAt)} → {formatDateTime(meta.endedAt)}
+          </span>
+          <span>{formatBytes(meta.sizeBytes)}</span>
         </div>
       </header>
 
