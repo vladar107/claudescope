@@ -150,6 +150,20 @@ export type ProjectsResponse = ProjectMeta[];
 /** GET /api/sessions */
 export type SessionsResponse = SessionMeta[];
 
+/**
+ * The command(s) to reopen a session in the agent's own CLI, for the user to
+ * copy and run. Present only when the session's connector knows a resume command
+ * (all current agents). Built server-side from the indexed session id + cwd.
+ */
+export interface ResumeInfo {
+  /** Working directory the command runs in. */
+  cwd: string;
+  /** POSIX command that appends to the original session. */
+  resumeCommand: string;
+  /** POSIX command that forks into a new session; absent when the agent has no CLI fork. */
+  forkCommand?: string;
+}
+
 /** GET /api/sessions/:id */
 export interface SessionDetailResponse {
   meta: SessionMeta;
@@ -157,6 +171,8 @@ export interface SessionDetailResponse {
   thread: ThreadItem[];
   /** Subagent runs, each linked to its spawn point via `toolUseId`/`spawnUuid`. */
   subagents: SubagentRun[];
+  /** Resume/fork commands for this session, when the connector supports it. */
+  resume?: ResumeInfo;
 }
 
 /** A full-text search hit in agent memory (instruction file or distilled fact). */

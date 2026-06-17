@@ -124,6 +124,26 @@ export interface AgentConnector {
    * of scope: surfacing it would require reading arbitrary project dirs.)
    */
   projectMemory?(): AgentMemoryDir[];
+
+  /**
+   * Optional: how to reopen this session in the agent's own CLI. Returns the
+   * argv to exec (the server wraps it with `cd <cwd> && …`), or null when the
+   * agent has no resume command. `sessionId` is the indexed session id, which
+   * for every current connector is already the native id the CLI expects.
+   */
+  resumeSpec?(sessionId: string): ResumeSpec | null;
+}
+
+/**
+ * The command(s) to reopen a session in an agent's CLI, as structured argv so
+ * the copy-paste string and the macOS launcher script are both derived from the
+ * same tokens (quoted once, in `connectors/resume.ts`).
+ */
+export interface ResumeSpec {
+  /** argv that appends to the original session, e.g. `['claude','--resume',id]`. */
+  resumeArgv: string[];
+  /** argv that forks into a new session; omit when the agent has no CLI fork. */
+  forkArgv?: string[];
 }
 
 /**

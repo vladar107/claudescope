@@ -200,6 +200,15 @@ describe('GET /api/sessions/:id', () => {
   it('404s on an unknown session', async () => {
     expect((await get('/api/sessions/does-not-exist')).statusCode).toBe(404);
   });
+
+  it('attaches resume/fork commands for a Claude session', async () => {
+    const detail = (await get('/api/sessions/sessA')).json();
+    expect(detail.resume).toEqual({
+      cwd: '/tmp/projA',
+      resumeCommand: 'cd /tmp/projA && claude --resume sessA',
+      forkCommand: 'cd /tmp/projA && claude --resume sessA --fork-session',
+    });
+  });
 });
 
 describe('GET /api/search', () => {

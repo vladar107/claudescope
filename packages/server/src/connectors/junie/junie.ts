@@ -149,4 +149,6 @@ export const junieConnector: AgentConnector = {
   auxProjections,
   loadSession,
   globalMemory,
+  // Junie CLI resumes by id; it has no command-line fork, so resume only.
+  resumeSpec: (id) => ({ resumeArgv: ['junie', '--session-id', id] }),
 };

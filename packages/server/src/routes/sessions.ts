@@ -18,6 +18,8 @@ import { displayNameFromCwd, projectIdFromCwd } from '../data/project-id.js';
 import { toIso } from './projects.js';
 import { assembleThread, buildSubagentRuns } from '../data/parser.js';
 import { loadSessionData } from '../data/session-loader.js';
+import { connectorById } from '../connectors/registry.js';
+import { buildResumeInfo } from '../connectors/resume.js';
 
 const SORT_SQL: Record<SessionSort, string> = {
   recent: 'ended_at DESC NULLS LAST',
@@ -111,7 +113,12 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
       const thread = assembleThread(mainEvents);
       const subagents = buildSubagentRuns(thread, subagentSources);
 
-      return { meta, thread, subagents };
+      const cwd = readRow(rows[0] as Record<string, unknown>, 'sessions').str('project_cwd');
+      const resume = buildResumeInfo(connectorById(meta.connectorId), id, cwd || null);
+
+      const res: SessionDetailResponse = { meta, thread, subagents };
+      if (resume) res.resume = resume;
+      return res;
     },
   );
 }

@@ -296,4 +296,8 @@ export const claudeCodeConnector: AgentConnector = {
   loadSession,
   globalMemory,
   projectMemory,
+  resumeSpec: (id) => ({
+    resumeArgv: ['claude', '--resume', id],
+    forkArgv: ['claude', '--resume', id, '--fork-session'],
+  }),
 };
