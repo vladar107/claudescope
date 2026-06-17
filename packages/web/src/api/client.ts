@@ -7,6 +7,7 @@
 import type {
   AnalyticsGroupBy,
   AnalyticsResponse,
+  ContinueResponse,
   HealthResponse,
   MemoryResponse,
   ProjectMemoryResponse,
@@ -120,6 +121,19 @@ export const api = {
   /** GET /api/sessions/:id */
   getSession(id: string, signal?: AbortSignal): Promise<SessionDetailResponse> {
     return request<SessionDetailResponse>(`/sessions/${encodeURIComponent(id)}`, { signal });
+  },
+
+  /** POST /api/sessions/:id/continue — open the session in the agent's CLI (macOS). */
+  continueSession(
+    id: string,
+    mode: 'resume' | 'fork',
+    signal?: AbortSignal,
+  ): Promise<ContinueResponse> {
+    return request<ContinueResponse>(`/sessions/${encodeURIComponent(id)}/continue`, {
+      method: 'POST',
+      body: { mode },
+      signal,
+    });
   },
 
   /** GET /api/search?q=&project=&type= */

@@ -110,4 +110,6 @@ export const copilotConnector: AgentConnector = {
   auxProjections,
   loadSession,
   globalMemory: copilotGlobalMemory,
+  // Copilot CLI has no command-line fork (only an in-session `/fork`), so resume only.
+  resumeSpec: (id) => ({ resumeArgv: ['copilot', '--resume', id] }),
 };

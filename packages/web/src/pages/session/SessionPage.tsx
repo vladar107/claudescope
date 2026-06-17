@@ -10,6 +10,7 @@ import { useProgressiveMount } from './useProgressiveMount.js';
 import { ChangesetPanel } from './ChangesetPanel.js';
 import { buildChangeset } from './changeset.js';
 import { ExportMenu } from './ExportMenu.js';
+import { ContinueMenu } from './ContinueMenu.js';
 import { SessionSearchContext } from './SearchContext.js';
 import {
   buildSearchCorpus,
@@ -363,6 +364,7 @@ function SessionView({
             ) : null}
           </nav>
           <SubagentJumpMenu subagents={subagents} />
+          {data.resume ? <ContinueMenu sessionId={meta.id} resume={data.resume} /> : null}
           <ExportMenu data={data} />
           <button
             type="button"

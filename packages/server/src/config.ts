@@ -132,6 +132,13 @@ export const CLAUDESCOPE_HOME = expandHome(
 export const DUCKDB_PATH = process.env.DUCKDB_PATH ?? join(CLAUDESCOPE_HOME, 'index.duckdb');
 
 /**
+ * App-owned dir for the macOS `.command` launcher scripts the "continue session"
+ * feature writes before `open`-ing them. Lives under the state dir, never any
+ * agent source. Files are tiny and overwritten per (session, mode).
+ */
+export const LAUNCHERS_DIR = join(CLAUDESCOPE_HOME, 'launchers');
+
+/**
  * Read-only pricing template shipped inside the package. Seeds the user copy on
  * first run and is the fallback when no user copy exists. Resolved for both the
  * bundled layout (`<pkg>/pricing.default.json` next to the bundle) and the dev

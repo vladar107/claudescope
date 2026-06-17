@@ -200,6 +200,31 @@ describe('GET /api/sessions/:id', () => {
   it('404s on an unknown session', async () => {
     expect((await get('/api/sessions/does-not-exist')).statusCode).toBe(404);
   });
+
+  it('attaches resume/fork commands for a Claude session', async () => {
+    const detail = (await get('/api/sessions/sessA')).json();
+    expect(detail.resume).toMatchObject({
+      cwd: '/tmp/projA',
+      resumeCommand: 'cd /tmp/projA && claude --resume sessA',
+      forkCommand: 'cd /tmp/projA && claude --resume sessA --fork-session',
+      canAutoOpen: process.platform === 'darwin',
+    });
+  });
+});
+
+describe('POST /api/sessions/:id/continue (guards only — never launches)', () => {
+  // We exercise only the rejection paths so no real `open` is spawned: an
+  // unknown session 404s before any launch, and an invalid mode 400s first.
+  const post = (url: string, body: unknown) =>
+    app.inject({ method: 'POST', url, payload: body });
+
+  it('404s on an unknown session', async () => {
+    expect((await post('/api/sessions/nope/continue', { mode: 'resume' })).statusCode).toBe(404);
+  });
+
+  it('400s on an invalid mode', async () => {
+    expect((await post('/api/sessions/sessA/continue', { mode: 'bogus' })).statusCode).toBe(400);
+  });
 });
 
 describe('GET /api/search', () => {

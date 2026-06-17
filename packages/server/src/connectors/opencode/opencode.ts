@@ -116,4 +116,8 @@ export const opencodeConnector: AgentConnector = {
   eventsProjectionSql,
   auxProjections,
   loadSession,
+  resumeSpec: (id) => ({
+    resumeArgv: ['opencode', '--session', id],
+    forkArgv: ['opencode', '--session', id, '--fork'],
+  }),
 };

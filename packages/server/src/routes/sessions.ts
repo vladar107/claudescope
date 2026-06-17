@@ -8,6 +8,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import type {
+  ContinueResponse,
   SessionDetailResponse,
   SessionMeta,
   SessionSort,
@@ -18,6 +19,11 @@ import { displayNameFromCwd, projectIdFromCwd } from '../data/project-id.js';
 import { toIso } from './projects.js';
 import { assembleThread, buildSubagentRuns } from '../data/parser.js';
 import { loadSessionData } from '../data/session-loader.js';
+import { connectorById } from '../connectors/registry.js';
+import { buildResumeInfo, resolveContinue } from '../connectors/resume.js';
+import { launchTerminal } from '../util/terminal.js';
+
+const IS_MAC = process.platform === 'darwin';
 
 const SORT_SQL: Record<SessionSort, string> = {
   recent: 'ended_at DESC NULLS LAST',
@@ -111,7 +117,47 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
       const thread = assembleThread(mainEvents);
       const subagents = buildSubagentRuns(thread, subagentSources);
 
-      return { meta, thread, subagents };
+      const cwd = readRow(rows[0] as Record<string, unknown>, 'sessions').str('project_cwd');
+      const resume = buildResumeInfo(connectorById(meta.connectorId), id, cwd || null, IS_MAC);
+
+      const res: SessionDetailResponse = { meta, thread, subagents };
+      if (resume) res.resume = resume;
+      return res;
+    },
+  );
+
+  // POST /api/sessions/:id/continue — open the session in the agent's own CLI by
+  // writing a launcher and `open`-ing it (macOS only). The client sends only a
+  // `mode`; the server rebuilds argv from the connector, so no command string
+  // ever crosses the wire. Non-macOS callers use the copy command instead.
+  app.post<{ Params: { id: string }; Body: { mode?: string } }>(
+    '/api/sessions/:id/continue',
+    async (req, reply): Promise<ContinueResponse | void> => {
+      const conn = await getConnection();
+      const id = req.params.id;
+
+      const rows = await queryRows(conn, `SELECT * FROM sessions WHERE id = ${sqlString(id)}`);
+      if (rows.length === 0) {
+        reply.code(404).send({ error: 'Session not found' });
+        return;
+      }
+      const rd = readRow(rows[0] as Record<string, unknown>, 'sessions');
+      const cwd = rd.str('project_cwd');
+      const connector = connectorById(rd.str('connector_id') || 'claude-code');
+
+      const resolved = resolveContinue(connector.resumeSpec?.(id), {
+        cwd: cwd || null,
+        mode: req.body?.mode ?? '',
+        connectorLabel: connector.label,
+        isMac: IS_MAC,
+      });
+      if (!resolved.ok) {
+        reply.code(resolved.status).send({ error: resolved.error });
+        return;
+      }
+
+      launchTerminal(id, req.body?.mode === 'fork' ? 'fork' : 'resume', resolved.cwd, resolved.argv);
+      return { launched: true };
     },
   );
 }

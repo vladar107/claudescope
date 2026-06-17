@@ -150,6 +150,23 @@ export type ProjectsResponse = ProjectMeta[];
 /** GET /api/sessions */
 export type SessionsResponse = SessionMeta[];
 
+/**
+ * How to reopen a session in the agent's own CLI. Present only when the
+ * session's connector knows a resume command (all current agents). The server
+ * is the single source of truth: it builds these strings from the indexed
+ * session id + cwd, so the client never constructs a command itself.
+ */
+export interface ResumeInfo {
+  /** Working directory the command runs in. */
+  cwd: string;
+  /** POSIX command that appends to the original session. */
+  resumeCommand: string;
+  /** POSIX command that forks into a new session; absent when the agent has no CLI fork. */
+  forkCommand?: string;
+  /** True when this server can open a terminal itself (macOS only). */
+  canAutoOpen: boolean;
+}
+
 /** GET /api/sessions/:id */
 export interface SessionDetailResponse {
   meta: SessionMeta;
@@ -157,6 +174,18 @@ export interface SessionDetailResponse {
   thread: ThreadItem[];
   /** Subagent runs, each linked to its spawn point via `toolUseId`/`spawnUuid`. */
   subagents: SubagentRun[];
+  /** Resume/fork commands for this session, when the connector supports it. */
+  resume?: ResumeInfo;
+}
+
+/** POST /api/sessions/:id/continue — open the session in the agent's CLI (macOS). */
+export interface ContinueRequest {
+  mode: 'resume' | 'fork';
+}
+
+/** POST /api/sessions/:id/continue response. */
+export interface ContinueResponse {
+  launched: boolean;
 }
 
 /** A full-text search hit in agent memory (instruction file or distilled fact). */
