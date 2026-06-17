@@ -264,11 +264,13 @@ button {
 .tv-main {
   overflow-y: auto;
 }
-/* Cap + left-align the content so it doesn't stretch edge-to-edge on wide
-   screens (which left titles/meta far apart). The padding lives here, so the
-   session header's negative-margin full-bleed resolves to this box's edges. */
+/* Cap + center the content so it doesn't stretch edge-to-edge on wide screens
+   (which left titles/meta far apart) and the leftover space splits evenly
+   instead of piling up on the right. The padding lives here, so the session
+   header's negative-margin full-bleed resolves to this box's edges. */
 .tv-main__inner {
   max-width: 1200px;
+  margin: 0 auto;
   padding: var(--tv-space-5);
 }
 

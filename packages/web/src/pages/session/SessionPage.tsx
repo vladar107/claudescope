@@ -512,7 +512,7 @@ function SessionView({
           className="tv-session__changes"
           style={tab === 'changes' ? undefined : { display: 'none' }}
         >
-          <ChangesetPanel changes={changes} />
+          <ChangesetPanel changes={changes} active={tab === 'changes'} />
         </div>
       ) : null}
     </div>

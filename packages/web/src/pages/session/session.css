@@ -488,48 +488,105 @@
 .tv-diff-del {
   color: var(--tv-danger);
 }
-.tv-changeset__list {
-  list-style: none;
-  margin: 0;
-  padding: 0 0 var(--tv-space-6);
-  display: flex;
-  flex-direction: column;
-  gap: var(--tv-space-2);
-}
-.tv-changeset__summary {
-  width: 100%;
-  cursor: pointer;
+/* Top bar: the session diffstat. */
+.tv-changeset__bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: var(--tv-space-3);
+  margin-bottom: var(--tv-space-3);
+}
+.tv-changeset__diffstat {
+  display: inline-flex;
+  align-items: center;
   gap: var(--tv-space-2);
-  padding: var(--tv-space-2);
-  border: 1px solid var(--tv-border);
+  font-size: var(--tv-fs-md);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Master/detail: file rail on the left, the selected file's diff on the right. */
+.tv-changeset__panes {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  gap: var(--tv-space-4);
+  align-items: start;
+  padding-bottom: var(--tv-space-6);
+}
+.tv-changeset__rail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tv-changeset__railbtn {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tv-space-2);
+  padding: var(--tv-space-1) var(--tv-space-2);
+  background: transparent;
+  border: 0;
   border-radius: var(--tv-radius-sm);
-  background: var(--tv-bg-inset);
-  color: inherit;
+  color: var(--tv-fg);
+  font-family: inherit;
   text-align: left;
+  cursor: pointer;
 }
-.tv-changeset__summary:hover {
-  background: var(--tv-bg-elevated);
+.tv-changeset__railbtn:hover {
+  background: var(--tv-bg-hover);
 }
-.tv-changeset__chevron {
+.tv-changeset__railbtn.is-active {
+  background: var(--tv-bg-inset);
+}
+.tv-changeset__railpath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tv-fs-sm);
+}
+.tv-changeset__railstat {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+/* Per-file count of edit operations (pencil + N). */
+.tv-changeset__edits {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   color: var(--tv-fg-muted);
 }
-.tv-changeset__path {
-  flex: 1 1 auto;
-  word-break: break-all;
+.tv-changeset__detail {
+  min-width: 0;
 }
-.tv-changeset__stat {
-  flex: 0 0 auto;
-  font-family: var(--tv-font-mono, monospace);
+.tv-changeset__detail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tv-space-3);
+  margin-bottom: var(--tv-space-2);
+  padding-bottom: var(--tv-space-2);
+  border-bottom: 1px solid var(--tv-border);
+}
+.tv-changeset__detail-path {
   font-size: var(--tv-fs-sm);
+  word-break: break-all;
+  color: var(--tv-fg-muted);
+}
+.tv-changeset__detail-path strong {
+  color: var(--tv-fg);
 }
 .tv-changeset__diffs {
   display: flex;
   flex-direction: column;
   gap: var(--tv-space-2);
-  padding: var(--tv-space-2) 0 var(--tv-space-2) var(--tv-space-3);
 }
 
 /* ── Export menu ──────────────────────────────────────────────────────── */

@@ -1,8 +1,8 @@
 # 0026 — UI/UX review: hierarchy pass across all screens
 
-- **Status:** in-progress <!-- proposed | in-progress | done | superseded | abandoned -->
+- **Status:** done <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-06-17
-- **PR:** Batch 1 — [#32](https://github.com/vladar107/claudescope/pull/32) · Batch 2 — [#33](https://github.com/vladar107/claudescope/pull/33)
+- **PR:** Batch 1 — [#32](https://github.com/vladar107/claudescope/pull/32) · Batch 2 — [#33](https://github.com/vladar107/claudescope/pull/33) · Batch 3 — [#34](https://github.com/vladar107/claudescope/pull/34)
 
 ## Context
 
@@ -62,9 +62,10 @@ hierarchy and an app-wide icon set.
 - **Clean the fallback title in the shared path, not a Codex special-case.** pi has
   the identical no-stored-title behavior, so fixing `first_user` covers both
   (and is deterministic, so titles stay stable across re-index).
-- **Viewed-state for Files-changed is client-only (localStorage).** It is ephemeral
-  review UI state; persisting it server-side would add an index/state surface for
-  no benefit and the read-only-sources rule stays untouched.
+- **Files-changed has no "viewed" review state.** The mockup's per-file "viewed"
+  checkbox and "N of M viewed" progress bar were dropped on review; the tab is a
+  jump rail + diffstat only, so no client/server state is needed. Instead the rail
+  shows a per-file **edit count** (how many change operations touched each file).
 - **Cap model chips at three, `+N` reveals the rest on hover.** Sessions/projects
   can surface 1–5+ models; a shared `ModelChips` component owns the cap so the
   session header, session rows, and any card stay consistent.
@@ -131,10 +132,11 @@ hierarchy and an app-wide icon set.
 
 ### Batch 3 — biggest build (scope carefully)
 
-13. **④ Files-changed jump rail + diffstat + viewed** (`ChangesetPanel.tsx`,
-    `LineDiff`) — two-pane layout (file rail left, diff right), session-level
-    diffstat (`+412 −86`) up top, per-file +/− in the rail, and a "viewed" checkbox
-    per file (localStorage) with an "N of M viewed" progress indicator.
+13. **④ Files-changed jump rail + diffstat** (`ChangesetPanel.tsx`, `LineDiff`) —
+    two-pane layout (file rail left, diff right), session-level diffstat
+    (`+412 −86`) up top, per-file edit count + +/− in the rail. (The mockup's
+    per-file "viewed" checkbox + "N of M viewed" progress bar were dropped on
+    review.)
 
 ## Files affected
 
