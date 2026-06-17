@@ -488,48 +488,127 @@
 .tv-diff-del {
   color: var(--tv-danger);
 }
-.tv-changeset__list {
+/* Top bar: session diffstat (left) + "N of M viewed" progress (right). */
+.tv-changeset__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--tv-space-3);
+  margin-bottom: var(--tv-space-3);
+}
+.tv-changeset__diffstat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-md);
+  font-variant-numeric: tabular-nums;
+}
+.tv-changeset__progress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+}
+.tv-changeset__progress-bar {
+  display: inline-block;
+  width: 120px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--tv-bg-inset);
+  overflow: hidden;
+}
+.tv-changeset__progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--tv-success);
+  transition: width 0.15s ease;
+}
+
+/* Master/detail: file rail on the left, the selected file's diff on the right. */
+.tv-changeset__panes {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  gap: var(--tv-space-4);
+  align-items: start;
+  padding-bottom: var(--tv-space-6);
+}
+.tv-changeset__rail {
   list-style: none;
   margin: 0;
-  padding: 0 0 var(--tv-space-6);
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--tv-space-2);
+  gap: 1px;
 }
-.tv-changeset__summary {
-  width: 100%;
-  cursor: pointer;
+.tv-changeset__railrow {
   display: flex;
   align-items: center;
   gap: var(--tv-space-2);
-  padding: var(--tv-space-2);
-  border: 1px solid var(--tv-border);
+  padding: var(--tv-space-1) var(--tv-space-2);
   border-radius: var(--tv-radius-sm);
+}
+.tv-changeset__railrow.is-active {
   background: var(--tv-bg-inset);
-  color: inherit;
-  text-align: left;
 }
-.tv-changeset__summary:hover {
-  background: var(--tv-bg-elevated);
-}
-.tv-changeset__chevron {
+.tv-changeset__viewed {
   flex: 0 0 auto;
+  accent-color: var(--tv-success);
+  cursor: pointer;
+}
+.tv-changeset__railbtn {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tv-space-2);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--tv-fg);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tv-changeset__railpath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tv-fs-sm);
+}
+.tv-changeset__railstat {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 5px;
+  font-size: var(--tv-fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.tv-changeset__detail {
+  min-width: 0;
+}
+.tv-changeset__detail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tv-space-3);
+  margin-bottom: var(--tv-space-2);
+  padding-bottom: var(--tv-space-2);
+  border-bottom: 1px solid var(--tv-border);
+}
+.tv-changeset__detail-path {
+  font-size: var(--tv-fs-sm);
+  word-break: break-all;
   color: var(--tv-fg-muted);
 }
-.tv-changeset__path {
-  flex: 1 1 auto;
-  word-break: break-all;
-}
-.tv-changeset__stat {
-  flex: 0 0 auto;
-  font-family: var(--tv-font-mono, monospace);
-  font-size: var(--tv-fs-sm);
+.tv-changeset__detail-path strong {
+  color: var(--tv-fg);
 }
 .tv-changeset__diffs {
   display: flex;
   flex-direction: column;
   gap: var(--tv-space-2);
-  padding: var(--tv-space-2) 0 var(--tv-space-2) var(--tv-space-3);
 }
 
 /* ── Export menu ──────────────────────────────────────────────────────── */
