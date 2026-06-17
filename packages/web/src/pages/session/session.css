@@ -540,3 +540,50 @@
   color: var(--tv-fg-muted);
   font-family: var(--tv-font-mono, monospace);
 }
+.tv-system-turn__empty {
+  margin: 0;
+  padding: var(--tv-space-2) var(--tv-space-3);
+  font-size: var(--tv-fs-sm);
+  font-style: italic;
+}
+
+/* Parsed command turns (slash / bash) rendered as clean prompt + output. */
+.tv-cmd {
+  padding: var(--tv-space-2) var(--tv-space-3);
+}
+.tv-cmd__slash,
+.tv-cmd__line {
+  display: block;
+  font-family: var(--tv-font-mono, monospace);
+  font-size: var(--tv-fs-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tv-cmd__slash {
+  padding: var(--tv-space-1) var(--tv-space-2);
+  border-radius: var(--tv-radius-sm);
+  background: var(--tv-bg-inset);
+  color: var(--tv-accent);
+  width: fit-content;
+  max-width: 100%;
+}
+.tv-cmd__args {
+  color: var(--tv-fg-muted);
+  font-weight: 400;
+}
+.tv-cmd__prompt {
+  color: var(--tv-success);
+  user-select: none;
+}
+.tv-cmd__stderr {
+  border-left: 2px solid var(--tv-danger);
+}
+.tv-cmd__stderr-label {
+  display: block;
+  padding: var(--tv-space-1) var(--tv-space-3) 0;
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-danger);
+}
+.tv-cmd__stderr .tv-system-turn__pre {
+  color: var(--tv-danger);
+}
