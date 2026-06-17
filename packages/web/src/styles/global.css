@@ -27,6 +27,11 @@
 
   --tv-accent: #58a6ff;
   --tv-accent-muted: #1f6feb33;
+  /* Filled action buttons use a deeper, more saturated blue than the (lighter)
+     link accent, so white text stays legible. */
+  --tv-btn-primary: #1f6feb;
+  --tv-btn-primary-hover: #388bfd;
+  --tv-on-accent: #ffffff;
   --tv-success: #3fb950;
   --tv-warning: #d29922;
   --tv-danger: #f85149;
@@ -90,6 +95,9 @@
 
   --tv-accent: #0969da;
   --tv-accent-muted: #0969da1a;
+  --tv-btn-primary: #0969da;
+  --tv-btn-primary-hover: #0860ca;
+  --tv-on-accent: #ffffff;
   --tv-success: #1a7f37;
   --tv-warning: #9a6700;
   --tv-danger: #cf222e;
@@ -746,6 +754,99 @@ mark {
   border: 1px solid var(--tv-border);
   border-radius: var(--tv-radius);
   padding: var(--tv-space-4);
+}
+
+/* Buttons — one shared vocabulary. Primary = filled deep blue with readable
+   text; secondary = bordered; sm = compact (inline, e.g. a Copy next to code). */
+.tv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tv-space-1);
+  padding: var(--tv-space-2) var(--tv-space-4);
+  border: 1px solid transparent;
+  border-radius: var(--tv-radius);
+  font-family: inherit;
+  font-size: var(--tv-fs-md);
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.tv-btn--primary {
+  background: var(--tv-btn-primary);
+  color: var(--tv-on-accent);
+}
+.tv-btn--primary:hover {
+  background: var(--tv-btn-primary-hover);
+  text-decoration: none;
+}
+.tv-btn--secondary {
+  background: transparent;
+  border-color: var(--tv-border-strong);
+  color: var(--tv-fg);
+}
+.tv-btn--secondary:hover {
+  background: var(--tv-bg-hover);
+  text-decoration: none;
+}
+.tv-btn--sm {
+  padding: var(--tv-space-1) var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+  font-weight: 500;
+}
+
+/* Search/filter field — one shared control (magnifier in-field + clear ×). */
+.tv-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  min-width: 220px;
+  padding: 0 var(--tv-space-2) 0 var(--tv-space-3);
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+}
+.tv-field--grow {
+  flex: 1 1 280px;
+}
+.tv-field:focus-within {
+  border-color: var(--tv-accent);
+  box-shadow: 0 0 0 2px var(--tv-accent-muted);
+}
+.tv-field__icon {
+  flex: 0 0 auto;
+  color: var(--tv-fg-muted);
+}
+.tv-field__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--tv-space-2) 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--tv-fg);
+  font-family: inherit;
+  font-size: var(--tv-fs-md);
+}
+.tv-field__input::placeholder {
+  color: var(--tv-fg-faint);
+}
+.tv-field__clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--tv-radius-sm);
+  color: var(--tv-fg-muted);
+  cursor: pointer;
+}
+.tv-field__clear:hover {
+  color: var(--tv-fg);
+  background: var(--tv-bg-hover);
 }
 
 .tv-muted {

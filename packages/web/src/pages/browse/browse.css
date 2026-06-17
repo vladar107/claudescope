@@ -147,13 +147,17 @@
   color: var(--tv-fg);
 }
 .tv-agent-filter__btn.is-active {
-  border-color: var(--tv-accent);
-  color: var(--tv-fg);
-  background: var(--tv-accent-muted);
+  border-color: var(--tv-btn-primary);
+  background: var(--tv-btn-primary);
+  color: var(--tv-on-accent);
 }
 .tv-agent-filter__count {
   color: var(--tv-fg-faint);
   font-variant-numeric: tabular-nums;
+}
+.tv-agent-filter__btn.is-active .tv-agent-filter__count {
+  color: var(--tv-on-accent);
+  opacity: 0.8;
 }
 
 /* Session list */

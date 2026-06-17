@@ -612,40 +612,9 @@
   padding-top: var(--tv-space-3);
   border-top: 1px solid var(--tv-border);
 }
-/* Download is primary (filled), Copy secondary (bordered). */
+/* Download (primary) stretches; Copy (secondary) sits beside it. */
 .tv-export__download {
   flex: 1 1 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--tv-space-1);
-  background: var(--tv-accent);
-  border: 1px solid var(--tv-accent);
-  color: #fff;
-  border-radius: var(--tv-radius-sm);
-  padding: var(--tv-space-2) var(--tv-space-3);
-  font-size: var(--tv-fs-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-.tv-export__download:hover {
-  filter: brightness(1.08);
-}
-.tv-export__copy {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tv-space-1);
-  background: transparent;
-  border: 1px solid var(--tv-border-strong);
-  color: var(--tv-fg);
-  border-radius: var(--tv-radius-sm);
-  padding: var(--tv-space-2) var(--tv-space-3);
-  font-size: var(--tv-fs-sm);
-  cursor: pointer;
-}
-.tv-export__copy:hover {
-  background: var(--tv-bg-hover);
 }
 
 /* Toggle switch (the redact option). The real <input> is visually hidden. */
@@ -772,21 +741,8 @@
   font-size: var(--tv-fs-sm);
   color: var(--tv-fg);
 }
-.tv-continue__copy {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tv-space-1);
+.tv-continue__cmd .tv-btn {
   flex: 0 0 auto;
-  background: transparent;
-  border: 1px solid var(--tv-border-strong);
-  border-radius: var(--tv-radius-sm);
-  color: var(--tv-accent);
-  cursor: pointer;
-  padding: var(--tv-space-1) var(--tv-space-2);
-  font-size: var(--tv-fs-sm);
-}
-.tv-continue__copy:hover {
-  background: var(--tv-bg-hover);
 }
 
 /* ── In-session finder ────────────────────────────────────────────────── */
@@ -798,7 +754,7 @@
   margin-left: auto; /* pin to the right edge of the crumbs row */
   background: var(--tv-bg-inset);
   border: 1px solid var(--tv-border);
-  border-radius: 999px;
+  border-radius: var(--tv-radius); /* match the shared search field, not a pill */
   padding: 3px 6px 3px 10px;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }

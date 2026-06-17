@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { SessionMeta, SessionSort } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { AgentBadge, agentLabel, ErrorBox, formatCost, formatCount, ModelChips, Spinner } from '../../components';
+import { AgentBadge, agentLabel, ErrorBox, formatCost, formatCount, ModelChips, SearchField, Spinner } from '../../components';
 import { formatBytes, formatDateTime, timeAgo } from './format.js';
 import { useProjectContext } from './ProjectLayout.js';
 
@@ -73,12 +73,11 @@ export function SessionListPage() {
   return (
     <>
       <div className="tv-browse__controls" style={{ marginBottom: 'var(--tv-space-3)' }}>
-        <input
-          className="tv-input"
-          type="search"
-          placeholder="Filter sessions…"
+        <SearchField
           value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+          onChange={setFilter}
+          placeholder="Filter sessions…"
+          ariaLabel="Filter sessions"
         />
         <select
           className="tv-select"

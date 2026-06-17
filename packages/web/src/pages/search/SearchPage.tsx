@@ -26,7 +26,7 @@ import type {
   SearchType,
 } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { AgentBadge, ErrorBox, Spinner } from '../../components';
+import { AgentBadge, ErrorBox, SearchField, Spinner } from '../../components';
 import './search.css';
 
 /** A session's matches, grouped from the flat result list. */
@@ -295,76 +295,52 @@ export function SearchPage() {
       <h1 className="tv-page-title">Search</h1>
 
       <div className="tv-search__controls">
-        <div className="tv-search__field tv-search__field--grow">
-          <label className="tv-search__label" htmlFor="tv-search-q">
-            Query
-          </label>
-          <input
-            id="tv-search-q"
-            className="tv-search__input"
-            type="search"
-            placeholder="Search transcripts…"
-            value={query}
-            autoFocus
-            onChange={(e) => patchParams({ q: e.target.value })}
-          />
-        </div>
-
-        <div className="tv-search__field">
-          <label className="tv-search__label" htmlFor="tv-search-project">
-            Project
-          </label>
+        <SearchField
+          className="tv-field--grow"
+          value={query}
+          onChange={(v) => patchParams({ q: v })}
+          placeholder="Search transcripts…"
+          ariaLabel="Search transcripts"
+          autoFocus
+        />
+        <select
+          className="tv-search__select"
+          value={project}
+          aria-label="Project"
+          onChange={(e) => patchParams({ project: e.target.value })}
+        >
+          <option value="">All projects</option>
+          {projectOptions.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.displayName}
+            </option>
+          ))}
+        </select>
+        <select
+          className="tv-search__select"
+          value={scope}
+          aria-label="Scope"
+          onChange={(e) => patchParams({ scope: e.target.value })}
+        >
+          {SCOPE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        {showRoleFilter ? (
           <select
-            id="tv-search-project"
             className="tv-search__select"
-            value={project}
-            onChange={(e) => patchParams({ project: e.target.value })}
+            value={type}
+            aria-label="Role"
+            onChange={(e) => patchParams({ type: e.target.value })}
           >
-            <option value="">All projects</option>
-            {projectOptions.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.displayName}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="tv-search__field">
-          <label className="tv-search__label" htmlFor="tv-search-scope">
-            Scope
-          </label>
-          <select
-            id="tv-search-scope"
-            className="tv-search__select"
-            value={scope}
-            onChange={(e) => patchParams({ scope: e.target.value })}
-          >
-            {SCOPE_OPTIONS.map((opt) => (
+            {TYPE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
             ))}
           </select>
-        </div>
-
-        {showRoleFilter ? (
-          <div className="tv-search__field">
-            <label className="tv-search__label" htmlFor="tv-search-type">
-              Role
-            </label>
-            <select
-              id="tv-search-type"
-              className="tv-search__select"
-              value={type}
-              onChange={(e) => patchParams({ type: e.target.value })}
-            >
-              {TYPE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
         ) : null}
       </div>
 

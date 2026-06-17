@@ -85,10 +85,10 @@ export function ExportMenu({ data }: { data: SessionDetailResponse }) {
         </label>
 
         <div className="tv-export__actions">
-          <button type="button" className="tv-export__download" onClick={download}>
+          <button type="button" className="tv-btn tv-btn--primary tv-export__download" onClick={download}>
             <Download size={14} aria-hidden="true" /> Download .md
           </button>
-          <button type="button" className="tv-export__copy" onClick={copy}>
+          <button type="button" className="tv-btn tv-btn--secondary" onClick={copy}>
             {copied ? (
               'Copied!'
             ) : (

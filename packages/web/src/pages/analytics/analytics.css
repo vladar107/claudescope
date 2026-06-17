@@ -58,8 +58,9 @@
   color: var(--tv-fg);
 }
 .tv-segmented__btn.is-active {
-  background: var(--tv-accent-muted);
+  background: var(--tv-bg-inset);
   color: var(--tv-fg);
+  font-weight: 600;
 }
 
 .tv-analytics__date {
