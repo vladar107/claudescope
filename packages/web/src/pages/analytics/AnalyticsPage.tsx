@@ -192,9 +192,11 @@ export function AnalyticsPage() {
         <label className="tv-analytics__toggle">
           <input
             type="checkbox"
+            className="tv-switch__input"
             checked={showCache}
             onChange={(e) => setShowCache(e.target.checked)}
           />
+          <span className="tv-switch" aria-hidden="true" />
           Show cache
         </label>
       </div>
@@ -289,24 +291,28 @@ function SummaryCards({
 
   // Reconcile the headline: total = input + output + cache. Cache reads usually
   // dominate, which is why the big number looks unexplained without the split.
+  // "Show cache" governs the headline too — by default the total reflects only
+  // billed input + output, and toggling cache on folds it back into the number,
+  // the reconcile bar, and the legend.
   const cacheTokens = totals.cacheReadTokens + totals.cacheCreationTokens;
+  const totalTokens = showCache ? totals.totalTokens : totals.inputTokens + totals.outputTokens;
   const cacheReadShare = totals.totalTokens > 0 ? totals.cacheReadTokens / totals.totalTokens : 0;
 
   return (
     <div className="tv-analytics__cards">
       <StatCard
         label="Total tokens"
-        value={formatCount(totals.totalTokens)}
+        value={formatCount(totalTokens)}
         sub={
           <span className="tv-stat-card__tokens">
             <TokenMiniBar
               input={totals.inputTokens}
               output={totals.outputTokens}
-              cache={cacheTokens}
+              cache={showCache ? cacheTokens : 0}
             />
             <span>
-              {formatCount(totals.inputTokens)} in · {formatCount(totals.outputTokens)} out ·{' '}
-              {formatCount(cacheTokens)} cache
+              {formatCount(totals.inputTokens)} in · {formatCount(totals.outputTokens)} out
+              {showCache && <> · {formatCount(cacheTokens)} cache</>}
             </span>
           </span>
         }
