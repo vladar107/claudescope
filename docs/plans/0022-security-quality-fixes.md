@@ -1,10 +1,14 @@
 # 0022 — Security & quality fixes: image CSP, Junie path containment, deterministic PR link, memory/search logging, Windows support
 
-- **Status:** in-progress <!-- proposed | in-progress | done | superseded | abandoned -->
+- **Status:** done <!-- proposed | in-progress | done | superseded | abandoned -->
   - PR 1 (F3, F4, C7, C8) merged (#26; CSP/WASM + collapse-chevron follow-up #27).
-  - PR 2 (C6 — Windows support) implemented; pending `windows-latest` CI validation.
+  - PR 2 (C6 — Windows support + `windows-latest` CI runner) merged (#28). The
+    runner ran green; its two surfaced issues (CRLF checkout breaking the CSP hash
+    and shebang'd scripts; parallel-vitest DuckDB extension-install races on
+    Windows) were fixed on-branch (`.gitattributes` LF pin; `fileParallelism: false`
+    on win32 only).
 - **Date:** 2026-06-16
-- **PR:** <link, once opened>
+- **PR:** #26, #27 (PR 1), #28 (PR 2)
 
 ## Context
 
