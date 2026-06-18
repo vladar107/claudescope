@@ -994,11 +994,18 @@ mark {
     content: '◎';
     font-size: var(--tv-fs-lg);
   }
-  /* Stack the theme toggle vertically and drop the source paths to fit the rail. */
+  /* Stack the theme toggle vertically and drop the buttons' horizontal padding:
+     at 56px the side padding would consume the full button width, flex-shrinking
+     the icon to zero and leaving an empty pill. */
   .tv-theme-toggle {
     flex-direction: column;
-    margin: 0 var(--tv-space-1) var(--tv-space-2);
+    gap: var(--tv-space-1);
+    margin: 0 0 var(--tv-space-2);
   }
+  .tv-theme-toggle__btn {
+    padding: var(--tv-space-1) 0;
+  }
+  /* Drop the source paths to fit the rail. */
   .tv-nav__footer {
     display: none;
   }
