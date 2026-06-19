@@ -11,6 +11,13 @@ export function formatPct(ratio: number): string {
   return `${(ratio * 100).toFixed(1)}%`;
 }
 
+/** Per-response cost: keep sub-cent precision (e.g. $0.0011) where formatCost rounds away. */
+export function formatPerCost(n: number): string {
+  if (!Number.isFinite(n)) return '—';
+  if (n >= 0.01) return formatCost(n);
+  return `$${n.toFixed(4)}`;
+}
+
 /**
  * Shorten a group key for axis/legend display. Project slugs can be long, so we
  * keep the trailing path-like segment; model ids drop the date suffix; day keys

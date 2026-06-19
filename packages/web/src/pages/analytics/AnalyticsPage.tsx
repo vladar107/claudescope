@@ -20,6 +20,9 @@ import type {
   AnalyticsResponse,
   AnalyticsTotals,
   ProjectMeta,
+  SessionEfficiencyResponse,
+  SessionEfficiencySort,
+  SortDir,
 } from '@claudescope/shared';
 import { api } from '../../api/client.js';
 import { ErrorBox, Spinner } from '../../components/index.js';
@@ -27,6 +30,7 @@ import { BreakdownChart } from './BreakdownChart.js';
 import type { BreakdownMetric, BreakdownSort } from './BreakdownChart.js';
 import { TimeSeriesChart } from './TimeSeriesChart.js';
 import { formatCount, formatCost, formatPct } from './format.js';
+import { SessionEfficiencyTable } from './SessionEfficiencyTable.js';
 import './analytics.css';
 
 const GROUP_OPTIONS: { value: AnalyticsGroupBy; label: string }[] = [
@@ -60,6 +64,15 @@ export function AnalyticsPage() {
   const [to, setTo] = useState('');
   // Cache tokens dwarf input/output and clutter the charts — hidden by default.
   const [showCache, setShowCache] = useState(false);
+  const [view, setView] = useState<'overview' | 'sessions'>('overview');
+  const [effSort, setEffSort] = useState<SessionEfficiencySort>('cost');
+  const [effDir, setEffDir] = useState<SortDir>('desc');
+  const [eff, setEff] = useState<{
+    data: SessionEfficiencyResponse | null;
+    loading: boolean;
+    error: unknown;
+  }>({ data: null, loading: true, error: null });
+  const [effRetry, setEffRetry] = useState(0);
   // Breakdown chart controls (default to tokens, preserving prior behavior):
   // `metric` picks what the bars render, `sortBy` picks the row order.
   const [metric, setMetric] = useState<BreakdownMetric>('tokens');
@@ -109,6 +122,33 @@ export function AnalyticsPage() {
 
   useEffect(() => load(), [load]);
 
+  useEffect(() => {
+    if (view !== 'sessions') return;
+    const ctrl = new AbortController();
+    setEff((s) => ({ ...s, loading: true, error: null }));
+    api
+      .sessionEfficiency(
+        { from: range.from, to: range.to, sort: effSort, dir: effDir, limit: 50 },
+        ctrl.signal,
+      )
+      .then((data) => setEff({ data, loading: false, error: null }))
+      .catch((error) => {
+        if (ctrl.signal.aborted) return;
+        setEff({ data: null, loading: false, error });
+      });
+    return () => ctrl.abort();
+  }, [view, range.from, range.to, effSort, effDir, effRetry]);
+
+  // Header click: re-clicking the active column flips direction; a new column
+  // starts at descending (largest first).
+  const onEffSort = (key: SessionEfficiencySort) => {
+    if (key === effSort) setEffDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+    else {
+      setEffSort(key);
+      setEffDir('desc');
+    }
+  };
+
   // Load the project list once for id -> displayName mapping. On failure the
   // breakdown falls back to the raw key, so a missing list never blocks it.
   useEffect(() => {
@@ -132,21 +172,45 @@ export function AnalyticsPage() {
 
       <div className="tv-analytics__toolbar">
         <div className="tv-analytics__field">
-          <span className="tv-analytics__field-label">Group by</span>
-          <div className="tv-segmented" role="group" aria-label="Group by">
-            {GROUP_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                className={groupBy === opt.value ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
-                aria-pressed={groupBy === opt.value}
-                onClick={() => setGroupBy(opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
+          <span className="tv-analytics__field-label">View</span>
+          <div className="tv-segmented" role="group" aria-label="View">
+            <button
+              type="button"
+              className={view === 'overview' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
+              aria-pressed={view === 'overview'}
+              onClick={() => setView('overview')}
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              className={view === 'sessions' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
+              aria-pressed={view === 'sessions'}
+              onClick={() => setView('sessions')}
+            >
+              Session efficiency
+            </button>
           </div>
         </div>
+
+        {view === 'overview' && (
+          <div className="tv-analytics__field">
+            <span className="tv-analytics__field-label">Group by</span>
+            <div className="tv-segmented" role="group" aria-label="Group by">
+              {GROUP_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={groupBy === opt.value ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
+                  aria-pressed={groupBy === opt.value}
+                  onClick={() => setGroupBy(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="tv-analytics__field">
           <label className="tv-analytics__field-label" htmlFor="tv-from">
@@ -201,7 +265,29 @@ export function AnalyticsPage() {
         </label>
       </div>
 
-      {error ? (
+      {view === 'sessions' ? (
+        eff.error ? (
+          <ErrorBox
+            error={eff.error}
+            title="Failed to load session efficiency"
+            onRetry={() => setEffRetry((n) => n + 1)}
+          />
+        ) : eff.loading && !eff.data ? (
+          <div className="tv-card">
+            <Spinner label="Loading…" />
+          </div>
+        ) : !eff.data || eff.data.rows.length === 0 ? (
+          <div className="tv-card tv-chart-empty">No sessions in range.</div>
+        ) : (
+          <SessionEfficiencyTable
+            data={eff.data}
+            sort={effSort}
+            dir={effDir}
+            onSortChange={onEffSort}
+            showCache={showCache}
+          />
+        )
+      ) : error ? (
         <ErrorBox error={error} title="Failed to load analytics" onRetry={load} />
       ) : (
         <>

@@ -12,6 +12,7 @@ import { registerProjectsRoute } from './projects.js';
 import { registerSessionsRoutes } from './sessions.js';
 import { registerSearchRoute } from './search.js';
 import { registerAnalyticsRoute } from './analytics.js';
+import { registerSessionEfficiencyRoute } from './analytics-sessions.js';
 import { registerSourcesRoute } from './sources.js';
 import { registerMemoryRoute } from './memory.js';
 
@@ -24,6 +25,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await registerSessionsRoutes(app);
   await registerSearchRoute(app);
   await registerAnalyticsRoute(app);
+  await registerSessionEfficiencyRoute(app);
   await registerSourcesRoute(app);
   await registerMemoryRoute(app);
 

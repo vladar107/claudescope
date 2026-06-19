@@ -147,6 +147,101 @@ export interface AnalyticsQuery {
 }
 
 // ---------------------------------------------------------------------------
+// Session efficiency (per-session ratios)
+// ---------------------------------------------------------------------------
+
+/** Sortable columns for the session-efficiency table. */
+export type SessionEfficiencySort =
+  | 'title'
+  | 'cost'
+  | 'tokens'
+  | 'responses'
+  | 'duration'
+  | 'cacheHitRatio'
+  | 'costPerResponse'
+  | 'tokensPerResponse'
+  | 'toolCallCount'
+  | 'toolCallsPerResponse';
+
+/** Sort direction. */
+export type SortDir = 'asc' | 'desc';
+
+export interface SessionEfficiencyQuery {
+  /** Inclusive ISO lower bound on session START. */
+  from?: string;
+  /** Inclusive ISO upper bound on session START. */
+  to?: string;
+  /** Sort column (default 'cost'). */
+  sort?: SessionEfficiencySort;
+  /** Sort direction (default 'desc'). */
+  dir?: SortDir;
+  /** Max rows returned (default 50). */
+  limit?: number;
+  /** Minimum deduped assistant responses for a session to qualify (default 1, clamped ≥1). */
+  minResponses?: number;
+}
+
+/** One session's efficiency row. Per-response ratios are always defined (D ≥ 1). */
+export interface SessionEfficiencyRow {
+  sessionId: string;
+  title: string;
+  titleDerived: boolean;
+  projectId: string;
+  projectDisplayName: string;
+  connectorId: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  /** D — deduped assistant responses. */
+  responses: number;
+  totalTokens: number;
+  costUsd: number;
+  toolCallCount: number;
+  /** cache_read / (cache_read + cache_write + input), in [0, 1]. */
+  cacheHitRatio: number;
+  costPerResponse: number;
+  tokensPerResponse: number;
+  toolCallsPerResponse: number;
+}
+
+/**
+ * Median + quartiles for one numeric column, over the FULL filtered set (not
+ * just the returned rows). q1/q3 are the basis for the UI's IQR outlier fences.
+ */
+export interface SessionEfficiencyStat {
+  median: number;
+  q1: number;
+  q3: number;
+}
+
+/** GET /api/analytics/sessions */
+export interface SessionEfficiencyResponse {
+  /** Top-N rows by the requested sort. */
+  rows: SessionEfficiencyRow[];
+  summary: {
+    /** Qualifying sessions (post minResponses + date filter). */
+    sessionCount: number;
+    /** Total cost across the full filtered set. */
+    totalCostUsd: number;
+    /** Sum of the 3 highest session costs — for the spend-concentration insight. */
+    top3CostUsd: number;
+    /**
+     * Per-column median + quartiles over the full filtered set. The UI shows the
+     * median as the pinned reference row and derives IQR outlier fences from
+     * q1/q3 for the cache-hit / $-per-response / tools-per-response columns.
+     */
+    columns: {
+      responses: SessionEfficiencyStat;
+      costUsd: SessionEfficiencyStat;
+      costPerResponse: SessionEfficiencyStat;
+      toolCallCount: SessionEfficiencyStat;
+      toolCallsPerResponse: SessionEfficiencyStat;
+      cacheHitRatio: SessionEfficiencyStat;
+    };
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Response bodies
 // ---------------------------------------------------------------------------
 

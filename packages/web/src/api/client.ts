@@ -16,6 +16,9 @@ import type {
   SearchScope,
   SearchType,
   SessionDetailResponse,
+  SessionEfficiencyResponse,
+  SessionEfficiencySort,
+  SortDir,
   SessionSort,
   SessionsResponse,
   SourcesResponse,
@@ -93,6 +96,15 @@ export interface AnalyticsParams {
   to?: string;
 }
 
+export interface SessionEfficiencyParams {
+  from?: string;
+  to?: string;
+  sort?: SessionEfficiencySort;
+  dir?: SortDir;
+  limit?: number;
+  minResponses?: number;
+}
+
 export const api = {
   /** GET /api/health */
   health(signal?: AbortSignal): Promise<HealthResponse> {
@@ -134,6 +146,24 @@ export const api = {
   analytics(params: AnalyticsParams, signal?: AbortSignal): Promise<AnalyticsResponse> {
     return request<AnalyticsResponse>(
       `/analytics${qs({ groupBy: params.groupBy, from: params.from, to: params.to })}`,
+      { signal },
+    );
+  },
+
+  /** GET /api/analytics/sessions?from=&to=&sort=&dir=&limit=&minResponses= */
+  sessionEfficiency(
+    params: SessionEfficiencyParams = {},
+    signal?: AbortSignal,
+  ): Promise<SessionEfficiencyResponse> {
+    return request<SessionEfficiencyResponse>(
+      `/analytics/sessions${qs({
+        from: params.from,
+        to: params.to,
+        sort: params.sort,
+        dir: params.dir,
+        limit: params.limit,
+        minResponses: params.minResponses,
+      })}`,
       { signal },
     );
   },
