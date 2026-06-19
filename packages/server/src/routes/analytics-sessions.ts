@@ -65,6 +65,9 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
           sum(e.cache_write_tokens) FILTER (WHERE e.usage_canonical) AS cache_write_tokens,
           sum(e.cache_read_tokens)  FILTER (WHERE e.usage_canonical) AS cache_read_tokens,
           sum(e.cost_usd)           FILTER (WHERE e.usage_canonical) AS cost_usd,
+          -- tool_use_count is deduped via usage_canonical here (deliberately unlike
+          -- sessions.tool_call_count, which sums it un-deduped) so fork/resume copies
+          -- don't double-count tools — keeping it consistent with the token/cost sums.
           sum(e.tool_use_count)     FILTER (WHERE e.usage_canonical) AS tool_call_count,
           count(*)                  FILTER (WHERE e.usage_canonical) AS responses
         FROM events e
