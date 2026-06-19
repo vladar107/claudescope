@@ -71,6 +71,7 @@ export function AnalyticsPage() {
     loading: boolean;
     error: unknown;
   }>({ data: null, loading: true, error: null });
+  const [effRetry, setEffRetry] = useState(0);
   // Breakdown chart controls (default to tokens, preserving prior behavior):
   // `metric` picks what the bars render, `sortBy` picks the row order.
   const [metric, setMetric] = useState<BreakdownMetric>('tokens');
@@ -135,7 +136,7 @@ export function AnalyticsPage() {
         setEff({ data: null, loading: false, error });
       });
     return () => ctrl.abort();
-  }, [view, range.from, range.to, effSort, minResponses]);
+  }, [view, range.from, range.to, effSort, minResponses, effRetry]);
 
   // Load the project list once for id -> displayName mapping. On failure the
   // breakdown falls back to the raw key, so a missing list never blocks it.
@@ -271,7 +272,7 @@ export function AnalyticsPage() {
 
       {view === 'sessions' ? (
         eff.error ? (
-          <ErrorBox error={eff.error} title="Failed to load session efficiency" onRetry={() => setView('sessions')} />
+          <ErrorBox error={eff.error} title="Failed to load session efficiency" onRetry={() => setEffRetry((n) => n + 1)} />
         ) : (
           <section className="tv-card tv-chart-card">
             <div className="tv-chart-card__head">
