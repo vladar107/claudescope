@@ -147,6 +147,74 @@ export interface AnalyticsQuery {
 }
 
 // ---------------------------------------------------------------------------
+// Session efficiency (per-session ratios)
+// ---------------------------------------------------------------------------
+
+/** Sortable columns for the session-efficiency table. All sort descending. */
+export type SessionEfficiencySort =
+  | 'cost'
+  | 'tokens'
+  | 'responses'
+  | 'duration'
+  | 'cacheHitRatio'
+  | 'costPerResponse'
+  | 'tokensPerResponse'
+  | 'toolCallsPerResponse';
+
+export interface SessionEfficiencyQuery {
+  /** Inclusive ISO lower bound on session START. */
+  from?: string;
+  /** Inclusive ISO upper bound on session START. */
+  to?: string;
+  /** Sort column (default 'cost'). */
+  sort?: SessionEfficiencySort;
+  /** Max rows returned (default 50). */
+  limit?: number;
+  /** Minimum deduped assistant responses for a session to qualify (default 1, clamped ≥1). */
+  minResponses?: number;
+}
+
+/** One session's efficiency row. Per-response ratios are always defined (D ≥ 1). */
+export interface SessionEfficiencyRow {
+  sessionId: string;
+  title: string;
+  titleDerived: boolean;
+  projectId: string;
+  projectDisplayName: string;
+  connectorId: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  /** D — deduped assistant responses. */
+  responses: number;
+  totalTokens: number;
+  costUsd: number;
+  toolCallCount: number;
+  /** cache_read / (cache_read + cache_write + input), in [0, 1]. */
+  cacheHitRatio: number;
+  costPerResponse: number;
+  tokensPerResponse: number;
+  toolCallsPerResponse: number;
+}
+
+/** GET /api/analytics/sessions */
+export interface SessionEfficiencyResponse {
+  /** Top-N rows by the requested sort. */
+  rows: SessionEfficiencyRow[];
+  summary: {
+    /** Qualifying sessions (post minResponses + date filter). */
+    sessionCount: number;
+    /** Medians across the full filtered set (not just the returned rows). */
+    median: {
+      cacheHitRatio: number;
+      costPerResponse: number;
+      tokensPerResponse: number;
+      toolCallsPerResponse: number;
+    };
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Response bodies
 // ---------------------------------------------------------------------------
 
