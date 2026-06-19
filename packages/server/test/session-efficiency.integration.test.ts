@@ -222,4 +222,15 @@ describe('GET /api/analytics/sessions', () => {
       }
     }
   });
+
+  it('computes summary over the full filtered set, independent of limit (Top-N page)', async () => {
+    const page1 = await fetchEff('?minResponses=1&limit=1');
+    const full = await fetchEff('?minResponses=1&limit=50');
+    expect(page1.rows.length).toBe(1);
+    expect(full.rows.length).toBeGreaterThan(1);
+    // sessionCount + medians reflect ALL qualifying sessions, not the returned page.
+    expect(page1.summary.sessionCount).toBe(full.summary.sessionCount);
+    expect(page1.summary.median.cacheHitRatio).toBeCloseTo(full.summary.median.cacheHitRatio, 12);
+    expect(page1.summary.median.costPerResponse).toBeCloseTo(full.summary.median.costPerResponse, 12);
+  });
 });
