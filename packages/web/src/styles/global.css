@@ -169,6 +169,9 @@ button {
 }
 
 .tv-nav__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
   font-size: var(--tv-fs-lg);
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -177,6 +180,12 @@ button {
 }
 .tv-nav__brand:hover {
   text-decoration: none;
+}
+.tv-nav__brand-logo {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--tv-radius-sm);
 }
 
 .tv-nav__link {
@@ -991,14 +1000,14 @@ mark {
     font-size: 0;
     padding: var(--tv-space-2);
   }
+  /* Collapsed rail: hide the wordmark, keep only the logo, centered. */
   .tv-nav__brand {
-    font-size: 0;
+    justify-content: center;
     padding: var(--tv-space-2) 0 var(--tv-space-4);
-    text-align: center;
+    gap: 0;
   }
-  .tv-nav__brand::after {
-    content: '◎';
-    font-size: var(--tv-fs-lg);
+  .tv-nav__brand-text {
+    display: none;
   }
   /* Stack the theme toggle vertically and drop the buttons' horizontal padding:
      at 56px the side padding would consume the full button width, flex-shrinking

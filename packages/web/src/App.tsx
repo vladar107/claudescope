@@ -78,7 +78,15 @@ function Sidebar() {
   return (
     <nav className="tv-nav">
       <NavLink to="/" className="tv-nav__brand" end>
-        Claudescope
+        <img
+          className="tv-nav__brand-logo"
+          src="/favicon.svg"
+          width={24}
+          height={24}
+          alt=""
+          aria-hidden="true"
+        />
+        <span className="tv-nav__brand-text">Claudescope</span>
       </NavLink>
       {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
         <NavLink
