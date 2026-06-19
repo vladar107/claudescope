@@ -18,6 +18,7 @@ import type {
   SessionDetailResponse,
   SessionEfficiencyResponse,
   SessionEfficiencySort,
+  SortDir,
   SessionSort,
   SessionsResponse,
   SourcesResponse,
@@ -99,6 +100,7 @@ export interface SessionEfficiencyParams {
   from?: string;
   to?: string;
   sort?: SessionEfficiencySort;
+  dir?: SortDir;
   limit?: number;
   minResponses?: number;
 }
@@ -148,7 +150,7 @@ export const api = {
     );
   },
 
-  /** GET /api/analytics/sessions?from=&to=&sort=&limit=&minResponses= */
+  /** GET /api/analytics/sessions?from=&to=&sort=&dir=&limit=&minResponses= */
   sessionEfficiency(
     params: SessionEfficiencyParams = {},
     signal?: AbortSignal,
@@ -158,6 +160,7 @@ export const api = {
         from: params.from,
         to: params.to,
         sort: params.sort,
+        dir: params.dir,
         limit: params.limit,
         minResponses: params.minResponses,
       })}`,

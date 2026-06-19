@@ -22,6 +22,7 @@ import type {
   ProjectMeta,
   SessionEfficiencyResponse,
   SessionEfficiencySort,
+  SortDir,
 } from '@claudescope/shared';
 import { api } from '../../api/client.js';
 import { ErrorBox, Spinner } from '../../components/index.js';
@@ -65,6 +66,7 @@ export function AnalyticsPage() {
   const [showCache, setShowCache] = useState(false);
   const [view, setView] = useState<'overview' | 'sessions'>('overview');
   const [effSort, setEffSort] = useState<SessionEfficiencySort>('cost');
+  const [effDir, setEffDir] = useState<SortDir>('desc');
   const [eff, setEff] = useState<{
     data: SessionEfficiencyResponse | null;
     loading: boolean;
@@ -125,14 +127,27 @@ export function AnalyticsPage() {
     const ctrl = new AbortController();
     setEff((s) => ({ ...s, loading: true, error: null }));
     api
-      .sessionEfficiency({ from: range.from, to: range.to, sort: effSort, limit: 50 }, ctrl.signal)
+      .sessionEfficiency(
+        { from: range.from, to: range.to, sort: effSort, dir: effDir, limit: 50 },
+        ctrl.signal,
+      )
       .then((data) => setEff({ data, loading: false, error: null }))
       .catch((error) => {
         if (ctrl.signal.aborted) return;
         setEff({ data: null, loading: false, error });
       });
     return () => ctrl.abort();
-  }, [view, range.from, range.to, effSort, effRetry]);
+  }, [view, range.from, range.to, effSort, effDir, effRetry]);
+
+  // Header click: re-clicking the active column flips direction; a new column
+  // starts at descending (largest first).
+  const onEffSort = (key: SessionEfficiencySort) => {
+    if (key === effSort) setEffDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+    else {
+      setEffSort(key);
+      setEffDir('desc');
+    }
+  };
 
   // Load the project list once for id -> displayName mapping. On failure the
   // breakdown falls back to the raw key, so a missing list never blocks it.
@@ -267,7 +282,8 @@ export function AnalyticsPage() {
           <SessionEfficiencyTable
             data={eff.data}
             sort={effSort}
-            onSortChange={setEffSort}
+            dir={effDir}
+            onSortChange={onEffSort}
             showCache={showCache}
           />
         )

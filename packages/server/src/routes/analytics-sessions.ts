@@ -24,6 +24,7 @@ import { toIso } from './projects.js';
 
 // Whitelist: sort key -> ORDER BY column. Never interpolate the raw param.
 const SORT_EXPR: Record<SessionEfficiencySort, string> = {
+  title: 'title',
   cost: 'cost_usd',
   tokens: 'total_tokens',
   responses: 'responses',
@@ -31,6 +32,7 @@ const SORT_EXPR: Record<SessionEfficiencySort, string> = {
   cacheHitRatio: 'cache_hit_ratio',
   costPerResponse: 'cost_per_response',
   tokensPerResponse: 'tokens_per_response',
+  toolCallCount: 'tool_call_count',
   toolCallsPerResponse: 'tool_calls_per_response',
 };
 
@@ -42,7 +44,14 @@ function clampInt(raw: string | undefined, dflt: number, min: number, max: numbe
 
 export async function registerSessionEfficiencyRoute(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { from?: string; to?: string; sort?: string; limit?: string; minResponses?: string };
+    Querystring: {
+      from?: string;
+      to?: string;
+      sort?: string;
+      dir?: string;
+      limit?: string;
+      minResponses?: string;
+    };
   }>('/api/analytics/sessions', async (req): Promise<SessionEfficiencyResponse> => {
     const conn = await getConnection();
 
@@ -50,6 +59,8 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
       req.query.sort && req.query.sort in SORT_EXPR
         ? (req.query.sort as SessionEfficiencySort)
         : 'cost';
+    // Whitelisted direction (never interpolate the raw param); default desc.
+    const dir = req.query.dir === 'asc' ? 'ASC' : 'DESC';
     const limit = clampInt(req.query.limit, 50, 1, 500);
     const minResponses = clampInt(req.query.minResponses, 1, 1, 1_000_000);
     const fromClause = req.query.from ? `AND s.started_at >= ${sqlString(req.query.from)}::TIMESTAMP` : '';
@@ -116,7 +127,7 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
       conn,
       `${cte}
        SELECT * FROM derived
-       ORDER BY ${SORT_EXPR[sort]} DESC NULLS LAST, started_at DESC NULLS LAST, session_id
+       ORDER BY ${SORT_EXPR[sort]} ${dir} NULLS LAST, started_at DESC NULLS LAST, session_id
        LIMIT ${limit}`,
     );
 

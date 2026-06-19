@@ -2,11 +2,12 @@
  * Session-efficiency table: per-session cost and efficiency ratios, ranked, with
  * a pinned median reference row and uniform IQR outlier flags.
  *
- * Sorting is server-driven (Top-N is computed server-side), so a header click
- * calls onSortChange and the page re-queries. Outlier flags are derived from the
- * per-column quartiles in `summary` (computed over the full filtered set), so the
- * same value is flagged consistently regardless of which page is shown. Rows
- * deep-link to the session. The Cache column appears only when "Show cache" is on.
+ * Sorting is server-driven (Top-N is computed server-side): a header click reports
+ * the column via onSortChange, and the page toggles asc/desc and re-queries. Every
+ * column is sortable. Outlier flags are derived from the per-column quartiles in
+ * `summary` (computed over the full filtered set), so the same value is flagged
+ * consistently regardless of page. Rows deep-link to the session. The Cache column
+ * appears only when "Show cache" is on.
  */
 import { Link } from 'react-router-dom';
 import type {
@@ -14,6 +15,7 @@ import type {
   SessionEfficiencyRow,
   SessionEfficiencySort,
   SessionEfficiencyStat,
+  SortDir,
 } from '@claudescope/shared';
 import { AgentBadge } from '../../components/index.js';
 import { formatCost, formatPct, formatPerCost } from './format.js';
@@ -24,8 +26,7 @@ type ColKey = keyof SessionEfficiencyResponse['summary']['columns'];
 interface Col {
   key: ColKey;
   label: string;
-  /** Present when the column is server-sortable. */
-  sortKey?: SessionEfficiencySort;
+  sortKey: SessionEfficiencySort;
   /** Apply IQR outlier flagging (the ratio columns only). */
   flag?: boolean;
   /** Only rendered when "Show cache" is on. */
@@ -36,10 +37,10 @@ interface Col {
 const intFmt = (n: number) => Math.round(n).toLocaleString();
 
 const COLS: Col[] = [
-  { key: 'responses', label: 'Resp', fmt: intFmt },
+  { key: 'responses', label: 'Resp', sortKey: 'responses', fmt: intFmt },
   { key: 'costUsd', label: 'Cost', sortKey: 'cost', fmt: formatCost },
   { key: 'costPerResponse', label: '$/resp', sortKey: 'costPerResponse', flag: true, fmt: formatPerCost },
-  { key: 'toolCallCount', label: 'Tools', fmt: intFmt },
+  { key: 'toolCallCount', label: 'Tools', sortKey: 'toolCallCount', fmt: intFmt },
   { key: 'toolCallsPerResponse', label: 'Tools/resp', sortKey: 'toolCallsPerResponse', flag: true, fmt: (n) => n.toFixed(2) },
   { key: 'cacheHitRatio', label: 'Cache', sortKey: 'cacheHitRatio', flag: true, cacheOnly: true, fmt: formatPct },
 ];
@@ -51,6 +52,40 @@ function outlierDir(value: number, stat: SessionEfficiencyStat): 'hi' | 'lo' | n
   if (value > stat.q3 + 1.5 * iqr) return 'hi';
   if (value < stat.q1 - 1.5 * iqr) return 'lo';
   return null;
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  active,
+  dir,
+  onSort,
+  className,
+}: {
+  label: string;
+  sortKey: SessionEfficiencySort;
+  active: boolean;
+  dir: SortDir;
+  onSort: (s: SessionEfficiencySort) => void;
+  className: string;
+}) {
+  return (
+    <th className={className} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button
+        type="button"
+        className={active ? 'tv-eff__sort is-active' : 'tv-eff__sort'}
+        aria-pressed={active}
+        onClick={() => onSort(sortKey)}
+      >
+        {label}
+        {active ? (
+          <span className="tv-eff__car" aria-hidden="true">
+            {dir === 'asc' ? '↑' : '↓'}
+          </span>
+        ) : null}
+      </button>
+    </th>
+  );
 }
 
 function NumCell({
@@ -84,11 +119,13 @@ function NumCell({
 export function SessionEfficiencyTable({
   data,
   sort,
+  dir,
   onSortChange,
   showCache,
 }: {
   data: SessionEfficiencyResponse;
   sort: SessionEfficiencySort;
+  dir: SortDir;
   onSortChange: (s: SessionEfficiencySort) => void;
   showCache: boolean;
 }) {
@@ -140,27 +177,24 @@ export function SessionEfficiencyTable({
           <table className="tv-eff__table">
             <thead>
               <tr>
-                <th className="tv-eff__sess">Session</th>
+                <SortHeader
+                  label="Session"
+                  sortKey="title"
+                  className="tv-eff__sess"
+                  active={sort === 'title'}
+                  dir={dir}
+                  onSort={onSortChange}
+                />
                 {cols.map((c) => (
-                  <th key={c.key} className="tv-eff__num">
-                    {c.sortKey ? (
-                      <button
-                        type="button"
-                        className={sort === c.sortKey ? 'tv-eff__sort is-active' : 'tv-eff__sort'}
-                        aria-pressed={sort === c.sortKey}
-                        onClick={() => onSortChange(c.sortKey!)}
-                      >
-                        {c.label}
-                        {sort === c.sortKey ? (
-                          <span className="tv-eff__car" aria-hidden="true">
-                            ↓
-                          </span>
-                        ) : null}
-                      </button>
-                    ) : (
-                      c.label
-                    )}
-                  </th>
+                  <SortHeader
+                    key={c.key}
+                    label={c.label}
+                    sortKey={c.sortKey}
+                    className="tv-eff__num"
+                    active={sort === c.sortKey}
+                    dir={dir}
+                    onSort={onSortChange}
+                  />
                 ))}
               </tr>
             </thead>

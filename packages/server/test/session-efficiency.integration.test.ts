@@ -254,4 +254,17 @@ describe('GET /api/analytics/sessions', () => {
     expect(summary.top3CostUsd).toBeGreaterThan(0);
     expect(summary.top3CostUsd).toBeLessThanOrEqual(summary.totalCostUsd + 1e-9);
   });
+
+  it('honors sort direction (asc is the reverse of desc)', async () => {
+    const desc = await fetchEff('?minResponses=1&sort=cost&dir=desc');
+    const asc = await fetchEff('?minResponses=1&sort=cost&dir=asc');
+    for (let i = 1; i < desc.rows.length; i++) {
+      expect(desc.rows[i].costUsd).toBeLessThanOrEqual(desc.rows[i - 1].costUsd);
+    }
+    for (let i = 1; i < asc.rows.length; i++) {
+      expect(asc.rows[i].costUsd).toBeGreaterThanOrEqual(asc.rows[i - 1].costUsd);
+    }
+    // cheapest session leads asc; priciest leads desc.
+    expect(asc.rows[0].costUsd).toBeLessThanOrEqual(desc.rows[0].costUsd);
+  });
 });

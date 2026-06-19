@@ -150,8 +150,9 @@ export interface AnalyticsQuery {
 // Session efficiency (per-session ratios)
 // ---------------------------------------------------------------------------
 
-/** Sortable columns for the session-efficiency table. All sort descending. */
+/** Sortable columns for the session-efficiency table. */
 export type SessionEfficiencySort =
+  | 'title'
   | 'cost'
   | 'tokens'
   | 'responses'
@@ -159,7 +160,11 @@ export type SessionEfficiencySort =
   | 'cacheHitRatio'
   | 'costPerResponse'
   | 'tokensPerResponse'
+  | 'toolCallCount'
   | 'toolCallsPerResponse';
+
+/** Sort direction. */
+export type SortDir = 'asc' | 'desc';
 
 export interface SessionEfficiencyQuery {
   /** Inclusive ISO lower bound on session START. */
@@ -168,6 +173,8 @@ export interface SessionEfficiencyQuery {
   to?: string;
   /** Sort column (default 'cost'). */
   sort?: SessionEfficiencySort;
+  /** Sort direction (default 'desc'). */
+  dir?: SortDir;
   /** Max rows returned (default 50). */
   limit?: number;
   /** Minimum deduped assistant responses for a session to qualify (default 1, clamped ≥1). */
