@@ -1,8 +1,8 @@
 # 0027 — Session-efficiency analytics (per-session ratios table)
 
-- **Status:** proposed <!-- proposed | in-progress | done | superseded | abandoned -->
+- **Status:** done <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-06-18
-- **PR:** <link, once opened>
+- **PR:** #38
 
 ## Context
 
