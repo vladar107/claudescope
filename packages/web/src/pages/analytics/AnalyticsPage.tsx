@@ -65,7 +65,6 @@ export function AnalyticsPage() {
   const [showCache, setShowCache] = useState(false);
   const [view, setView] = useState<'overview' | 'sessions'>('overview');
   const [effSort, setEffSort] = useState<SessionEfficiencySort>('cost');
-  const [minResponses, setMinResponses] = useState(1);
   const [eff, setEff] = useState<{
     data: SessionEfficiencyResponse | null;
     loading: boolean;
@@ -126,17 +125,14 @@ export function AnalyticsPage() {
     const ctrl = new AbortController();
     setEff((s) => ({ ...s, loading: true, error: null }));
     api
-      .sessionEfficiency(
-        { from: range.from, to: range.to, sort: effSort, minResponses, limit: 50 },
-        ctrl.signal,
-      )
+      .sessionEfficiency({ from: range.from, to: range.to, sort: effSort, limit: 50 }, ctrl.signal)
       .then((data) => setEff({ data, loading: false, error: null }))
       .catch((error) => {
         if (ctrl.signal.aborted) return;
         setEff({ data: null, loading: false, error });
       });
     return () => ctrl.abort();
-  }, [view, range.from, range.to, effSort, minResponses, effRetry]);
+  }, [view, range.from, range.to, effSort, effRetry]);
 
   // Load the project list once for id -> displayName mapping. On failure the
   // breakdown falls back to the raw key, so a missing list never blocks it.
@@ -252,47 +248,28 @@ export function AnalyticsPage() {
           <span className="tv-switch" aria-hidden="true" />
           Show cache
         </label>
-
-        {view === 'sessions' && (
-          <div className="tv-analytics__field">
-            <label className="tv-analytics__field-label" htmlFor="tv-minresp">
-              Min responses
-            </label>
-            <input
-              id="tv-minresp"
-              type="number"
-              min={1}
-              className="tv-analytics__date"
-              value={minResponses}
-              onChange={(e) => setMinResponses(Math.max(1, Number(e.target.value) || 1))}
-            />
-          </div>
-        )}
       </div>
 
       {view === 'sessions' ? (
         eff.error ? (
-          <ErrorBox error={eff.error} title="Failed to load session efficiency" onRetry={() => setEffRetry((n) => n + 1)} />
+          <ErrorBox
+            error={eff.error}
+            title="Failed to load session efficiency"
+            onRetry={() => setEffRetry((n) => n + 1)}
+          />
+        ) : eff.loading && !eff.data ? (
+          <div className="tv-card">
+            <Spinner label="Loading…" />
+          </div>
+        ) : !eff.data || eff.data.rows.length === 0 ? (
+          <div className="tv-card tv-chart-empty">No sessions in range.</div>
         ) : (
-          <section className="tv-card tv-chart-card">
-            <div className="tv-chart-card__head">
-              <div className="tv-chart-card__heading">
-                <h2 className="tv-chart-card__title">Session efficiency</h2>
-                <span className="tv-chart-card__hint">top 50 · ratios vs. median</span>
-              </div>
-            </div>
-            {eff.loading ? (
-              <div className="tv-chart-empty">
-                <Spinner label="Loading…" />
-              </div>
-            ) : !eff.data || eff.data.rows.length === 0 ? (
-              <div className="tv-chart-empty">No sessions with ≥{minResponses} responses in range.</div>
-            ) : (
-              <div className="tv-eff-table__scroll">
-                <SessionEfficiencyTable data={eff.data} sort={effSort} onSortChange={setEffSort} />
-              </div>
-            )}
-          </section>
+          <SessionEfficiencyTable
+            data={eff.data}
+            sort={effSort}
+            onSortChange={setEffSort}
+            showCache={showCache}
+          />
         )
       ) : error ? (
         <ErrorBox error={error} title="Failed to load analytics" onRetry={load} />

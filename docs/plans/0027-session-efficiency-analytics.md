@@ -158,3 +158,36 @@ Per repo convention — the bug-prone edges, not happy-path glue:
 - **Where the route lives** — fold into `routes/analytics.ts` vs a sibling module.
   Resolve during implementation based on file size; the route logic is cohesive
   with the existing analytics query.
+
+## Post-review redesign (after first UI cut)
+
+The first implementation shipped a generic ratios table that a design review
+rejected (right-padded/unreadable, median buried in a footer, off-brand, unclear
+value). The view was redesigned (mock-driven, approved before rebuild). What
+actually shipped on PR #38:
+
+- **Framing.** A cost-efficiency lens: the table is ranked by **cost** (the
+  magnitude), with efficiency ratios as context. A summary line above carries the
+  baseline (sessions, total spend) plus a spend-concentration insight (top-3 cost
+  share, server-provided as `summary.top3CostUsd`).
+- **Columns.** `Session · Resp · Cost · $/resp · Tools · Tools/resp · Cache`.
+  **Cache** is gated behind the existing **"Show cache"** toggle (default hidden),
+  consistent with the rest of Analytics. `tokensPerResponse` and `duration` were
+  dropped from the UI (the row type still carries them).
+- **On-brand.** Reuses the app idiom — `<AgentBadge>` (real per-agent colors),
+  cost/`formatCost`/`formatPct` helpers, card shell, tabular numerics. Numeric
+  alignment is set **only** via `.tv-eff__num` (never a blanket `td` rule), so the
+  left-aligned session column needs no competing override — the original
+  right-alignment bug was a specificity collision.
+- **Median row pinned at the TOP** (not a footer) as the "typical" reference.
+- **Uniform IQR / Tukey outlier flags.** A cell is flagged (accent + ▲ high / ▼
+  low) only when its value clears `q1 − 1.5·IQR` / `q3 + 1.5·IQR`, computed per
+  column over the full filtered set. Identical treatment for cache-hit, $/resp,
+  and tools/resp — no per-column color or good/bad judgment, no median-split.
+- **API change.** `summary` now returns `sessionCount`, `totalCostUsd`,
+  `top3CostUsd`, and per-column `{ median, q1, q3 }` (`SessionEfficiencyStat`, via
+  DuckDB `quantile_cont`) so the IQR fences stay consistent with the server-side
+  Top-N. The earlier `summary.median` shape is replaced.
+- **Dropped** the `minResponses` UI control (server still defaults to 1).
+- **Verified** against the running app (synthetic-data screenshots): alignment,
+  median row, sort headers, agent colors, Show-cache gating.

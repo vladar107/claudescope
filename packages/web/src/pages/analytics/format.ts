@@ -11,16 +11,6 @@ export function formatPct(ratio: number): string {
   return `${(ratio * 100).toFixed(1)}%`;
 }
 
-/** Compact wall-clock duration: 0 → "—", else "2h 10m" / "5m" / "30s". */
-export function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms <= 0) return '—';
-  const totalMin = Math.floor(ms / 60000);
-  if (totalMin < 1) return `${Math.max(1, Math.round(ms / 1000))}s`;
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
 /** Per-response cost: keep sub-cent precision (e.g. $0.0011) where formatCost rounds away. */
 export function formatPerCost(n: number): string {
   if (!Number.isFinite(n)) return '—';

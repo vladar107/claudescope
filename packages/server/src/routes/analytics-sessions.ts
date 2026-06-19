@@ -144,28 +144,57 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
       };
     });
 
+    // Per-column median + quartiles over the FULL filtered set — drives the UI's
+    // median reference row and the IQR outlier fences (lo = q1 − 1.5·IQR,
+    // hi = q3 + 1.5·IQR). quantile_cont over an empty set returns NULL, which
+    // readRow turns into 0.
+    const statCols = [
+      'responses',
+      'cost_usd',
+      'cost_per_response',
+      'tool_call_count',
+      'tool_calls_per_response',
+      'cache_hit_ratio',
+    ];
+    const quantileExprs = statCols
+      .map(
+        (c) =>
+          `quantile_cont(${c}, 0.25) AS ${c}_q1, ` +
+          `quantile_cont(${c}, 0.5) AS ${c}_med, ` +
+          `quantile_cont(${c}, 0.75) AS ${c}_q3`,
+      )
+      .join(',\n         ');
+
     const summaryRows = await queryRows(
       conn,
       `${cte}
        SELECT
-         count(*)                       AS session_count,
-         median(cache_hit_ratio)        AS m_cache,
-         median(cost_per_response)      AS m_cost,
-         median(tokens_per_response)    AS m_tokens,
-         median(tool_calls_per_response) AS m_tools
+         count(*) AS session_count,
+         COALESCE(sum(cost_usd), 0) AS total_cost,
+         COALESCE((SELECT sum(c) FROM (SELECT cost_usd AS c FROM derived ORDER BY cost_usd DESC LIMIT 3)), 0) AS top3_cost,
+         ${quantileExprs}
        FROM derived`,
     );
     const sr = readRow(summaryRows[0] ?? {}, 'session-efficiency-summary');
+    const stat = (c: string) => ({
+      median: sr.num(`${c}_med`),
+      q1: sr.num(`${c}_q1`),
+      q3: sr.num(`${c}_q3`),
+    });
 
     return {
       rows,
       summary: {
         sessionCount: sr.num('session_count'),
-        median: {
-          cacheHitRatio: sr.num('m_cache'),
-          costPerResponse: sr.num('m_cost'),
-          tokensPerResponse: sr.num('m_tokens'),
-          toolCallsPerResponse: sr.num('m_tools'),
+        totalCostUsd: sr.num('total_cost'),
+        top3CostUsd: sr.num('top3_cost'),
+        columns: {
+          responses: stat('responses'),
+          costUsd: stat('cost_usd'),
+          costPerResponse: stat('cost_per_response'),
+          toolCallCount: stat('tool_call_count'),
+          toolCallsPerResponse: stat('tool_calls_per_response'),
+          cacheHitRatio: stat('cache_hit_ratio'),
         },
       },
     };

@@ -197,6 +197,16 @@ export interface SessionEfficiencyRow {
   toolCallsPerResponse: number;
 }
 
+/**
+ * Median + quartiles for one numeric column, over the FULL filtered set (not
+ * just the returned rows). q1/q3 are the basis for the UI's IQR outlier fences.
+ */
+export interface SessionEfficiencyStat {
+  median: number;
+  q1: number;
+  q3: number;
+}
+
 /** GET /api/analytics/sessions */
 export interface SessionEfficiencyResponse {
   /** Top-N rows by the requested sort. */
@@ -204,12 +214,22 @@ export interface SessionEfficiencyResponse {
   summary: {
     /** Qualifying sessions (post minResponses + date filter). */
     sessionCount: number;
-    /** Medians across the full filtered set (not just the returned rows). */
-    median: {
-      cacheHitRatio: number;
-      costPerResponse: number;
-      tokensPerResponse: number;
-      toolCallsPerResponse: number;
+    /** Total cost across the full filtered set. */
+    totalCostUsd: number;
+    /** Sum of the 3 highest session costs — for the spend-concentration insight. */
+    top3CostUsd: number;
+    /**
+     * Per-column median + quartiles over the full filtered set. The UI shows the
+     * median as the pinned reference row and derives IQR outlier fences from
+     * q1/q3 for the cache-hit / $-per-response / tools-per-response columns.
+     */
+    columns: {
+      responses: SessionEfficiencyStat;
+      costUsd: SessionEfficiencyStat;
+      costPerResponse: SessionEfficiencyStat;
+      toolCallCount: SessionEfficiencyStat;
+      toolCallsPerResponse: SessionEfficiencyStat;
+      cacheHitRatio: SessionEfficiencyStat;
     };
   };
 }

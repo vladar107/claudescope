@@ -228,9 +228,30 @@ describe('GET /api/analytics/sessions', () => {
     const full = await fetchEff('?minResponses=1&limit=50');
     expect(page1.rows.length).toBe(1);
     expect(full.rows.length).toBeGreaterThan(1);
-    // sessionCount + medians reflect ALL qualifying sessions, not the returned page.
+    // sessionCount + per-column stats reflect ALL qualifying sessions, not the page.
     expect(page1.summary.sessionCount).toBe(full.summary.sessionCount);
-    expect(page1.summary.median.cacheHitRatio).toBeCloseTo(full.summary.median.cacheHitRatio, 12);
-    expect(page1.summary.median.costPerResponse).toBeCloseTo(full.summary.median.costPerResponse, 12);
+    expect(page1.summary.totalCostUsd).toBeCloseTo(full.summary.totalCostUsd, 12);
+    expect(page1.summary.columns.cacheHitRatio.median).toBeCloseTo(
+      full.summary.columns.cacheHitRatio.median,
+      12,
+    );
+    expect(page1.summary.columns.costPerResponse.median).toBeCloseTo(
+      full.summary.columns.costPerResponse.median,
+      12,
+    );
+  });
+
+  it('returns per-column quartiles (q1 ≤ median ≤ q3) for the IQR fences', async () => {
+    const { summary } = await fetchEff('?minResponses=1');
+    for (const col of ['cacheHitRatio', 'costPerResponse', 'toolCallsPerResponse'] as const) {
+      const s = summary.columns[col];
+      expect(s.q1).toBeLessThanOrEqual(s.median);
+      expect(s.median).toBeLessThanOrEqual(s.q3);
+      expect(Number.isFinite(s.q1)).toBe(true);
+      expect(Number.isFinite(s.q3)).toBe(true);
+    }
+    // top3 cost concentration is a subset of total spend.
+    expect(summary.top3CostUsd).toBeGreaterThan(0);
+    expect(summary.top3CostUsd).toBeLessThanOrEqual(summary.totalCostUsd + 1e-9);
   });
 });
