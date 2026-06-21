@@ -13,6 +13,9 @@ import Fastify from 'fastify';
 import {
   CONTENT_SECURITY_POLICY,
   THEME_BOOTSTRAP_SCRIPT_HASH,
+  hostnameFromHeader,
+  isAllowedHost,
+  registerHostGuard,
   registerSecurityHeaders,
 } from '../src/security.js';
 
@@ -56,5 +59,52 @@ describe('security headers', () => {
     // If this fails after editing the inline script, update THEME_BOOTSTRAP_SCRIPT_HASH.
     expect(hash).toBe(THEME_BOOTSTRAP_SCRIPT_HASH);
     expect(CONTENT_SECURITY_POLICY).toContain(`'${THEME_BOOTSTRAP_SCRIPT_HASH}'`);
+  });
+});
+
+describe('host guard (anti DNS-rebinding)', () => {
+  function appWithGuard() {
+    const app = Fastify();
+    registerHostGuard(app);
+    app.get('/api/health', async () => ({ ok: true }));
+    return app;
+  }
+
+  // Loopback hosts the daemon and the dev proxy actually send. Port varies (4317
+  // prod, 5317 the Vite proxy, or a custom PORT) and must NOT matter.
+  it.each(['localhost', 'localhost:4317', '127.0.0.1:4317', '[::1]:4317', 'localhost:5317'])(
+    'allows loopback host %s',
+    async (host) => {
+      const app = appWithGuard();
+      const res = await app.inject({ method: 'GET', url: '/api/health', headers: { host } });
+      expect(res.statusCode).toBe(200);
+      await app.close();
+    },
+  );
+
+  // A DNS-rebinding page reaches the loopback socket but carries its own hostname
+  // in Host — including the `localhost.evil.com` prefix trick, which must NOT pass.
+  it.each(['evil.com', 'evil.com:4317', 'attacker.example:4317', 'localhost.evil.com'])(
+    'rejects non-loopback host %s with 403',
+    async (host) => {
+      const app = appWithGuard();
+      const res = await app.inject({ method: 'GET', url: '/api/health', headers: { host } });
+      expect(res.statusCode).toBe(403);
+      await app.close();
+    },
+  );
+
+  // A missing Host can't be exercised through inject (light-my-request fills in a
+  // default), so assert the defensive branch and the parser directly.
+  it('isAllowedHost/hostnameFromHeader handle missing values, ports, brackets, and casing', () => {
+    expect(isAllowedHost(undefined)).toBe(false);
+    expect(isAllowedHost('')).toBe(false);
+    expect(isAllowedHost('localhost:4317')).toBe(true);
+    expect(isAllowedHost('127.0.0.1')).toBe(true);
+    expect(isAllowedHost('[::1]:4317')).toBe(true);
+    expect(isAllowedHost('evil.com:4317')).toBe(false);
+    expect(isAllowedHost('localhost.evil.com')).toBe(false);
+    expect(hostnameFromHeader('[::1]:4317')).toBe('::1');
+    expect(hostnameFromHeader('LocalHost:5317')).toBe('localhost');
   });
 });

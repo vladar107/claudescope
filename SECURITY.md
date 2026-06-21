@@ -48,6 +48,11 @@ None of these are misused; they're listed here so you can verify that.
 
 - **Binds to `127.0.0.1` only** (`packages/server/src/index.ts`) — the server is
   never exposed to your LAN or the internet.
+- **Rejects non-loopback `Host` headers** (`packages/server/src/security.ts`) —
+  a request whose `Host` isn't `localhost`/`127.0.0.1`/`[::1]` gets a `403`. This
+  blocks DNS-rebinding attacks, where a malicious site you visit rebinds its own
+  hostname to `127.0.0.1` to read your transcripts past the loopback bind. Override
+  the allowlist with `CLAUDESCOPE_ALLOWED_HOSTS` for custom local hostnames.
 - Shipped code makes exactly **two kinds of outbound request**, both to
   hardcoded trusted endpoints:
   - a version check against `https://registry.npmjs.org` (cached for 24h) to
