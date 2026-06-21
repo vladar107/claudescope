@@ -19,7 +19,7 @@ import {
   ensureStateDir,
 } from './config.js';
 import { registerRoutes } from './routes/index.js';
-import { registerSecurityHeaders } from './security.js';
+import { registerHostGuard, registerSecurityHeaders } from './security.js';
 import { reindex } from './data/index.js';
 import { refreshPricing } from './data/pricing-refresh.js';
 import { openBrowser } from './util/open-browser.js';
@@ -49,8 +49,9 @@ async function main(): Promise<void> {
 
   const app = Fastify({ logger: true });
 
-  // Lock down what the served SPA may load — notably block remote image fetches
-  // from transcript content (see security.ts).
+  // Reject non-loopback Host headers (anti DNS-rebinding) before anything routes,
+  // and lock down what the served SPA may load (CSP). See security.ts.
+  registerHostGuard(app);
   registerSecurityHeaders(app);
 
   await registerRoutes(app);
