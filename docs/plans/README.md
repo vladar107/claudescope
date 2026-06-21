@@ -52,3 +52,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0025 | [Continue session: copy the command](./0025-continue-session-copy-command.md) | done |
 | 0026 | [UI/UX review: hierarchy pass across all screens](./0026-ui-ux-review-batches.md) | done |
 | 0027 | [Session-efficiency analytics (per-session ratios table)](./0027-session-efficiency-analytics.md) | done |
+| 0028 | [CI/CD segmentation & reusable workflows](./0028-ci-segmentation-and-reuse.md) | done |

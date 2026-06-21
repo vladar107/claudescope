@@ -1,0 +1,27 @@
+{
+  // Config for the docs-lint job (markdownlint-cli2). Lint all markdown except
+  // dependency/build output.
+  "globs": ["**/*.md"],
+  "ignores": ["**/node_modules/**", "**/dist/**"],
+
+  // Rules disabled because the EXISTING docs already trip them. Keeping the check
+  // green on day one means it only flags NEW regressions; re-enable individually
+  // after a dedicated docs cleanup. Anything not listed stays at its default
+  // (so structural breakage — bad links, empty headings, hard tabs, etc. — is
+  // still caught).
+  "config": {
+    "default": true,
+    "MD004": false, // unordered list marker style (docs mix - and *)
+    "MD012": false, // multiple consecutive blank lines
+    "MD013": false, // line length (prose and tables exceed the default)
+    "MD022": false, // headings surrounded by blank lines
+    "MD029": false, // ordered list item prefix style
+    "MD031": false, // fenced code blocks surrounded by blank lines
+    "MD032": false, // lists surrounded by blank lines
+    "MD033": false, // inline HTML (README badges, <details>, alignment)
+    "MD034": false, // bare URLs
+    "MD040": false, // fenced code language hint
+    "MD041": false, // first line should be a top-level heading
+    "MD060": false  // table-formatting rule the existing tables trip
+  }
+}

@@ -1,0 +1,4 @@
+# URLs the docs link-check (lychee) should skip. One regex per line.
+# Local dev-server addresses referenced in the docs (not reachable from CI).
+^https?://localhost
+^https?://127\.0\.0\.1

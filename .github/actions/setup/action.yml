@@ -1,0 +1,35 @@
+name: Setup Node + install
+description: setup-node with npm cache, then npm ci. Checkout stays in the caller.
+
+inputs:
+  node-version:
+    description: Node major version to set up
+    required: true
+  registry-url:
+    description: npm registry URL (set only for the publish job; empty is a no-op)
+    required: false
+    default: ''
+  cache-dependency-path:
+    description: Path to package-lock.json for the npm cache key (default = root lockfile)
+    required: false
+    default: ''
+  working-directory:
+    description: Directory to run `npm ci` in (for multi-checkout layouts like perf)
+    required: false
+    default: '.'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js ${{ inputs.node-version }}
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+        registry-url: ${{ inputs.registry-url }}
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: npm ci

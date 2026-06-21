@@ -1,0 +1,29 @@
+name: nix-build
+
+# Reusable: build the Nix flake on one OS. Called by ci.yml (matrix: linux + macos)
+# and by release.yml's nix channel (linux). Catches a broken flake or a stale deps
+# hash. The deps hash is version-independent (see flake.nix), so releases need no
+# hash step — this job is what flags a real dependency change.
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: Runner OS (e.g. ubuntu-latest, macos-14)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  nix:
+    runs-on: ${{ inputs.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Build the flake
+        run: nix build .#claudescope -L

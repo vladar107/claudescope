@@ -20,7 +20,34 @@ permissions:
   contents: read
 
 jobs:
+  # The bench is `tsx packages/server/perf/run.ts` — server/data-layer only. Gate it
+  # on server/shared/root-deps changes; NEVER on packages/web/** (frontend can't move
+  # the backend bench). The workspace-wide lockfile is included on purpose (a backend
+  # runtime-dep change could move the bench).
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      perf: ${{ steps.f.outputs.perf }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            perf:
+              - 'package.json'
+              - 'package-lock.json'
+              - 'packages/shared/**'
+              - 'packages/server/**'
+              - '.github/workflows/perf.yml'
+              - '.github/actions/**'
+
   perf:
+    needs: changes
+    if: needs.changes.outputs.perf == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR head
@@ -34,17 +61,16 @@ jobs:
           ref: ${{ github.base_ref }}
           path: base
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node + install (PR head)
+        uses: ./pr/.github/actions/setup
         with:
           node-version: 24
-          cache: npm
           cache-dependency-path: pr/package-lock.json
+          working-directory: pr
 
-      - name: Install deps (PR head)
-        working-directory: pr
-        run: npm ci
-
+      # Base side stays a bare `npm ci` (node is already set up above): base must run
+      # main's harness, not PR-introduced tooling. Do not route this through the
+      # composite action — the base checkout may predate it.
       - name: Install deps (base)
         working-directory: base
         run: npm ci
@@ -82,3 +108,21 @@ jobs:
             cand-*.json
             base-*.json
           if-no-files-found: ignore
+
+  # Single status check for perf, safe whether or not it's a required check: a
+  # skipped `perf` (frontend/docs-only PR) still reports success here.
+  perf-success:
+    name: Perf success
+    if: always()
+    needs: [changes, perf]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify perf did not fail
+        shell: bash
+        run: |
+          for r in '${{ needs.changes.result }}' '${{ needs.perf.result }}'; do
+            case "$r" in
+              success|skipped) ;;
+              *) echo "::error::perf gate did not succeed (got '$r')"; exit 1 ;;
+            esac
+          done
