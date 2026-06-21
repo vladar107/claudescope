@@ -1,7 +1,9 @@
 name: CI
 
-# Sanity check before merge (pull requests into main) and after merge
-# (pushes to main): typecheck, build, and test.
+# Sanity check before merge (pull requests into main) and after merge (pushes to
+# main): typecheck, build, and test — but only for the areas a change touches. A
+# `changes` job (path filter) and a `guard` job (release-bump detector) gate the
+# heavy jobs, and the single `CI success` job is the only required status check.
 on:
   push:
     branches: [main]
@@ -17,52 +19,149 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    runs-on: ${{ matrix.os }}
+  # Which areas changed? `infra` (deps/config/CI) forces the full build/test; `code`
+  # is any package or infra change; `docs` is prose + the docs-lint config. Perf is
+  # gated in perf.yml, not here.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # paths-filter reads the PR file list via the API
+    outputs:
+      code: ${{ steps.f.outputs.code }}
+      docs: ${{ steps.f.outputs.docs }}
+      infra: ${{ steps.f.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # push events diff against the branch's prior tip
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          # PRs diff against the base via the API (no history needed). On push,
+          # passing the SHORT branch name makes paths-filter diff against the
+          # branch's pre-push tip (full refs/heads/... is not recognized as the
+          # "same branch"). Empty on PR → auto-detect the PR base.
+          base: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          filters: |
+            infra: &infra
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig*.json'
+              - 'vitest.config.ts'
+              - 'flake.nix'
+              - 'flake.lock'
+              - 'scripts/**'
+              - '.github/workflows/**'
+              - '.github/actions/**'
+            code:
+              - *infra
+              - 'packages/**'
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+              - 'LICENSE'
+              - '.markdownlint-cli2.jsonc'
+              - '.lycheeignore'
+
+  # Is the pushed HEAD a release bump? `npm version` pushes the bump commit and its
+  # tag together (--follow-tags); release.yml already validates that exact commit,
+  # so skip the redundant CI here. PRs are never bumps; tag pushes don't trigger
+  # this workflow (no push.tags), so only the bump branch push needs suppressing.
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      is_release: ${{ steps.g.outputs.is_release }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # full history + tags to see a v* tag on HEAD
+      - id: g
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch --tags --force --quiet || true
+          if git tag --points-at HEAD | grep -qE '^v[0-9]'; then
+            echo "HEAD is release-tagged → skipping CI (release.yml validates this commit)"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Typecheck + build + test across both supported LTS lines and OSes. Shared with
+  # release.yml via the reusable workflow.
+  build-test:
+    needs: [changes, guard]
+    if: needs.guard.outputs.is_release != 'true' && needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        node: [22, 24] # both supported LTS lines (22 = engines floor, 24 = latest)
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+        node: ['22', '24'] # 22 = engines floor, 24 = latest
+    uses: ./.github/workflows/build-test.yml
+    with:
+      os: ${{ matrix.os }}
+      node: ${{ matrix.node }}
 
-      - name: Set up Node.js ${{ matrix.node }}
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ matrix.node }}
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Build
-        run: npm run build
-
-      - name: Test
-        run: npm test
-
-  # Build the Nix flake so a broken flake or a stale deps hash is caught on PRs,
-  # not first at release time. The hash is version-independent (see flake.nix), so
-  # it only needs updating on real dependency changes — which this job catches.
-  # Matrix covers the platforms users install on: Linux x64 and macOS arm64
-  # (macos-14). Intel macOS (macos-13) is omitted — GitHub is deprecating Intel
-  # runners (they queue indefinitely), and the darwin-x64 build path is identical
-  # to arm64 bar the binding dir. npmDepsHash is OS-independent, shared by both.
+  # Build the Nix flake so a broken flake or stale deps hash is caught on PRs, not
+  # first at release time. Gated on `infra` (deps/flake/build-tooling) — a pure
+  # source change is already covered by build-test's `npm run build`. Matrix covers
+  # Linux x64 and macOS arm64 (the platforms users install on). Shared with
+  # release.yml.
   nix:
+    needs: [changes, guard]
+    if: needs.guard.outputs.is_release != 'true' && needs.changes.outputs.infra == 'true'
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-14]
-    runs-on: ${{ matrix.os }}
+    uses: ./.github/workflows/nix-build.yml
+    with:
+      os: ${{ matrix.os }}
+
+  # Light docs check (markdown lint + link check) on docs/prose changes only.
+  docs-lint:
+    needs: [changes, guard]
+    if: needs.guard.outputs.is_release != 'true' && needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
-      - name: Build the flake
-        run: nix build .#claudescope -L
+      - uses: actions/checkout@v6
+      - name: Markdown lint
+        uses: DavidAnson/markdownlint-cli2-action@v20
+        with:
+          globs: '**/*.md'
+      - name: Link check
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: "--no-progress --cache --max-retries 2 --accept 200,206,403,429 '**/*.md'"
+          fail: true
+
+  # The ONLY required status check. Branch protection must require this job, not the
+  # individual matrix legs: their reported names change under the reusable workflows,
+  # and gated legs report "skipped". Skipped = pass (intentional gating); failure or
+  # cancelled = fail.
+  ci-success:
+    name: CI success
+    if: always()
+    needs: [changes, guard, build-test, nix, docs-lint]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify no required job failed
+        shell: bash
+        run: |
+          results='${{ needs.changes.result }} ${{ needs.guard.result }} ${{ needs.build-test.result }} ${{ needs.nix.result }} ${{ needs.docs-lint.result }}'
+          echo "Upstream results: $results"
+          for r in $results; do
+            case "$r" in
+              success|skipped) ;;
+              *) echo "::error::A required job did not succeed (got '$r')"; exit 1 ;;
+            esac
+          done
+          echo "All required jobs succeeded or were intentionally skipped."

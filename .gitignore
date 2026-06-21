@@ -12,6 +12,7 @@ packages/server/data/*.duckdb.tmp
 *.tsbuildinfo
 coverage/
 perf-result.json
+.lycheecache
 .idea/
 .vscode/
 .junie/

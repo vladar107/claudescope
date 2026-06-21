@@ -1,0 +1,41 @@
+name: build-test
+
+# Reusable: typecheck + build + test for one os/node combination. Called by ci.yml
+# (across the os×node matrix) and by release.yml's validate (single ubuntu/node 24),
+# so CI and Release share ONE definition of what "validated" means.
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: Runner OS (e.g. ubuntu-latest)
+        required: true
+        type: string
+      node:
+        description: Node major version as a string (e.g. "22")
+        required: true
+        type: string
+
+# Reusable workflows do not inherit caller permissions — declare our own.
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ${{ inputs.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node + install
+        uses: ./.github/actions/setup
+        with:
+          node-version: ${{ inputs.node }}
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
