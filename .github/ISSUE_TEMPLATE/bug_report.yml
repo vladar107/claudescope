@@ -26,6 +26,22 @@ body:
         3. See the error
     validations:
       required: true
+  - type: dropdown
+    id: agents
+    attributes:
+      label: Which agent(s) does this apply to?
+      description: Select all that apply. Choose "Not agent-specific" for UI, search, or analytics bugs.
+      multiple: true
+      options:
+        - Claude Code
+        - OpenAI Codex
+        - JetBrains Junie
+        - pi
+        - opencode
+        - GitHub Copilot CLI
+        - Not agent-specific (UI, search, analytics, …)
+    validations:
+      required: true
   - type: input
     id: version
     attributes:
@@ -42,14 +58,41 @@ body:
       placeholder: "v20.x"
     validations:
       required: true
-  - type: dropdown
+  - type: input
     id: os
     attributes:
-      label: Operating system
+      label: Operating system & version
+      description: |
+        The full OS version — run the command for your platform and paste the result:
+        - **macOS:** `sw_vers`
+        - **Linux:** `cat /etc/os-release` (or `uname -a`)
+        - **Windows:** `cmd /c ver` (or `[System.Environment]::OSVersion.VersionString`)
+      placeholder: "macOS 15.5 (24F74)"
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser & version
+      description: |
+        The browser you viewed Claudescope in. Find the version at:
+        - **Chrome / Edge / Brave:** `chrome://version` (or `edge://version`)
+        - **Firefox:** `about:support`
+        - **Safari:** Safari → About Safari
+      placeholder: "Chrome 126.0.6478.127"
+    validations:
+      required: false
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install method
+      description: How did you install Claudescope?
       options:
-        - macOS
-        - Linux
-        - Windows
+        - npm
+        - Homebrew
+        - Nix
+        - Built from source
+        - Other / not sure
     validations:
       required: true
   - type: textarea
