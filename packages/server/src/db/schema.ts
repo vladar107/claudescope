@@ -24,7 +24,8 @@
 // v5: Codex title fallback (first user message) + `<image …>` placeholder strip.
 // v6: usage dedup by billed API call (message_id / forked_from_session_id / usage_canonical).
 // v7: fallback title cleaning (strip markup/wrapper blobs) + `title_derived` flag.
-export const SCHEMA_VERSION = 7;
+// v8: per-event tool_names (comma-joined canonical tool names) for the tool-usage breakdown.
+export const SCHEMA_VERSION = 8;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -60,6 +61,7 @@ export const SCHEMA_DDL: readonly string[] = [
      service_tier VARCHAR,
      is_sidechain BOOLEAN DEFAULT FALSE,
      tool_use_count INTEGER DEFAULT 0,
+     tool_names   VARCHAR DEFAULT '',
      cost_usd     DOUBLE DEFAULT 0,
      text_content VARCHAR,
      message_id   VARCHAR,

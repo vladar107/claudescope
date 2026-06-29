@@ -4,3 +4,4 @@ export * from './events.js';
 export * from './thread.js';
 export * from './api.js';
 export * from './pricing.js';
+export * from './categories.js';

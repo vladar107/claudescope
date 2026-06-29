@@ -25,6 +25,7 @@
 
 import { readFileSync } from 'node:fs';
 import type { AssistantEvent, ContentBlock, MessageUsage, UserEvent } from '@claudescope/shared';
+import { toolNamesCsv } from '../tool-names.js';
 
 export interface PiSession {
   sessionId: string;
@@ -307,6 +308,7 @@ export interface CanonicalRow {
   service_tier: string | null;
   is_sidechain: boolean;
   tool_use_count: number;
+  tool_names: string;
   text_content: string;
 }
 
@@ -338,6 +340,7 @@ export function toCanonicalRows(session: PiSession, filePath: string): Canonical
       service_tier: null,
       is_sidechain: false,
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
+      tool_names: toolNamesCsv(content),
       text_content: text,
     };
   });

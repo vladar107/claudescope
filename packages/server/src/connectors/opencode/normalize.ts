@@ -29,6 +29,7 @@ import type {
   UserEvent,
 } from '@claudescope/shared';
 import type { OpencodeRawSession } from './db.js';
+import { toolNamesCsv } from '../tool-names.js';
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -346,6 +347,7 @@ export interface CanonicalRow {
   service_tier: string | null;
   is_sidechain: boolean;
   tool_use_count: number;
+  tool_names: string;
   text_content: string;
   /** Session title (read by auxProjections; ignored by the events projection). */
   title: string;
@@ -379,6 +381,7 @@ export function toCanonicalRows(session: OpencodeRawSession, filePath: string): 
       service_tier: null,
       is_sidechain: false,
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
+      tool_names: toolNamesCsv(content),
       text_content: text,
       title: session.title,
     };

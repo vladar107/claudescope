@@ -16,6 +16,7 @@
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
+  ActivityResponse,
   AnalyticsGroupBy,
   AnalyticsResponse,
   AnalyticsTotals,
@@ -23,10 +24,13 @@ import type {
   SessionEfficiencyResponse,
   SessionEfficiencySort,
   SortDir,
+  ToolUsageResponse,
 } from '@claudescope/shared';
 import { api } from '../../api/client.js';
 import { ErrorBox, Spinner } from '../../components/index.js';
+import { ActivityHeatmap } from './ActivityHeatmap.js';
 import { BreakdownChart } from './BreakdownChart.js';
+import { ToolUsageChart } from './ToolUsageChart.js';
 import type { BreakdownMetric, BreakdownSort } from './BreakdownChart.js';
 import { TimeSeriesChart } from './TimeSeriesChart.js';
 import { formatCount, formatCost, formatPct } from './format.js';
@@ -64,7 +68,7 @@ export function AnalyticsPage() {
   const [to, setTo] = useState('');
   // Cache tokens dwarf input/output and clutter the charts — hidden by default.
   const [showCache, setShowCache] = useState(false);
-  const [view, setView] = useState<'overview' | 'sessions'>('overview');
+  const [view, setView] = useState<'overview' | 'sessions' | 'activity'>('overview');
   const [effSort, setEffSort] = useState<SessionEfficiencySort>('cost');
   const [effDir, setEffDir] = useState<SortDir>('desc');
   const [eff, setEff] = useState<{
@@ -88,6 +92,8 @@ export function AnalyticsPage() {
   // The time series is always grouped by day (independent of the toggle) so the
   // trend chart is available regardless of the selected breakdown dimension.
   const [series, setSeries] = useState<QueryState>(INITIAL);
+  const [activity, setActivity] = useState<{ data: ActivityResponse | null; loading: boolean; error: unknown }>({ data: null, loading: true, error: null });
+  const [tools, setTools] = useState<{ data: ToolUsageResponse | null; loading: boolean; error: unknown }>({ data: null, loading: true, error: null });
 
   // Convert the date inputs (YYYY-MM-DD, local) into inclusive ISO bounds.
   const range = useMemo(() => {
@@ -139,6 +145,37 @@ export function AnalyticsPage() {
     return () => ctrl.abort();
   }, [view, range.from, range.to, effSort, effDir, effRetry]);
 
+  useEffect(() => {
+    const ctrl = new AbortController();
+    const tzOffsetMinutes = -new Date().getTimezoneOffset(); // east-of-UTC positive
+    const today = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+    setActivity((s) => ({ ...s, loading: true }));
+    api
+      .analyticsActivity({ from: range.from, to: range.to, tzOffsetMinutes, today }, ctrl.signal)
+      .then((data) => setActivity({ data, loading: false, error: null }))
+      .catch((error) => {
+        if (ctrl.signal.aborted) return;
+        setActivity({ data: null, loading: false, error });
+      });
+    return () => ctrl.abort();
+  }, [range.from, range.to]);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setTools((s) => ({ ...s, loading: true }));
+    api
+      .analyticsTools({ from: range.from, to: range.to }, ctrl.signal)
+      .then((data) => setTools({ data, loading: false, error: null }))
+      .catch((error) => {
+        if (ctrl.signal.aborted) return;
+        setTools({ data: null, loading: false, error });
+      });
+    return () => ctrl.abort();
+  }, [range.from, range.to]);
+
   // Header click: re-clicking the active column flips direction; a new column
   // starts at descending (largest first).
   const onEffSort = (key: SessionEfficiencySort) => {
@@ -189,6 +226,14 @@ export function AnalyticsPage() {
               onClick={() => setView('sessions')}
             >
               Session efficiency
+            </button>
+            <button
+              type="button"
+              className={view === 'activity' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
+              aria-pressed={view === 'activity'}
+              onClick={() => setView('activity')}
+            >
+              Activity
             </button>
           </div>
         </div>
@@ -253,16 +298,18 @@ export function AnalyticsPage() {
           </button>
         )}
 
-        <label className="tv-analytics__toggle">
-          <input
-            type="checkbox"
-            className="tv-switch__input"
-            checked={showCache}
-            onChange={(e) => setShowCache(e.target.checked)}
-          />
-          <span className="tv-switch" aria-hidden="true" />
-          Show cache
-        </label>
+        {view !== 'activity' && (
+          <label className="tv-analytics__toggle">
+            <input
+              type="checkbox"
+              className="tv-switch__input"
+              checked={showCache}
+              onChange={(e) => setShowCache(e.target.checked)}
+            />
+            <span className="tv-switch" aria-hidden="true" />
+            Show cache
+          </label>
+        )}
       </div>
 
       {view === 'sessions' ? (
@@ -287,6 +334,26 @@ export function AnalyticsPage() {
             showCache={showCache}
           />
         )
+      ) : view === 'activity' ? (
+        <div className="tv-analytics__charts">
+          <ChartCard
+            title="Activity"
+            hint="user prompts, your local time"
+            loading={activity.loading}
+            empty={!activity.data || activity.data.heatmap.length === 0}
+          >
+            {activity.data && <ActivityHeatmap data={activity.data} />}
+          </ChartCard>
+
+          <ChartCard
+            title="Tool usage"
+            hint="calls by category"
+            loading={tools.loading}
+            empty={!tools.data || tools.data.rows.length === 0}
+          >
+            {tools.data && <ToolUsageChart rows={tools.data.rows} />}
+          </ChartCard>
+        </div>
       ) : error ? (
         <ErrorBox error={error} title="Failed to load analytics" onRetry={load} />
       ) : (
