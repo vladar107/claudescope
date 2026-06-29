@@ -34,6 +34,7 @@ import type {
   UserEvent,
 } from '@claudescope/shared';
 import { JUNIE_HOME } from '../../config.js';
+import { toolNamesCsv } from '../tool-names.js';
 
 export interface JunieSession {
   sessionId: string;
@@ -472,6 +473,7 @@ export interface CanonicalRow {
   service_tier: string | null;
   is_sidechain: boolean;
   tool_use_count: number;
+  tool_names: string;
   text_content: string;
   /** Not a canonical column — read separately by the title aux projection. */
   title: string;
@@ -512,6 +514,7 @@ export function toCanonicalRows(session: JunieSession, filePath: string): Canoni
       service_tier: null,
       is_sidechain: false,
       tool_use_count: arr.filter((b) => b.type === 'tool_use').length,
+      tool_names: toolNamesCsv(arr),
       text_content: text,
       title: session.title,
     };

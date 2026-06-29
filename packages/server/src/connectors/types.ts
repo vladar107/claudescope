@@ -45,6 +45,7 @@ export const CANONICAL_EVENT_COLUMNS = [
   'service_tier',
   'is_sidechain',
   'tool_use_count',
+  'tool_names',
   'text_content',
 ] as const;
 

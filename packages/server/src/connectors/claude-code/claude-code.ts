@@ -62,6 +62,18 @@ const TOOL_USE_COUNT_EXPR = `
     )
   END`;
 
+/** Comma-joined `$.name` of `tool_use` blocks in a message's content array. */
+const TOOL_NAMES_EXPR = `
+  CASE
+    WHEN message IS NULL OR json_type(message -> '$.content') = 'VARCHAR' THEN ''
+    ELSE COALESCE((
+      SELECT string_agg(json_extract_string(b.value, '$.name'), ',')
+      FROM json_each(message, '$.content') AS b
+      WHERE json_extract_string(b.value, '$.type') = 'tool_use'
+        AND json_extract_string(b.value, '$.name') IS NOT NULL
+    ), '')
+  END`;
+
 /**
  * Recursively collect every `*.jsonl` file under the projects directory. The
  * top level holds `<encoded-cwd>/<session>.jsonl`; sidechain events live in a
@@ -124,6 +136,7 @@ function eventsProjectionSql(filePath: string): string {
       json_extract_string(message, '$.usage.service_tier') AS service_tier,
       COALESCE(isSidechain, FALSE) AS is_sidechain,
       ${TOOL_USE_COUNT_EXPR} AS tool_use_count,
+      ${TOOL_NAMES_EXPR} AS tool_names,
       ${TEXT_CONTENT_EXPR} AS text_content,
       json_extract_string(message, '$.id') AS message_id,
       json_extract_string(forkedFrom, '$.sessionId') AS forked_from_session_id

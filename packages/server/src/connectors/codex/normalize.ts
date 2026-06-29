@@ -24,6 +24,7 @@ import type {
   ToolUseBlock,
   UserEvent,
 } from '@claudescope/shared';
+import { toolNamesCsv } from '../tool-names.js';
 
 interface CodexLine {
   type?: string;
@@ -295,6 +296,7 @@ export interface CanonicalRow {
   service_tier: string | null;
   is_sidechain: boolean;
   tool_use_count: number;
+  tool_names: string;
   text_content: string;
 }
 
@@ -329,6 +331,7 @@ export function toCanonicalRows(session: CodexSession, filePath: string): Canoni
       service_tier: null,
       is_sidechain: false,
       tool_use_count: arr.filter((b) => b.type === 'tool_use').length,
+      tool_names: toolNamesCsv(arr),
       text_content: text,
     };
   });

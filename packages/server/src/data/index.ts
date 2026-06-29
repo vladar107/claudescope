@@ -148,7 +148,7 @@ async function loadFile(
     SELECT
       ev.file_path, ev.session_id, ev.uuid, ev.parent_uuid, ev.role, ev.type, ev.ts, ev.cwd, ev.git_branch,
       ev.model, ev.input_tokens, ev.output_tokens, ev.cache_read_tokens, ev.cache_write_tokens,
-      ev.service_tier, ev.is_sidechain, ev.tool_use_count,
+      ev.service_tier, ev.is_sidechain, ev.tool_use_count, ev.tool_names,
       ${costExpr} AS cost_usd,
       ev.text_content,
       ev.message_id, ev.forked_from_session_id, TRUE AS usage_canonical
