@@ -16,6 +16,7 @@
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
+  ActivityResponse,
   AnalyticsGroupBy,
   AnalyticsResponse,
   AnalyticsTotals,
@@ -26,6 +27,7 @@ import type {
 } from '@claudescope/shared';
 import { api } from '../../api/client.js';
 import { ErrorBox, Spinner } from '../../components/index.js';
+import { ActivityHeatmap } from './ActivityHeatmap.js';
 import { BreakdownChart } from './BreakdownChart.js';
 import type { BreakdownMetric, BreakdownSort } from './BreakdownChart.js';
 import { TimeSeriesChart } from './TimeSeriesChart.js';
@@ -88,6 +90,7 @@ export function AnalyticsPage() {
   // The time series is always grouped by day (independent of the toggle) so the
   // trend chart is available regardless of the selected breakdown dimension.
   const [series, setSeries] = useState<QueryState>(INITIAL);
+  const [activity, setActivity] = useState<{ data: ActivityResponse | null; loading: boolean; error: unknown }>({ data: null, loading: true, error: null });
 
   // Convert the date inputs (YYYY-MM-DD, local) into inclusive ISO bounds.
   const range = useMemo(() => {
@@ -138,6 +141,24 @@ export function AnalyticsPage() {
       });
     return () => ctrl.abort();
   }, [view, range.from, range.to, effSort, effDir, effRetry]);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    const tzOffsetMinutes = -new Date().getTimezoneOffset(); // east-of-UTC positive
+    const today = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+    setActivity((s) => ({ ...s, loading: true }));
+    api
+      .analyticsActivity({ from: range.from, to: range.to, tzOffsetMinutes, today }, ctrl.signal)
+      .then((data) => setActivity({ data, loading: false, error: null }))
+      .catch((error) => {
+        if (ctrl.signal.aborted) return;
+        setActivity({ data: null, loading: false, error });
+      });
+    return () => ctrl.abort();
+  }, [range.from, range.to]);
 
   // Header click: re-clicking the active column flips direction; a new column
   // starts at descending (largest first).
@@ -301,6 +322,15 @@ export function AnalyticsPage() {
               empty={!series.data || series.data.rows.length === 0}
             >
               {series.data && <TimeSeriesChart rows={series.data.rows} showCache={showCache} />}
+            </ChartCard>
+
+            <ChartCard
+              title="Activity"
+              hint="user prompts, your local time"
+              loading={activity.loading}
+              empty={!activity.data || activity.data.heatmap.length === 0}
+            >
+              {activity.data && <ActivityHeatmap data={activity.data} />}
             </ChartCard>
 
             <ChartCard

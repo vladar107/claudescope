@@ -5,6 +5,7 @@
  */
 
 import type {
+  ActivityResponse,
   AnalyticsGroupBy,
   AnalyticsResponse,
   HealthResponse,
@@ -22,6 +23,7 @@ import type {
   SessionSort,
   SessionsResponse,
   SourcesResponse,
+  ToolUsageResponse,
 } from '@claudescope/shared';
 
 /** Thrown when an `/api/*` response is not 2xx. Carries the HTTP status. */
@@ -148,6 +150,22 @@ export const api = {
       `/analytics${qs({ groupBy: params.groupBy, from: params.from, to: params.to })}`,
       { signal },
     );
+  },
+
+  /** GET /api/analytics/activity?from=&to=&tzOffsetMinutes=&today= */
+  analyticsActivity(
+    params: { from?: string; to?: string; tzOffsetMinutes: number; today: string },
+    signal?: AbortSignal,
+  ): Promise<ActivityResponse> {
+    return request<ActivityResponse>(
+      `/analytics/activity${qs({ from: params.from, to: params.to, tzOffsetMinutes: params.tzOffsetMinutes, today: params.today })}`,
+      { signal },
+    );
+  },
+
+  /** GET /api/analytics/tools?from=&to= */
+  analyticsTools(params: { from?: string; to?: string }, signal?: AbortSignal): Promise<ToolUsageResponse> {
+    return request<ToolUsageResponse>(`/analytics/tools${qs({ from: params.from, to: params.to })}`, { signal });
   },
 
   /** GET /api/analytics/sessions?from=&to=&sort=&dir=&limit=&minResponses= */
