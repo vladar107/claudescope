@@ -54,3 +54,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0027 | [Session-efficiency analytics (per-session ratios table)](./0027-session-efficiency-analytics.md) | done |
 | 0028 | [CI/CD segmentation & reusable workflows](./0028-ci-segmentation-and-reuse.md) | done |
 | 0029 | [Localhost host guard (anti DNS-rebinding)](./0029-localhost-host-guard.md) | done |
+| 0030 | [Analyze tab: activity heatmap + tool-usage breakdown](./0030-analyze-activity-heatmap-tool-usage.md) | done |
