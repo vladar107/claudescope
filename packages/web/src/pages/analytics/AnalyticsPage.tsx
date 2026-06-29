@@ -68,7 +68,7 @@ export function AnalyticsPage() {
   const [to, setTo] = useState('');
   // Cache tokens dwarf input/output and clutter the charts — hidden by default.
   const [showCache, setShowCache] = useState(false);
-  const [view, setView] = useState<'overview' | 'sessions'>('overview');
+  const [view, setView] = useState<'overview' | 'sessions' | 'activity'>('overview');
   const [effSort, setEffSort] = useState<SessionEfficiencySort>('cost');
   const [effDir, setEffDir] = useState<SortDir>('desc');
   const [eff, setEff] = useState<{
@@ -227,6 +227,14 @@ export function AnalyticsPage() {
             >
               Session efficiency
             </button>
+            <button
+              type="button"
+              className={view === 'activity' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
+              aria-pressed={view === 'activity'}
+              onClick={() => setView('activity')}
+            >
+              Activity
+            </button>
           </div>
         </div>
 
@@ -290,16 +298,18 @@ export function AnalyticsPage() {
           </button>
         )}
 
-        <label className="tv-analytics__toggle">
-          <input
-            type="checkbox"
-            className="tv-switch__input"
-            checked={showCache}
-            onChange={(e) => setShowCache(e.target.checked)}
-          />
-          <span className="tv-switch" aria-hidden="true" />
-          Show cache
-        </label>
+        {view !== 'activity' && (
+          <label className="tv-analytics__toggle">
+            <input
+              type="checkbox"
+              className="tv-switch__input"
+              checked={showCache}
+              onChange={(e) => setShowCache(e.target.checked)}
+            />
+            <span className="tv-switch" aria-hidden="true" />
+            Show cache
+          </label>
+        )}
       </div>
 
       {view === 'sessions' ? (
@@ -324,6 +334,26 @@ export function AnalyticsPage() {
             showCache={showCache}
           />
         )
+      ) : view === 'activity' ? (
+        <div className="tv-analytics__charts">
+          <ChartCard
+            title="Activity"
+            hint="user prompts, your local time"
+            loading={activity.loading}
+            empty={!activity.data || activity.data.heatmap.length === 0}
+          >
+            {activity.data && <ActivityHeatmap data={activity.data} />}
+          </ChartCard>
+
+          <ChartCard
+            title="Tool usage"
+            hint="calls by category"
+            loading={tools.loading}
+            empty={!tools.data || tools.data.rows.length === 0}
+          >
+            {tools.data && <ToolUsageChart rows={tools.data.rows} />}
+          </ChartCard>
+        </div>
       ) : error ? (
         <ErrorBox error={error} title="Failed to load analytics" onRetry={load} />
       ) : (
@@ -338,24 +368,6 @@ export function AnalyticsPage() {
               empty={!series.data || series.data.rows.length === 0}
             >
               {series.data && <TimeSeriesChart rows={series.data.rows} showCache={showCache} />}
-            </ChartCard>
-
-            <ChartCard
-              title="Activity"
-              hint="user prompts, your local time"
-              loading={activity.loading}
-              empty={!activity.data || activity.data.heatmap.length === 0}
-            >
-              {activity.data && <ActivityHeatmap data={activity.data} />}
-            </ChartCard>
-
-            <ChartCard
-              title="Tool usage"
-              hint="calls by category"
-              loading={tools.loading}
-              empty={!tools.data || tools.data.rows.length === 0}
-            >
-              {tools.data && <ToolUsageChart rows={tools.data.rows} />}
             </ChartCard>
 
             <ChartCard

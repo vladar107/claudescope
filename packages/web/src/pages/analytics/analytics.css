@@ -257,10 +257,10 @@
 .tv-heatmap__streaks { display: flex; align-items: baseline; gap: var(--tv-space-2); margin-bottom: var(--tv-space-3); }
 .tv-heatmap__streak { font-weight: 600; }
 .tv-heatmap__streak-sub { color: var(--tv-fg-muted); font-size: 0.85em; }
-.tv-heatmap__grid { display: flex; flex-direction: column; gap: 2px; overflow-x: auto; }
-.tv-heatmap__row, .tv-heatmap__hours { display: grid; grid-template-columns: 2.5rem repeat(24, 1fr); gap: 2px; align-items: center; }
+.tv-heatmap__grid { display: flex; flex-direction: column; gap: 3px; overflow-x: auto; width: fit-content; max-width: 100%; }
+.tv-heatmap__row, .tv-heatmap__hours { display: grid; grid-template-columns: 2.25rem repeat(24, 14px); gap: 3px; align-items: center; }
 .tv-heatmap__rowlabel { font-size: 11px; color: var(--tv-fg-muted); }
-.tv-heatmap__cell { aspect-ratio: 1 / 1; min-width: 10px; border-radius: 2px; }
+.tv-heatmap__cell { width: 14px; height: 14px; border-radius: 2px; }
 .tv-heatmap__hourlabel { font-size: 10px; color: var(--tv-fg-faint); text-align: left; }
 
 /* ---------------------------------------------------------------------------
