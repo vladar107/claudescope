@@ -36,6 +36,22 @@ beforeAll(async () => {
       ], usage: { input_tokens: 1, output_tokens: 1 } } },
     ]),
   );
+  // Fork-copy session: same message.id 'm1', same tool_use blocks, carrying forkedFrom.
+  // The canonical-usage election prefers the original (forked_from_session_id IS NULL)
+  // and marks this copy non-canonical — proving usage_canonical is load-bearing.
+  const forkBase = { sessionId: 'sTF', cwd: '/tmp/tools', gitBranch: 'main', version: '2.1.0' };
+  const forkFrom = { sessionId: 'sT', messageUuid: 'a1' };
+  writeFileSync(
+    join(projA, 'sTF.jsonl'),
+    jsonl([
+      { ...forkBase, type: 'user', uuid: 'u1', parentUuid: null, timestamp: '2026-06-01T10:00:00.000Z', isSidechain: false, forkedFrom: forkFrom, message: { role: 'user', content: 'go' } },
+      { ...forkBase, type: 'assistant', uuid: 'a1', parentUuid: 'u1', timestamp: '2026-06-01T10:00:01.000Z', isSidechain: false, forkedFrom: forkFrom, message: { role: 'assistant', model: 'claude-opus-4-8', id: 'm1', content: [
+        { type: 'tool_use', id: 't1', name: 'Edit', input: {} },
+        { type: 'tool_use', id: 't2', name: 'Edit', input: {} },
+        { type: 'tool_use', id: 't3', name: 'Bash', input: {} },
+      ], usage: { input_tokens: 1, output_tokens: 1 } } },
+    ]),
+  );
   const Fastify = (await import('fastify')).default;
   const { registerRoutes } = await import('../src/routes/index.js');
   const { reindex } = await import('../src/data/index.js');
@@ -57,6 +73,9 @@ describe('GET /api/analytics/tools', () => {
     const res = await app.inject({ method: 'GET', url: '/api/analytics/tools' });
     const body = res.json() as { rows: { tool: string; count: number }[] };
     const byTool = Object.fromEntries(body.rows.map((r) => [r.tool, r.count]));
+    // The fork-copy row shares message.id 'm1' and carries the same [Edit, Edit, Bash]
+    // blocks, but is marked non-canonical by usage_canonical election. Counts must
+    // remain Edit=2 and Bash=1, not 4 and 2 — proving usage_canonical is load-bearing.
     expect(byTool.Edit).toBe(2);
     expect(byTool.Bash).toBe(1);
     // descending
