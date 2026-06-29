@@ -71,13 +71,15 @@ afterAll(async () => {
 describe('GET /api/analytics/tools', () => {
   it('counts each tool occurrence (unnested), descending', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/analytics/tools' });
-    const body = res.json() as { rows: { tool: string; count: number }[] };
-    const byTool = Object.fromEntries(body.rows.map((r) => [r.tool, r.count]));
+    const body = res.json() as { rows: { tool: string; agent: string; count: number }[] };
+    const sumTool = (t: string) => body.rows.filter((r) => r.tool === t).reduce((n, r) => n + r.count, 0);
     // The fork-copy row shares message.id 'm1' and carries the same [Edit, Edit, Bash]
     // blocks, but is marked non-canonical by usage_canonical election. Counts must
     // remain Edit=2 and Bash=1, not 4 and 2 — proving usage_canonical is load-bearing.
-    expect(byTool.Edit).toBe(2);
-    expect(byTool.Bash).toBe(1);
+    expect(sumTool('Edit')).toBe(2);
+    expect(sumTool('Bash')).toBe(1);
+    // Each row is attributed to the agent that emitted it (here, all Claude Code).
+    expect(body.rows.every((r) => r.agent === 'claude-code')).toBe(true);
     // descending
     expect(body.rows[0]?.count).toBeGreaterThanOrEqual(body.rows[body.rows.length - 1]?.count ?? 0);
   });

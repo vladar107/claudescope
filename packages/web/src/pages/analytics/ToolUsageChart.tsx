@@ -4,12 +4,13 @@ import { type ToolCategory, toolCategory } from '@claudescope/shared';
 import { useTheme } from '../../theme/ThemeProvider.js';
 import { axisTick, type ChartColors, getChartColors, TooltipCard } from './chart-common.js';
 import { formatCount } from './format.js';
+import { agentLabel } from '../../components/index.js';
 
 interface Bucket {
   key: ToolCategory;
   count: number;
-  /** Raw tools (name + count) that fell into this category, for the tooltip. */
-  tools: { tool: string; count: number }[];
+  /** Raw tools (name + agent + count) that fell into this category, for the tooltip. */
+  tools: { tool: string; agent: string; count: number }[];
 }
 
 const CATEGORY_COLOR = (c: ChartColors): Record<ToolCategory, string> => ({
@@ -28,7 +29,7 @@ function bucketize(rows: ToolUsageRow[]): Bucket[] {
     const key = toolCategory(r.tool);
     const b = map.get(key) ?? { key, count: 0, tools: [] };
     b.count += r.count;
-    b.tools.push({ tool: r.tool, count: r.count });
+    b.tools.push({ tool: r.tool, agent: r.agent, count: r.count });
     map.set(key, b);
   }
   return [...map.values()].sort((a, b) => b.count - a.count);
@@ -67,7 +68,7 @@ function ToolTip(props: { active?: boolean; payload?: ReadonlyArray<{ payload?: 
   return (
     <TooltipCard
       title={`${b.key} — ${formatCount(b.count)} calls`}
-      rows={top.map((t) => ({ label: t.tool, value: formatCount(t.count), color: props.palette[b.key] }))}
+      rows={top.map((t) => ({ label: `${t.tool} · ${agentLabel(t.agent)}`, value: formatCount(t.count), color: props.palette[b.key] }))}
     />
   );
 }

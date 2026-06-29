@@ -1,9 +1,10 @@
 /**
- * GET /api/analytics/tools — count of tool calls by raw (canonical) tool name,
- * descending. Unnests the `events.tool_names` CSV. Filters on `usage_canonical`
- * to match the "tool calls" semantics of the session-efficiency table (a fork
- * copy / multi-block split must not multiply-count a call). The web maps raw
- * names → categories via `toolCategory()`.
+ * GET /api/analytics/tools — count of tool calls by raw (canonical) tool name
+ * AND the agent that emitted it (joined from `sessions.connector_id`), descending.
+ * Unnests the `events.tool_names` CSV. Filters on `usage_canonical` to match the
+ * "tool calls" semantics of the session-efficiency table (a fork copy / multi-block
+ * split must not multiply-count a call). The web maps raw names → categories via
+ * `toolCategory()` and surfaces the per-agent attribution in the tooltip.
  */
 import type { FastifyInstance } from 'fastify';
 import type { ToolUsageResponse, ToolUsageRow } from '@claudescope/shared';
@@ -21,19 +22,20 @@ export async function registerToolsRoute(app: FastifyInstance): Promise<void> {
 
     const rows = await queryRows(
       conn,
-      `SELECT tool, count(*) AS count
+      `SELECT tool, agent, count(*) AS count
        FROM (
-         SELECT unnest(string_split(e.tool_names, ',')) AS tool
+         SELECT unnest(string_split(e.tool_names, ',')) AS tool, s.connector_id AS agent
          FROM events e
+         JOIN sessions s ON e.session_id = s.id
          WHERE ${filters.join(' AND ')}
        ) t
        WHERE tool <> ''
-       GROUP BY tool
-       ORDER BY count DESC, tool`,
+       GROUP BY tool, agent
+       ORDER BY count DESC, tool, agent`,
     );
     const result: ToolUsageRow[] = rows.map((r) => {
       const rd = readRow(r, 'analytics-tools');
-      return { tool: rd.str('tool'), count: rd.num('count') };
+      return { tool: rd.str('tool'), agent: rd.str('agent'), count: rd.num('count') };
     });
     return { rows: result };
   });

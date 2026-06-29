@@ -481,9 +481,12 @@ export interface ActivityResponse {
   streak: StreakInfo;
 }
 
-/** One bar of the tool-usage breakdown (raw, pre-categorization, name). */
+/** One bar of the tool-usage breakdown: a raw (pre-categorization) tool name,
+ *  attributed to the agent that emitted it. */
 export interface ToolUsageRow {
   tool: string;
+  /** Connector id of the agent that made the calls (e.g. 'claude-code', 'codex'). */
+  agent: string;
   count: number;
 }
 
