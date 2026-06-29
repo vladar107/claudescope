@@ -18,5 +18,9 @@ perf-result.json
 .junie/
 .demo/
 
+# Agent working scratch — never committed; only docs/plans/NNNN is the committed record.
+.superpowers/
+docs/superpowers/
+
 # Nix build output symlink
 /result
