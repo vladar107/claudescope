@@ -62,7 +62,10 @@ export async function registerActivityRoute(app: FastifyInstance): Promise<void>
     const localTs = `(e.ts + to_minutes(${offset}))`;
 
     // Heatmap: honors the date filter (matches the rest of the page).
-    const filters: string[] = ["e.type = 'user'"];
+    // Exclude sidechain rows (subagent-internal user turns) and fork-copy rows
+    // (copied when a session is forked/resumed) so only genuine human prompts
+    // are counted — sidechain + fork copies would otherwise inflate by ~2.6×.
+    const filters: string[] = ["e.type = 'user'", 'NOT e.is_sidechain', 'e.forked_from_session_id IS NULL'];
     if (req.query.from) filters.push(`e.ts >= ${sqlString(req.query.from)}::TIMESTAMP`);
     if (req.query.to) filters.push(`e.ts <= ${sqlString(req.query.to)}::TIMESTAMP`);
     const heatmapRows = await queryRows(
@@ -80,12 +83,14 @@ export async function registerActivityRoute(app: FastifyInstance): Promise<void>
       return { dow: rd.num('dow'), hour: rd.num('hour'), count: rd.num('count') };
     });
 
-    // Streak: all-time (ignores the date filter).
+    // Streak: all-time (ignores the date filter). Same exclusions apply.
     const dayRows = await queryRows(
       conn,
       `SELECT DISTINCT strftime(${localTs}, '%Y-%m-%d') AS day
        FROM events e
-       WHERE e.type = 'user'`,
+       WHERE e.type = 'user'
+         AND NOT e.is_sidechain
+         AND e.forked_from_session_id IS NULL`,
     );
     const activeDays = dayRows
       .map((r) => readRow(r, 'activity-days').str('day'))
