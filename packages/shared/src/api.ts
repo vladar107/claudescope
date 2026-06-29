@@ -454,3 +454,40 @@ export interface MemoryResponse {
 
 /** GET /api/projects/:projectId/memory */
 export type ProjectMemoryResponse = ProjectMemory;
+
+// ---------------------------------------------------------------------------
+// Analytics — activity heatmap and tool usage
+// ---------------------------------------------------------------------------
+
+/** One cell of the activity punchcard: prompts in (local) day-of-week × hour. */
+export interface ActivityCell {
+  /** ISO day of week: 1 = Monday … 7 = Sunday. */
+  dow: number;
+  /** Local hour, 0–23. */
+  hour: number;
+  count: number;
+}
+
+/** All-time prompt streak (consecutive local calendar days with ≥1 user prompt). */
+export interface StreakInfo {
+  current: number;
+  longest: number;
+  lastActiveDay: string | null;
+}
+
+/** GET /api/analytics/activity */
+export interface ActivityResponse {
+  heatmap: ActivityCell[];
+  streak: StreakInfo;
+}
+
+/** One bar of the tool-usage breakdown (raw, pre-categorization, name). */
+export interface ToolUsageRow {
+  tool: string;
+  count: number;
+}
+
+/** GET /api/analytics/tools */
+export interface ToolUsageResponse {
+  rows: ToolUsageRow[];
+}
