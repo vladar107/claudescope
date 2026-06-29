@@ -24,11 +24,13 @@ import type {
   SessionEfficiencyResponse,
   SessionEfficiencySort,
   SortDir,
+  ToolUsageResponse,
 } from '@claudescope/shared';
 import { api } from '../../api/client.js';
 import { ErrorBox, Spinner } from '../../components/index.js';
 import { ActivityHeatmap } from './ActivityHeatmap.js';
 import { BreakdownChart } from './BreakdownChart.js';
+import { ToolUsageChart } from './ToolUsageChart.js';
 import type { BreakdownMetric, BreakdownSort } from './BreakdownChart.js';
 import { TimeSeriesChart } from './TimeSeriesChart.js';
 import { formatCount, formatCost, formatPct } from './format.js';
@@ -91,6 +93,7 @@ export function AnalyticsPage() {
   // trend chart is available regardless of the selected breakdown dimension.
   const [series, setSeries] = useState<QueryState>(INITIAL);
   const [activity, setActivity] = useState<{ data: ActivityResponse | null; loading: boolean; error: unknown }>({ data: null, loading: true, error: null });
+  const [tools, setTools] = useState<{ data: ToolUsageResponse | null; loading: boolean; error: unknown }>({ data: null, loading: true, error: null });
 
   // Convert the date inputs (YYYY-MM-DD, local) into inclusive ISO bounds.
   const range = useMemo(() => {
@@ -156,6 +159,19 @@ export function AnalyticsPage() {
       .catch((error) => {
         if (ctrl.signal.aborted) return;
         setActivity({ data: null, loading: false, error });
+      });
+    return () => ctrl.abort();
+  }, [range.from, range.to]);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setTools((s) => ({ ...s, loading: true }));
+    api
+      .analyticsTools({ from: range.from, to: range.to }, ctrl.signal)
+      .then((data) => setTools({ data, loading: false, error: null }))
+      .catch((error) => {
+        if (ctrl.signal.aborted) return;
+        setTools({ data: null, loading: false, error });
       });
     return () => ctrl.abort();
   }, [range.from, range.to]);
@@ -331,6 +347,15 @@ export function AnalyticsPage() {
               empty={!activity.data || activity.data.heatmap.length === 0}
             >
               {activity.data && <ActivityHeatmap data={activity.data} />}
+            </ChartCard>
+
+            <ChartCard
+              title="Tool usage"
+              hint="calls by category"
+              loading={tools.loading}
+              empty={!tools.data || tools.data.rows.length === 0}
+            >
+              {tools.data && <ToolUsageChart rows={tools.data.rows} />}
             </ChartCard>
 
             <ChartCard
