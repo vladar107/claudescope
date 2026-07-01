@@ -322,12 +322,14 @@ const IMAGE_MIME: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
-/** Absolute `uploaded_media_*.png` paths listed in a USER_INPUT metadata blob. */
+/** Absolute `uploaded_media_*.png` paths listed in a USER_INPUT metadata blob.
+ *  Accepts POSIX (`/…`) and Windows (`C:\…`) paths, including spaces — only the
+ *  basename is used downstream, so the leading form doesn't matter. */
 function extractImagePaths(content: string): string[] {
   const out: string[] = [];
-  const re = /^\s*-\s*(\/\S+\.(?:png|jpe?g|gif|webp))\s*$/gim;
+  const re = /^\s*-\s+(.+\.(?:png|jpe?g|gif|webp))\s*$/gim;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(content)) !== null) if (m[1]) out.push(m[1]);
+  while ((m = re.exec(content)) !== null) if (m[1]) out.push(m[1].trim());
   return out;
 }
 
