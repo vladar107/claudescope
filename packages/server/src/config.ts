@@ -92,6 +92,23 @@ export const COPILOT_SESSIONS_DIR = expandHome(
 );
 
 /**
+ * READ-ONLY source of Google Antigravity sessions. The app MUST NEVER write here.
+ * Antigravity 2.0 has two surfaces that share the same on-disk shape — the CLI
+ * (`agy`) and the desktop app — each with its own appDataDir under `~/.gemini`.
+ * One connector scans both: `<dir>/brain/<conv-id>/.system_generated/logs/transcript_full.jsonl`
+ * (with cwd resolved out-of-band from `<dir>/history.jsonl`). Override either dir
+ * with its env var; a leading `~` is expanded.
+ */
+export const ANTIGRAVITY_CLI_DIR = expandHome(
+  process.env.ANTIGRAVITY_CLI_DIR ?? join(homedir(), '.gemini', 'antigravity-cli'),
+);
+export const ANTIGRAVITY_DESKTOP_DIR = expandHome(
+  process.env.ANTIGRAVITY_DIR ?? join(homedir(), '.gemini', 'antigravity'),
+);
+/** Every Antigravity appDataDir the connector scans (both surfaces). */
+export const ANTIGRAVITY_DIRS = [ANTIGRAVITY_CLI_DIR, ANTIGRAVITY_DESKTOP_DIR];
+
+/**
  * READ-ONLY agent home directories — the parents of the session/project dirs
  * above, where each agent keeps its memory (`CLAUDE.md`, `AGENTS.md`, the Codex
  * `memories/` tree). Derived from the dirs above so the env overrides carry
@@ -103,6 +120,11 @@ export const CODEX_HOME = dirname(CODEX_SESSIONS_DIR);
 export const JUNIE_HOME = dirname(JUNIE_SESSIONS_DIR);
 /** `~/.copilot` — holds the global `copilot-instructions.md` memory file. */
 export const COPILOT_HOME = dirname(COPILOT_SESSIONS_DIR);
+/**
+ * `~/.gemini` — the shared Gemini/Antigravity home, parent of the appDataDirs.
+ * Holds Antigravity's global rules (`config/agents/AGENTS.md`) and `GEMINI.md`.
+ */
+export const ANTIGRAVITY_HOME = dirname(ANTIGRAVITY_CLI_DIR);
 
 /** Whether to auto-open the default browser on startup (set by the launcher). */
 export const OPEN_BROWSER = process.env.OPEN_BROWSER === '1';

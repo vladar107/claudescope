@@ -7,6 +7,7 @@ const AGENT_LABELS: Record<string, string> = {
   pi: 'pi',
   opencode: 'opencode',
   copilot: 'Copilot',
+  antigravity: 'Antigravity',
 };
 
 /** Human-friendly short label for a connector id. */
