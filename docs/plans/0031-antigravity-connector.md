@@ -113,3 +113,26 @@ New `packages/server/src/connectors/antigravity/`: `antigravity.ts`, `normalize.
   appears.
 - **Cost permanently unavailable** unless a validated token source appears (would need
   live `/usage` ground truth vs. the `gen_metadata` protobuf — a separate spike).
+
+## Post-merge review fixes (xhigh code review)
+
+A follow-up PR addresses correctness findings from the xhigh review of #42:
+
+- **Fixed** — subagent linkage now pairs prompts↔child-ids by interleaved order and
+  only reads `sender=` on `SYSTEM_MESSAGE` / "Conversation ID:" on `PLANNER_RESPONSE`
+  (a relayed summary can't inflate the pairing); re-parented children fold the root
+  transcript's mtime into their change-detection key so a parent gaining the link
+  re-indexes the child (no stale orphan session); conv-ids compared raw throughout
+  (multi-level nesting no longer breaks on case); orphan write results no longer
+  synthesize a blank canonical `Write`; `step_index` sort keeps step-less lines in
+  file order; `loadSession` promotes a lone subagent to the main thread if the parent
+  file is gone; `view_file`/`Bash` args use first-non-empty (not `??`) so a blank
+  `AbsolutePath` falls through; `/api/sources` keys on the first existing surface so a
+  desktop-only install still lists its source; pending tool-calls reset at each user
+  turn to bound the (id-less) result-correlation window.
+- **Deferred** (need a real sample or are inherent) — the model is only recorded when
+  the user changes it mid-session (no local default-model source); failed/denied
+  tool calls aren't gated to `is_error` / kept out of Files-changed (no failed-tool
+  sample yet); an edit tool (`replace_file_content`→`Edit`/`MultiEdit`) isn't mapped
+  until its shape is observed; id-less tool-result correlation stays best-effort; the
+  image helper is intentionally not shared with Copilot (avoid touching that connector).

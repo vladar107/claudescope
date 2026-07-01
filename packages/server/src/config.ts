@@ -107,6 +107,15 @@ export const ANTIGRAVITY_DESKTOP_DIR = expandHome(
 );
 /** Every Antigravity appDataDir the connector scans (both surfaces). */
 export const ANTIGRAVITY_DIRS = [ANTIGRAVITY_CLI_DIR, ANTIGRAVITY_DESKTOP_DIR];
+/**
+ * The Antigravity source dir reported to `/api/sources` — the first surface that
+ * exists (CLI or desktop). `discover()` scans both, so keying the sources footer
+ * on the CLI dir alone would hide the source for a desktop-only install.
+ */
+export const ANTIGRAVITY_SOURCE_DIR = firstExisting(
+  [ANTIGRAVITY_CLI_DIR, ANTIGRAVITY_DESKTOP_DIR],
+  ANTIGRAVITY_CLI_DIR,
+);
 
 /**
  * READ-ONLY agent home directories — the parents of the session/project dirs

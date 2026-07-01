@@ -41,9 +41,16 @@ import type {
 import { toolNamesCsv } from '../tool-names.js';
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const rec = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+/** First non-empty string among the candidates (unlike `??`, skips `''`). */
+const firstStr = (...vals: unknown[]): string => {
+  for (const v of vals) {
+    const s = str(v);
+    if (s) return s;
+  }
+  return '';
+};
 
 /** Junie-style bucket for a session whose cwd can't be resolved. */
 export const ANTIGRAVITY_UNKNOWN_CWD = '(unknown — Antigravity)';
@@ -186,48 +193,45 @@ function readHistory(appDataDir: string): Map<string, string> {
 function buildSubagentMap(appDataDir: string): Map<string, SubagentLink> {
   const map = new Map<string, SubagentLink>();
   for (const t of listTranscripts(appDataDir)) {
-    const records = readRecords(t.path);
-    const spawns: { prompt: string; typeName: string }[] = [];
-    const childIds: string[] = [];
+    // Walk records in order, pairing each spawned subagent prompt with the next
+    // child conv-id this conversation produces. Child ids come ONLY from a
+    // SYSTEM_MESSAGE `sender=` (the child messaged this parent) or a
+    // PLANNER_RESPONSE "Conversation ID: <id>" announcement — we deliberately do
+    // NOT scan a SYSTEM_MESSAGE body with the id regex, since a relayed summary
+    // may quote unrelated conversation ids and inflate the pairing.
+    const pendingPrompts: { prompt: string; typeName: string }[] = [];
     const seen = new Set<string>();
-    const addChild = (id: string): void => {
-      const cid = id.toLowerCase();
-      if (cid && cid !== t.convId.toLowerCase() && !seen.has(cid)) {
-        seen.add(cid);
-        childIds.push(cid);
-      }
-    };
-    for (const r of records) {
+    for (const r of readRecords(t.path)) {
       for (const call of r.tool_calls ?? []) {
         if (str(call.name) !== 'invoke_subagent') continue;
         const subs = rec(call.args).Subagents;
         for (const s of Array.isArray(subs) ? subs : []) {
           const sr = rec(s);
-          spawns.push({ prompt: str(sr.Prompt), typeName: str(sr.TypeName) });
+          pendingPrompts.push({ prompt: str(sr.Prompt), typeName: str(sr.TypeName) });
         }
       }
       const content = str(r.content);
-      if (r.type === 'SYSTEM_MESSAGE') {
-        const m = content.match(SENDER_RE);
-        if (m?.[1]) addChild(m[1]);
-      }
-      const cm = content.match(CONV_ID_RE);
-      if (cm?.[1]) addChild(cm[1]);
-    }
-    const n = Math.min(spawns.length, childIds.length);
-    for (let k = 0; k < n; k++) {
-      const child = childIds[k];
-      const spawn = spawns[k];
-      if (child && spawn && !map.has(child)) {
-        map.set(child, { parentConvId: t.convId, prompt: spawn.prompt, typeName: spawn.typeName });
+      const childId =
+        r.type === 'SYSTEM_MESSAGE'
+          ? content.match(SENDER_RE)?.[1]
+          : r.type === 'PLANNER_RESPONSE'
+            ? content.match(CONV_ID_RE)?.[1]
+            : undefined;
+      if (!childId || childId === t.convId || seen.has(childId)) continue;
+      seen.add(childId);
+      const spawn = pendingPrompts.shift();
+      if (spawn && !map.has(childId)) {
+        map.set(childId, { parentConvId: t.convId, prompt: spawn.prompt, typeName: spawn.typeName });
       }
     }
   }
   return map;
 }
 
-/** Follow the parent chain to the top-level (non-subagent) conversation. */
-function rootConvId(convId: string, subagents: Map<string, SubagentLink>): string {
+/** Follow the parent chain to the top-level (non-subagent) conversation. Ids are
+ *  compared as raw on-disk conv-ids throughout (map keys AND parentConvId), so the
+ *  walk stays consistent for multi-level nesting. */
+export function rootConvId(convId: string, subagents: Map<string, SubagentLink>): string {
   let cur = convId;
   const guard = new Set<string>();
   while (subagents.has(cur) && !guard.has(cur)) {
@@ -273,7 +277,7 @@ export function getContext(appDataDir: string): AntigravityContext {
 
 /** Subagent metadata (agentType, matched description) for a transcript, if it's a child. */
 export function subagentMetaFor(path: string): { agentType: string; description: string } | null {
-  const link = getContext(appDataDirFromPath(path)).subagents.get(convIdFromPath(path).toLowerCase());
+  const link = getContext(appDataDirFromPath(path)).subagents.get(convIdFromPath(path));
   if (!link) return null;
   return { agentType: link.typeName, description: subagentLabel(link.prompt) };
 }
@@ -396,7 +400,7 @@ function toolUseBlocks(name: string, args: Record<string, unknown>, id: string):
           type: 'tool_use',
           id,
           name: 'Read',
-          input: { file_path: str(args.AbsolutePath ?? args.TargetFile ?? args.Path) },
+          input: { file_path: firstStr(args.AbsolutePath, args.TargetFile, args.Path) },
         },
       ];
     case 'invoke_subagent': {
@@ -422,7 +426,7 @@ function toolUseBlocks(name: string, args: Record<string, unknown>, id: string):
             type: 'tool_use',
             id,
             name: 'Bash',
-            input: { command: str(args.Command ?? args.CommandLine ?? args.command) },
+            input: { command: firstStr(args.Command, args.CommandLine, args.command) },
           },
         ];
       }
@@ -463,13 +467,17 @@ export function parseAntigravitySession(
   const convDir = convDirFromPath(filePath);
   const ctx = getContext(appDataDirFromPath(filePath));
 
-  const key = convId.toLowerCase();
-  const isSidechain = ctx.subagents.has(key);
-  const sessionId = isSidechain ? rootConvId(key, ctx.subagents) : convId;
+  const isSidechain = ctx.subagents.has(convId);
+  const sessionId = isSidechain ? rootConvId(convId, ctx.subagents) : convId;
   const cwd = ctx.history.get(sessionId) ?? ANTIGRAVITY_UNKNOWN_CWD;
   const resolveImages = opts.resolveImages ?? false;
 
-  const records = readRecords(filePath).sort((a, b) => num(a.step_index) - num(b.step_index));
+  // Sort by step_index, falling back to file (append) order for a record missing
+  // it — so a step-less line keeps its position instead of being hoisted to 0.
+  const records = readRecords(filePath)
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => (a.r.step_index ?? a.i) - (b.r.step_index ?? b.i))
+    .map((x) => x.r);
 
   const events: (UserEvent | AssistantEvent)[] = [];
   let seq = 0;
@@ -522,6 +530,11 @@ export function parseAntigravitySession(
     if (type === 'CHECKPOINT' || type === 'CONVERSATION_HISTORY') continue;
 
     if (type === 'USER_INPUT') {
+      // A new user turn ends any prior tool loop; drop unmatched pending calls so
+      // a later same-kind result can't attach across the turn boundary.
+      pending.read.length = 0;
+      pending.write.length = 0;
+      pending.list.length = 0;
       const mm = parseModel(content);
       if (mm) model = mm;
       const blocks: ContentBlock[] = [];
@@ -557,6 +570,11 @@ export function parseAntigravitySession(
       const id = pending[rk].shift();
       if (id) {
         emitUser(ts, [{ type: 'tool_result', tool_use_id: id, content }]);
+      } else if (rk === 'write') {
+        // Orphan write result: the written content isn't in the result record, so
+        // don't synthesize a canonical Write (it would render a blank/emptied diff
+        // in the Files-changed tab). Surface the result text instead.
+        emitAssistant(ts, [{ type: 'text', text: content }]);
       } else {
         const tid = nextToolId();
         emitAssistant(ts, [synthToolUse(rk, content, tid)]);
