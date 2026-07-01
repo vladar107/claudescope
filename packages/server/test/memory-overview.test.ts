@@ -120,9 +120,9 @@ describe('buildConnectorOverviews', () => {
       // pi/opencode are unsupported → rank 2.
     ];
     const overviews = buildConnectorOverviews(items);
-    // Every registered agent appears (claude-code, codex, junie, pi, opencode, copilot).
+    // Every registered agent appears (claude-code, codex, junie, pi, opencode, copilot, antigravity).
     expect(overviews.map((o) => o.connectorId).sort()).toEqual(
-      ['claude-code', 'codex', 'copilot', 'junie', 'opencode', 'pi'].sort(),
+      ['claude-code', 'codex', 'copilot', 'junie', 'opencode', 'pi', 'antigravity'].sort(),
     );
     const rank = (o: { supported: boolean; preview?: unknown }) =>
       o.supported && o.preview ? 0 : o.supported ? 1 : 2;
