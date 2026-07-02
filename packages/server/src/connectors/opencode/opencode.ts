@@ -18,10 +18,10 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CLAUDESCOPE_HOME, OPENCODE_DATA_DIR, OPENCODE_DB_PATH } from '../../config.js';
 import { sqlString } from '../../db/duckdb.js';
-import type { SessionData } from '../../data/session-loader.js';
+import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
 import { listSessions, readSession } from './db.js';
-import { buildEvents, toCanonicalRows } from './normalize.js';
+import { buildEvents, taskSpawns, toCanonicalRows } from './normalize.js';
 
 const CACHE_DIR = join(CLAUDESCOPE_HOME, 'cache', 'opencode');
 
@@ -98,13 +98,42 @@ function auxProjections(filePath: string): AuxProjections {
   };
 }
 
-async function loadSession(_sessionId: string, paths: string[]): Promise<SessionData> {
-  const mainEvents = paths.flatMap((p) => {
-    const { dbPath, sessionId } = parseKey(p);
-    const session = readSession(dbPath, sessionId);
-    return session ? buildEvents(session) : [];
-  });
-  return { mainEvents, subagents: [] };
+/**
+ * Load a session's events, splitting the resolved synthetic files into the main
+ * transcript (its id equals the session id) and one subagent per re-parented
+ * task-spawned child. Children are labeled from the parent's `task` parts
+ * (matched via `state.metadata.sessionId`) so each run anchors to its Task block.
+ */
+async function loadSession(sessionId: string, paths: string[]): Promise<SessionData> {
+  const sessions = [...paths]
+    .sort()
+    .map((p) => {
+      const { dbPath, sessionId: id } = parseKey(p);
+      return readSession(dbPath, id);
+    })
+    .filter((s): s is NonNullable<typeof s> => s != null);
+
+  const main = sessions.filter((s) => s.id === sessionId);
+  const mainEvents = main.flatMap(buildEvents);
+  const spawns = new Map(main.flatMap((s) => [...taskSpawns(s)]));
+  const subagents: SubagentSource[] = sessions
+    .filter((s) => s.id !== sessionId)
+    .map((s) => ({
+      agentId: s.id,
+      agentType: spawns.get(s.id)?.agentType ?? '',
+      // No matching task part (orphan) or an empty description → the child's
+      // own title; it renders detached rather than anchored, which is the
+      // honest state, but at least carries a human-readable label.
+      description: spawns.get(s.id)?.description || s.title,
+      events: buildEvents(s),
+    }));
+
+  // Fallback: the parent session row is gone while re-parented children still
+  // resolve under its id — promote them so the thread isn't empty.
+  if (mainEvents.length === 0 && subagents.length > 0) {
+    return { mainEvents: subagents.flatMap((s) => s.events), subagents: [] };
+  }
+  return { mainEvents, subagents };
 }
 
 export const opencodeConnector: AgentConnector = {

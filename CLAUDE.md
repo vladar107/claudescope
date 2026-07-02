@@ -125,6 +125,13 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   also keeps an opaque `thinkingSignature`), so their reasoning renders in full.
 - **Codex sessions have no stored title** — the session title falls back to the
   first user message (see `first_user` in `data/index.ts`). Same for **pi**.
+- **Codex subagents & apply_patch** — subagent rollouts are separate files whose
+  `session_meta` carries `thread_source: "subagent"` + the parent thread id; they
+  re-key under their ROOT thread (`is_sidechain`) and nest via a canonical `Task`
+  synthesized from the parent's `spawn_agent` call. File edits arrive as
+  `custom_tool_call` records (NOT `function_call`) named `apply_patch` → parsed
+  V4A envelopes fan out to canonical `Write`/`MultiEdit` per file so the
+  Files-changed tab works.
 - **pi connector** (`connectors/pi/`) — JSONL like Claude/Codex but `cwd` is on
   the `session` line and tool results are separate `toolResult` records, so a
   `prepare()` pass normalizes to canonical NDJSON (Codex pattern). `model` comes
@@ -132,6 +139,9 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   attribution); the `uuid`/`parentUuid` chain is synthesized over message rows
   because pi's native chain threads through `model_change`/`thinking_level_change`
   records. pi has no home-dir memory, so the connector implements no memory.
+  Subagent runs live at `<sessionBase>/<runId>/run-N/session.jsonl` (linkage:
+  the `subagent` toolResult's `details.runId`); they re-key to the parent by
+  path shape and nest via a canonical `Task` (management calls stay passthrough).
 - **opencode connector** (`connectors/opencode/`) — the only **SQLite-backed**
   source: one `opencode.db` (`session`/`message`/`part`), read read-only via
   `node:sqlite` (built into Node 24 — no dep). Each session is a synthetic
@@ -142,7 +152,10 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   pasted screenshot is a `file` part (data-URL) → `ImageBlock`. Reasoning is
   plaintext. Tokens are per-message (reasoning folded into output). `discover()`
   throws on a present-but-unreadable DB (the indexer isolates a throwing connector
-  and preserves its sessions — it never wipes them). No memory.
+  and preserves its sessions — it never wipes them). No memory. Task-spawned
+  child sessions carry `session.parent_id` → re-keyed to the root ancestor
+  (`is_sidechain`, cycle-guarded) and nested via the parent's `task` tool part
+  (its `state.metadata.sessionId` names the child).
 - **GitHub Copilot CLI connector** (`connectors/copilot/`) — event-sourced
   `~/.copilot/session-state/<uuid>/events.jsonl` (Junie/pi-shaped lines of
   `{type, data, id, timestamp, parentId}`); `prepare()` normalizes to canonical
@@ -158,6 +171,10 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   `ImageBlock`, else the inline `[📷 …]` marker remains. Global memory is
   `~/.copilot/copilot-instructions.md`; "session-level memory" is session-scoped
   (per-session `session.db` + `files/`), not cross-session, so no project memory.
+  Subagents are INLINE in the parent's `events.jsonl`: inner events carry an
+  event-level `agentId` (= the spawning `task` toolCallId) and are segmented into
+  per-agent streams (`is_sidechain`), nested via a canonical `Task`; the
+  `subagent.started` record supplies agent name/model.
 - **Google Antigravity connector** (`connectors/antigravity/`) — an event stream
   but **with** assistant prose and plaintext thinking (unlike Junie). Read
   `~/.gemini/antigravity-cli/brain/**/transcript_full.jsonl` (also scans the
@@ -176,6 +193,11 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   a session renders as tool/terminal/file blocks plus a final result. Expected,
   not a bug. Older Junie sessions also lack a recorded `cwd` (no `projectDir` in
   `index.jsonl`) and group under the `(unknown — Junie)` project bucket.
+- **Junie "subagents" are NOT embeddable by design** — Junie delegates by running
+  `junie …` as a plain terminal command, so children are independent sessions
+  with zero ID linkage to the spawner (only the coincidental prompt text).
+  Matching command text to session prompts would be heuristic and fragile, so
+  they intentionally list as separate top-level sessions.
 - **Cost is a local estimate** from token usage × rates; not real billing.
   Computed once at index time and stored. Rates auto-refresh daily from LiteLLM
   at runtime (`pricing.fetched.json`); `pricing.json` is the fallback/override

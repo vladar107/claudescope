@@ -1,13 +1,18 @@
 /**
  * pi connector integration test.
  *
- * Builds the index from a synthetic pi session JSONL (in an isolated temp
+ * Builds the index from synthetic pi session JSONL (in an isolated temp
  * PI_SESSIONS_DIR, with the other agents empty) and exercises the routes,
  * verifying the pi-specific normalization: cwd/session id from the `session`
  * line, model from the assistant message, plaintext thinking (NOT blanked),
  * composite-id tool_use ↔ tool_result pairing, the synthesized thread chain that
- * sidesteps pi's `model_change`/`thinking_level_change` records, and correct
- * `gpt-5.4-mini` cost (not the `gpt`-family overcharge).
+ * sidesteps pi's `model_change`/`thinking_level_change` records, correct
+ * `gpt-5.4-mini` cost (not the `gpt`-family overcharge), and subagent embedding:
+ * a nested `<sessionBase>/<runId>/run-<N>/session.jsonl` child folds into the
+ * parent session (searchable, tokens counted, never a top-level session) and
+ * nests at its `subagent` toolCall → canonical `Task`, while a management-mode
+ * `subagent` call stays passthrough and an orphaned child (no parent file)
+ * indexes standalone instead of crashing.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -34,12 +39,17 @@ process.env.REINDEX_INTERVAL_MS = '0';
 
 const jsonl = (events: unknown[]): string => events.map((e) => JSON.stringify(e)).join('\n') + '\n';
 const ts = (s: number) => `2026-06-15T10:00:${String(s).padStart(2, '0')}.000Z`;
+const ts2 = (s: number) => `2026-06-15T11:00:${String(s).padStart(2, '0')}.000Z`;
 
 // Composite tool ids as pi writes them (`call_…|fc_…`) — must survive verbatim
 // on both the tool_use and its tool_result, or the pairing breaks.
 const CALL_A = 'call_AAA|fc_aaa';
 const CALL_B = 'call_BBB|fc_bbb';
 const CALL_C = 'call_CCC|fc_ccc';
+const CALL_M = 'call_MMM|fc_mmm'; // management-mode subagent call
+const CALL_S = 'call_SSS|fc_sss'; // spawning subagent call
+// The dispatched task; the run must anchor on its FIRST LINE (subagentLabel).
+const SCOUT_TASK = 'Map the cave system\nCover every passage.';
 // 1x1 transparent PNG (base64) — stands in for a pasted screenshot pi read back.
 const PNG_B64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
@@ -84,12 +94,116 @@ function writeSession(): string {
   return file;
 }
 
+/**
+ * Write a second session that dispatches a subagent: a management `subagent`
+ * call (stays passthrough), a spawning call (→ canonical `Task`), the nested
+ * child transcript at `<sessionBase>/<runId>/run-0/session.jsonl`, an ORPHANED
+ * child with no parent `.jsonl` sibling (must index standalone), and an
+ * UNMATCHED child run no toolResult claims (must attach detached).
+ */
+function writeSubagentSession(): void {
+  const dir = join(piDir, '--tmp-piproj--');
+  const base = '2026-06-15T11-00-00-000Z_02aaaaaa-1111-7222-8333-444455556666';
+  writeFileSync(
+    join(dir, `${base}.jsonl`),
+    jsonl([
+      { type: 'session', version: 3, id: 'pi-sess-2', timestamp: ts2(0), cwd: '/tmp/piproj' },
+      { type: 'message', id: 'u1', parentId: null, timestamp: ts2(1), message: { role: 'user', content: [{ type: 'text', text: 'dispatch a scout to map the caves' }] } },
+      { type: 'message', id: 'a1', parentId: 'u1', timestamp: ts2(2), message: {
+        role: 'assistant', model: 'gpt-5.4-mini', provider: 'openai-codex',
+        content: [{ type: 'toolCall', id: CALL_M, name: 'subagent', arguments: { action: 'list' } }],
+      } },
+      // Management action: mode 'management', no runId → no child, stays `subagent`.
+      { type: 'message', id: 'tr1', parentId: 'a1', timestamp: ts2(3), message: { role: 'toolResult', toolCallId: CALL_M, toolName: 'subagent', content: [{ type: 'text', text: 'Executable agents:\n- scout' }], details: { mode: 'management', results: [] } } },
+      { type: 'message', id: 'a2', parentId: 'tr1', timestamp: ts2(4), message: {
+        role: 'assistant', model: 'gpt-5.4-mini', provider: 'openai-codex',
+        content: [{ type: 'toolCall', id: CALL_S, name: 'subagent', arguments: { agent: 'scout', task: SCOUT_TASK } }],
+      } },
+      // The result echoes the task WITH a suffixed output section — the correlation
+      // key must come from the toolCall args (first line), not this string.
+      { type: 'message', id: 'tr2', parentId: 'a2', timestamp: ts2(20), message: { role: 'toolResult', toolCallId: CALL_S, toolName: 'subagent', content: [{ type: 'text', text: '# Cave map\nAll passages covered.' }], details: { mode: 'single', runId: 'run1abc', results: [{ agent: 'scout', task: `${SCOUT_TASK}\n\n---\n**Output requirements**\nreport back` }] } } },
+      { type: 'message', id: 'a3', parentId: 'tr2', timestamp: ts2(21), message: {
+        role: 'assistant', model: 'gpt-5.4-mini', provider: 'openai-codex',
+        content: [{ type: 'text', text: 'The scout mapped the caves.' }],
+      } },
+    ]),
+  );
+
+  // The child run transcript — nested under the parent's basename dir. Only the
+  // child carries usage, so the parent's totalTokens proves sidechain folding.
+  const childDir = join(dir, base, 'run1abc', 'run-0');
+  mkdirSync(childDir, { recursive: true });
+  writeFileSync(
+    join(childDir, 'session.jsonl'),
+    jsonl([
+      { type: 'session', version: 3, id: 'pi-child-1', timestamp: ts2(10), cwd: '/tmp/piproj' },
+      { type: 'message', id: 'cu1', parentId: null, timestamp: ts2(11), message: { role: 'user', content: [{ type: 'text', text: 'Map the cave system' }] } },
+      { type: 'message', id: 'ca1', parentId: 'cu1', timestamp: ts2(12), message: {
+        role: 'assistant', model: 'gpt-5.4-mini', provider: 'openai-codex',
+        content: [{ type: 'text', text: 'Stalactite chamber found in the glowworm grotto.' }],
+        usage: { input: 100, output: 20, cacheRead: 0, cacheWrite: 0, totalTokens: 120 },
+      } },
+    ]),
+  );
+
+  // Orphan: shaped like a child (`run-0/session.jsonl`) but `no-parent-here.jsonl`
+  // does not exist — must index as its own session, not crash or key to a dead id.
+  const orphanDir = join(dir, 'no-parent-here', 'runX', 'run-0');
+  mkdirSync(orphanDir, { recursive: true });
+  writeFileSync(
+    join(orphanDir, 'session.jsonl'),
+    jsonl([
+      { type: 'session', version: 3, id: 'pi-orphan-1', timestamp: ts2(30), cwd: '/tmp/piproj' },
+      { type: 'message', id: 'ou1', parentId: null, timestamp: ts2(31), message: { role: 'user', content: [{ type: 'text', text: 'orphan child with no parent' }] } },
+    ]),
+  );
+
+  // UNMATCHED child: a run dir no subagent toolResult ever claimed (crashed
+  // mid-run). Indexed under the parent (path shape is content-independent), so
+  // it must surface in detail as a DETACHED run — not vanish behind a search hit.
+  const unmatchedDir = join(dir, base, 'run-crashed', 'run-0');
+  mkdirSync(unmatchedDir, { recursive: true });
+  writeFileSync(
+    join(unmatchedDir, 'session.jsonl'),
+    jsonl([
+      { type: 'session', version: 3, id: 'pi-child-crashed', timestamp: ts2(25), cwd: '/tmp/piproj' },
+      { type: 'message', id: 'xu1', parentId: null, timestamp: ts2(26), message: { role: 'user', content: [{ type: 'text', text: 'abandoned expedition notes' }] } },
+    ]),
+  );
+}
+
+/**
+ * A parent whose file holds ONLY the `session` line (zero indexable events) plus
+ * a nested child: the session's `files` rows are the child's alone, so
+ * loadSession sees no top-level path and must promote the child to the main
+ * thread instead of serving an empty detail.
+ */
+function writeEmptyParentSession(): void {
+  const dir = join(piDir, '--tmp-piproj--');
+  const base = '2026-06-15T12-00-00-000Z_03bbbbbb-1111-7222-8333-444455556666';
+  writeFileSync(
+    join(dir, `${base}.jsonl`),
+    jsonl([{ type: 'session', version: 3, id: 'pi-empty-parent', timestamp: ts2(40), cwd: '/tmp/piproj' }]),
+  );
+  const childDir = join(dir, base, 'runZ', 'run-0');
+  mkdirSync(childDir, { recursive: true });
+  writeFileSync(
+    join(childDir, 'session.jsonl'),
+    jsonl([
+      { type: 'session', version: 3, id: 'pi-child-2', timestamp: ts2(41), cwd: '/tmp/piproj' },
+      { type: 'message', id: 'zu1', parentId: null, timestamp: ts2(42), message: { role: 'user', content: [{ type: 'text', text: 'promoted child speaks for the parent' }] } },
+    ]),
+  );
+}
+
 let app: FastifyInstance;
 let closeConnection: () => Promise<void>;
 
 beforeAll(async () => {
   mkdirSync(claudeDir, { recursive: true });
   writeSession();
+  writeSubagentSession();
+  writeEmptyParentSession();
 
   const Fastify = (await import('fastify')).default;
   const { registerRoutes } = await import('../src/routes/index.js');
@@ -111,13 +225,22 @@ afterAll(async () => {
 const get = (url: string) => app.inject({ method: 'GET', url });
 
 describe('pi session indexing', () => {
-  it('lists the pi session with model from the assistant message and a pi agent tag', async () => {
+  it('lists the pi sessions with model from the assistant message and a pi agent tag', async () => {
     const sessions = (await get('/api/sessions')).json();
-    expect(sessions.map((s: { id: string }) => s.id)).toEqual(['pi-sess-1']);
-    expect(sessions[0].models).toContain('gpt-5.4-mini');
-    expect(sessions[0].connectorId).toBe('pi');
+    // The nested children (`pi-child-*`) fold into their parents — never
+    // top-level sessions; the orphan (parent file missing) stays standalone, and
+    // the empty parent is listed via its child's re-keyed rows.
+    expect(sessions.map((s: { id: string }) => s.id).sort()).toEqual([
+      'pi-empty-parent',
+      'pi-orphan-1',
+      'pi-sess-1',
+      'pi-sess-2',
+    ]);
+    const s1 = sessions.find((s: { id: string }) => s.id === 'pi-sess-1');
+    expect(s1.models).toContain('gpt-5.4-mini');
+    expect(s1.connectorId).toBe('pi');
     // pi has no ai-title, so the title falls back to the first user message.
-    expect(sessions[0].title).toBe('find the needle in this pi haystack');
+    expect(s1.title).toBe('find the needle in this pi haystack');
   });
 
   it('tags the project with its agent and groups analytics by agent', async () => {
@@ -134,7 +257,7 @@ describe('pi session indexing', () => {
   });
 
   it('maps usage directly (input excl. cache) and prices gpt-5.4-mini correctly', async () => {
-    const s = (await get('/api/sessions')).json()[0];
+    const s = (await get('/api/sessions')).json().find((x: { id: string }) => x.id === 'pi-sess-1');
     // input is cache-exclusive in pi → totalTokens = Σ(input+output+cacheRead+cacheWrite)
     // = (1000+300+200+0) + (500+50+1000+0) = 3050.
     expect(s.totalTokens).toBe(3050);
@@ -197,5 +320,82 @@ describe('pi session detail', () => {
     expect(img.source).toEqual({ type: 'base64', media_type: 'image/png', data: PNG_B64 });
 
     expect(JSON.stringify(detail.thread)).toContain('Found the needle.');
+  });
+});
+
+describe('pi subagent embedding', () => {
+  it('marks the parent session as having a sidechain and folds child tokens into it', async () => {
+    const sessions = (await get('/api/sessions')).json();
+    const s2 = sessions.find((s: { id: string }) => s.id === 'pi-sess-2');
+    expect(s2.hasSidechain).toBe(true);
+    // Only the CHILD carries usage (100 in + 20 out) — the parent total proves
+    // the re-keyed sidechain rows are counted under the parent session.
+    expect(s2.totalTokens).toBe(120);
+    // Fallback title comes from the parent's (earliest) user turn, not the child's.
+    expect(s2.title).toBe('dispatch a scout to map the caves');
+  });
+
+  it('nests the child run at its spawning toolCall via the canonical Task block', async () => {
+    const detail = (await get('/api/sessions/pi-sess-2')).json();
+    const flat = detail.thread.flatMap((t: { blocks: Record<string, unknown>[] }) => t.blocks);
+
+    // The spawning `subagent` toolCall → canonical `Task`; the description is the
+    // task's FIRST LINE, shared with the SubagentSource so the run anchors here.
+    const task = flat.find((b: { name?: string }) => b.name === 'Task');
+    expect(task.id).toBe(CALL_S);
+    expect(task.input).toMatchObject({ description: 'Map the cave system', subagent_type: 'scout' });
+    expect(task.input.prompt).toBe(SCOUT_TASK);
+
+    // Two runs: the anchored scout + the detached crashed run (asserted below).
+    expect(detail.subagents).toHaveLength(2);
+    const run = detail.subagents.find((r: { agentType: string }) => r.agentType === 'scout');
+    expect(run).toMatchObject({ agentType: 'scout', description: 'Map the cave system' });
+    expect(run.toolUseId).toBe(CALL_S);
+    // The child transcript rides the run — not the main thread.
+    expect(JSON.stringify(run)).toContain('glowworm grotto');
+    expect(JSON.stringify(detail.thread)).not.toContain('glowworm');
+  });
+
+  it('attaches an unmatched child run as a detached (unanchored) subagent', async () => {
+    const detail = (await get('/api/sessions/pi-sess-2')).json();
+    // The crashed run has no claiming toolResult → no description to anchor on,
+    // but its events must still be reachable in the detail response.
+    const detached = detail.subagents.find((r: { toolUseId?: string }) => !r.toolUseId);
+    expect(detached).toMatchObject({ agentType: '', description: '' });
+    expect(JSON.stringify(detached)).toContain('abandoned expedition notes');
+  });
+
+  it('keeps a management-mode subagent call passthrough (no Task, no run)', async () => {
+    const detail = (await get('/api/sessions/pi-sess-2')).json();
+    const flat = detail.thread.flatMap((t: { blocks: Record<string, unknown>[] }) => t.blocks);
+    const mgmt = flat.find((b: { id?: string }) => b.id === CALL_M);
+    expect(mgmt.name).toBe('subagent'); // NOT canonicalized — nothing was spawned
+    // No run anchors to the management call.
+    expect(detail.subagents.some((r: { toolUseId?: string }) => r.toolUseId === CALL_M)).toBe(false);
+  });
+
+  it('promotes children to the main thread when the parent contributes no events', async () => {
+    // `pi-empty-parent` indexed only its child's rows: loadSession finds no
+    // top-level path and must promote the child instead of serving nothing.
+    const detail = (await get('/api/sessions/pi-empty-parent')).json();
+    expect(JSON.stringify(detail.thread)).toContain('promoted child speaks for the parent');
+    expect(detail.subagents).toEqual([]);
+  });
+
+  it('finds child-transcript text under the PARENT session via search', async () => {
+    const { sessions: results } = (await get('/api/search?q=glowworm')).json();
+    expect(results.some((r: { sessionId: string }) => r.sessionId === 'pi-sess-2')).toBe(true);
+    expect(results.every((r: { sessionId: string }) => r.sessionId !== 'pi-child-1')).toBe(true);
+
+    // The unmatched child's text hits the parent too — and the detached run in
+    // detail (asserted above) is what makes that hit followable.
+    const { sessions: crashed } = (await get('/api/search?q=expedition')).json();
+    expect(crashed.some((r: { sessionId: string }) => r.sessionId === 'pi-sess-2')).toBe(true);
+  });
+
+  it('indexes an orphaned child (missing parent file) as its own session', async () => {
+    const detail = (await get('/api/sessions/pi-orphan-1')).json();
+    expect(JSON.stringify(detail.thread)).toContain('orphan child with no parent');
+    expect(detail.subagents).toEqual([]);
   });
 });

@@ -6,7 +6,10 @@
  * session becomes one synthetic file, per-message tokens (reasoning folded into
  * output) cost as `gpt-5.4-mini-fast`, plaintext reasoning renders, `apply_patch`
  * fans out to canonical `MultiEdit`/`Write` (Files-changed tab), `read`→`Read`,
- * and a pasted screenshot (`file` part, data URL) embeds.
+ * and a pasted screenshot (`file` part, data URL) embeds. Task-spawned child
+ * sessions (`parent_id`) fold into the parent as embedded subagents anchored to
+ * their canonical `Task` block; dangling and cyclic parent links degrade to
+ * standalone sessions instead of hanging or crashing.
  *
  * Never touches the real `~/.local/share/opencode`.
  */
@@ -63,13 +66,19 @@ function writeDb(): void {
   mkdirSync(ocDataDir, { recursive: true });
   const db = new DatabaseSync(join(ocDataDir, 'opencode.db'));
   db.exec(`
-    CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, title TEXT, time_created INTEGER, time_updated INTEGER);
+    CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, title TEXT, parent_id TEXT, time_created INTEGER, time_updated INTEGER);
     CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT);
     CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT);
   `);
-  db.prepare('INSERT INTO session VALUES (?,?,?,?,?)').run(
-    'ses_test1', '/tmp/ocproj', 'Test session', 1000, 3000,
-  );
+  const ses = db.prepare('INSERT INTO session VALUES (?,?,?,?,?,?)');
+  ses.run('ses_test1', '/tmp/ocproj', 'Test session', null, 1000, 3000);
+  // task-spawned child — must fold into ses_test1, its title must NOT clobber the parent's.
+  ses.run('ses_child1', '/tmp/ocproj', 'Inspect entry point (@explore subagent)', 'ses_test1', 2500, 2900);
+  // degraded parent links: a dangling parent_id and a two-session cycle. All three
+  // must index as standalone sessions — no re-keying, no hang, no crash.
+  ses.run('ses_dangling', '/tmp/ocproj', 'Dangling child', 'ses_ghost', 4000, 4100);
+  ses.run('ses_cyc1', '/tmp/ocproj', 'Cycle one', 'ses_cyc2', 5000, 5100);
+  ses.run('ses_cyc2', '/tmp/ocproj', 'Cycle two', 'ses_cyc1', 5000, 5100);
 
   const msg = db.prepare('INSERT INTO message VALUES (?,?,?,?,?)');
   msg.run('u1', 'ses_test1', 1000, 1000, JSON.stringify({ role: 'user', time: { created: 1000 } }));
@@ -110,6 +119,48 @@ function writeDb(): void {
   part.run('p7', 'a1', 'ses_test1', 2005, 2005, JSON.stringify({
     type: 'step-finish', tokens: { total: 1550, input: 1000, output: 50, reasoning: 200, cache: { write: 0, read: 300 } }, cost: 0,
   }));
+
+  // Parent turn that spawns the subagent: a `task` part whose metadata.sessionId
+  // names the child — the connector maps it to a canonical `Task` block.
+  msg.run('a2', 'ses_test1', 2500, 2500, JSON.stringify({
+    role: 'assistant', modelID: 'gpt-5.4-mini-fast', providerID: 'openai', time: { created: 2500 },
+    tokens: { total: 0, input: 0, output: 0, reasoning: 0, cache: { write: 0, read: 0 } },
+  }));
+  part.run('p8', 'a2', 'ses_test1', 2501, 2501, JSON.stringify({
+    type: 'tool', tool: 'task', callID: 'call_t',
+    state: {
+      status: 'completed',
+      input: {
+        description: 'Inspect entry point',
+        prompt: 'Find the app entry point and report it.',
+        subagent_type: 'explore', task_id: '', command: 'inspect the codebase entry point',
+      },
+      output: 'Entry point is packages/server/src/index.ts',
+      metadata: {
+        sessionId: 'ses_child1', parentSessionId: 'ses_test1',
+        model: { modelID: 'gpt-5.4-mini-fast', providerID: 'openai' },
+      },
+    },
+  }));
+
+  // Child transcript — tokens must fold into the parent's totals.
+  msg.run('cu1', 'ses_child1', 2600, 2600, JSON.stringify({ role: 'user', time: { created: 2600 } }));
+  part.run('cp1', 'cu1', 'ses_child1', 2601, 2601, JSON.stringify({ type: 'text', text: 'Find the app entry point and report it.' }));
+  msg.run('ca1', 'ses_child1', 2700, 2700, JSON.stringify({
+    role: 'assistant', modelID: 'gpt-5.4-mini-fast', providerID: 'openai', time: { created: 2700 },
+    tokens: { total: 110, input: 100, output: 10, reasoning: 0, cache: { write: 0, read: 0 } },
+  }));
+  part.run('cp2', 'ca1', 'ses_child1', 2701, 2701, JSON.stringify({
+    type: 'text', text: 'The xylophone entry point is packages/server/src/index.ts',
+  }));
+
+  // Degraded sessions need at least one event row to materialize in the index.
+  msg.run('du1', 'ses_dangling', 4000, 4000, JSON.stringify({ role: 'user', time: { created: 4000 } }));
+  part.run('dp1', 'du1', 'ses_dangling', 4001, 4001, JSON.stringify({ type: 'text', text: 'orphaned child prompt' }));
+  msg.run('y1u', 'ses_cyc1', 5000, 5000, JSON.stringify({ role: 'user', time: { created: 5000 } }));
+  part.run('y1p', 'y1u', 'ses_cyc1', 5001, 5001, JSON.stringify({ type: 'text', text: 'cycle one prompt' }));
+  msg.run('y2u', 'ses_cyc2', 5000, 5000, JSON.stringify({ role: 'user', time: { created: 5000 } }));
+  part.run('y2p', 'y2u', 'ses_cyc2', 5001, 5001, JSON.stringify({ type: 'text', text: 'cycle two prompt' }));
   db.close();
 }
 
@@ -140,12 +191,20 @@ afterAll(async () => {
 const get = (url: string) => app.inject({ method: 'GET', url });
 
 describe('opencode session indexing', () => {
-  it('lists the SQLite-sourced session with its stored title and an opencode tag', async () => {
+  it('lists the SQLite-sourced sessions; task children fold, degraded links stay standalone', async () => {
     const sessions = (await get('/api/sessions')).json();
-    expect(sessions.map((s: { id: string }) => s.id)).toEqual(['ses_test1']);
-    expect(sessions[0].connectorId).toBe('opencode');
-    expect(sessions[0].models).toContain('gpt-5.4-mini-fast');
-    expect(sessions[0].title).toBe('Test session'); // stored title, not first-message fallback
+    // ses_child1 must NOT be listed (re-keyed under ses_test1); the dangling and
+    // cyclic parent links must degrade to standalone sessions, not hang or vanish.
+    expect(sessions.map((s: { id: string }) => s.id).sort()).toEqual([
+      'ses_cyc1', 'ses_cyc2', 'ses_dangling', 'ses_test1',
+    ]);
+    const parent = sessions.find((s: { id: string }) => s.id === 'ses_test1');
+    expect(parent.connectorId).toBe('opencode');
+    expect(parent.models).toContain('gpt-5.4-mini-fast');
+    // stored title, not first-message fallback — and not the CHILD's title, which
+    // shares the parent's session_id in the titles projection.
+    expect(parent.title).toBe('Test session');
+    expect(parent.hasSidechain).toBe(true);
   });
 
   it('tags the project, exposes the source, and groups analytics by agent/model', async () => {
@@ -157,24 +216,29 @@ describe('opencode session indexing', () => {
     expect(byModel).toContain('gpt-5.4-mini-fast');
   });
 
-  it('folds reasoning into output and prices gpt-5.4-mini-fast', async () => {
-    const s = (await get('/api/sessions')).json()[0];
-    // input 1000 + output(50)+reasoning(200)=250 + cacheRead 300 + cacheWrite 0 = 1550.
-    expect(s.totalTokens).toBe(1550);
-    // (1000*0.75 + 250*4.5 + 300*0.075) / 1e6 = 0.0018975.
-    expect(s.totalCostUsd).toBeCloseTo(0.0018975, 6);
+  it('folds reasoning into output, prices gpt-5.4-mini-fast, and counts child tokens', async () => {
+    const sessions = (await get('/api/sessions')).json();
+    const s = sessions.find((x: { id: string }) => x.id === 'ses_test1');
+    // main: input 1000 + output(50)+reasoning(200)=250 + cacheRead 300 = 1550;
+    // child (folded in): input 100 + output 10 = 110. Total 1660.
+    expect(s.totalTokens).toBe(1660);
+    // (1000*0.75 + 250*4.5 + 300*0.075 + 100*0.75 + 10*4.5) / 1e6 = 0.0020175.
+    expect(s.totalCostUsd).toBeCloseTo(0.0020175, 6);
   });
 
-  it('finds the session via full-text search', async () => {
+  it('finds the session via full-text search, including subagent text under the parent', async () => {
     const { sessions: results } = (await get('/api/search?q=patched')).json();
     expect(results.some((r: { sessionId: string }) => r.sessionId === 'ses_test1')).toBe(true);
+    // text from the child transcript surfaces under the PARENT session id.
+    const { sessions: sub } = (await get('/api/search?q=xylophone')).json();
+    expect(sub.some((r: { sessionId: string }) => r.sessionId === 'ses_test1')).toBe(true);
+    expect(sub.every((r: { sessionId: string }) => r.sessionId !== 'ses_child1')).toBe(true);
   });
 });
 
 describe('opencode session detail', () => {
   it('renders reasoning, apply_patch→canonical edits, read, and the screenshot', async () => {
     const detail = (await get('/api/sessions/ses_test1')).json();
-    expect(detail.subagents).toEqual([]);
     const flat = detail.thread.flatMap((t: { blocks: Record<string, unknown>[] }) => t.blocks);
 
     // plaintext reasoning survives.
@@ -212,5 +276,33 @@ describe('opencode session detail', () => {
         b.kind === 'attachment' && (b.attachment as { type?: string })?.type === 'image',
     );
     expect((img.attachment as { source: { url: string } }).source.url).toBe(PNG_URL);
+  });
+
+  it('embeds the task-spawned child as a subagent anchored to its Task block', async () => {
+    const detail = (await get('/api/sessions/ses_test1')).json();
+    const flat = detail.thread.flatMap((t: { blocks: Record<string, unknown>[] }) => t.blocks);
+
+    // the `task` part becomes a canonical Task block in the parent thread.
+    const task = flat.find((b: Record<string, unknown>) => b.kind === 'tool' && b.name === 'Task');
+    expect(task.input).toMatchObject({ description: 'Inspect entry point', subagent_type: 'explore' });
+
+    // the child session rides in as a SubagentRun anchored to that block.
+    expect(detail.subagents).toHaveLength(1);
+    const run = detail.subagents[0];
+    expect(run).toMatchObject({
+      agentId: 'ses_child1',
+      agentType: 'explore',
+      description: 'Inspect entry point',
+    });
+    expect(run.toolUseId).toBe(task.id);
+    // the child's own turns render inside the run, not in the main thread.
+    expect(JSON.stringify(run.thread)).toContain('xylophone');
+    expect(JSON.stringify(detail.thread)).not.toContain('xylophone');
+  });
+
+  it('serves a degraded (dangling-parent) child as its own session', async () => {
+    const detail = (await get('/api/sessions/ses_dangling')).json();
+    expect(detail.subagents).toEqual([]);
+    expect(JSON.stringify(detail.thread)).toContain('orphaned child prompt');
   });
 });

@@ -25,6 +25,13 @@ export interface OpencodeRawSession {
   id: string;
   directory: string;
   title: string;
+  /** `session.parent_id` — set when this is a task-spawned child session. */
+  parentId: string | null;
+  /**
+   * Root ancestor id (own id for a top-level session) — the indexing key, so a
+   * task-spawned child folds into its parent session (the antigravity pattern).
+   */
+  rootId: string;
   /** message rows in creation order. */
   messages: { id: string; data: string }[];
   /** part `data` strings grouped by message id, each list in creation order. */
@@ -72,13 +79,40 @@ export function listSessions(dbPath: string): OpencodeSessionMeta[] {
   }
 }
 
+/**
+ * Follow `parent_id` up to the top-level ancestor. Stops at a dangling link (the
+ * parent row is gone — the walked-to session is then the root) and degrades to
+ * the session's own id on a cycle (corrupt data must not re-key anything).
+ */
+function resolveRootId(
+  db: InstanceType<typeof DatabaseSync>,
+  id: string,
+  firstParent: string | null,
+): string {
+  let rootId = id;
+  let parentId = firstParent;
+  const guard = new Set<string>([id]);
+  const parentOf = db.prepare('SELECT parent_id FROM session WHERE id = ?');
+  while (parentId) {
+    if (guard.has(parentId)) return id; // cycle — treat as standalone
+    const row = parentOf.get(parentId) as { parent_id: string | null } | undefined;
+    if (!row) break; // dangling link — current rootId is the top
+    guard.add(parentId);
+    rootId = parentId;
+    parentId = row.parent_id == null ? null : String(row.parent_id);
+  }
+  return rootId;
+}
+
 /** Read one session's metadata + messages + parts; `null` if the session is gone. */
 export function readSession(dbPath: string, sessionId: string): OpencodeRawSession | null {
   if (!existsSync(dbPath)) return null;
   const db = open(dbPath);
   try {
-    const s = db.prepare('SELECT id, directory, title FROM session WHERE id = ?').get(sessionId) as
-      | { id: string; directory: string | null; title: string | null }
+    const s = db
+      .prepare('SELECT id, directory, title, parent_id FROM session WHERE id = ?')
+      .get(sessionId) as
+      | { id: string; directory: string | null; title: string | null; parent_id: string | null }
       | undefined;
     if (!s) return null;
 
@@ -98,10 +132,14 @@ export function readSession(dbPath: string, sessionId: string): OpencodeRawSessi
       partsByMessage.set(String(p.mid), list);
     }
 
+    const id = String(s.id);
+    const parentId = s.parent_id == null ? null : String(s.parent_id);
     return {
-      id: String(s.id),
+      id,
       directory: String(s.directory ?? ''),
       title: String(s.title ?? ''),
+      parentId,
+      rootId: parentId ? resolveRootId(db, id, parentId) : id,
       messages,
       partsByMessage,
     };

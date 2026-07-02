@@ -28,12 +28,19 @@
  *    `Edit`/`Write` block ONLY when it actually succeeded (a granted, successful
  *    `tool.execution_complete`); a denied/failed attempt passes through under its raw
  *    name so it shows in-thread but never reaches the Files-changed tab.
+ *  - **Subagents are inline**: a `task` tool call spawns a subagent whose whole
+ *    event stream runs INLINE in the parent's `events.jsonl` between
+ *    `subagent.started`/`subagent.completed`, every inner event tagged with an
+ *    event-level `agentId` (= the spawning `task` toolCallId). Tagged events are
+ *    routed into per-agent buffers (never the main thread), the `task` call is
+ *    canonicalized to a `Task` block, and each buffer becomes a `SubagentSource`
+ *    nested at its spawn point (matched by description, see `buildSubagentRuns`).
  *
  * STRICTLY READ-ONLY with respect to ~/.copilot — files are only ever read.
  */
 
-import { readFileSync, statSync } from 'node:fs';
-import { basename, dirname, extname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import type {
   AssistantEvent,
   ContentBlock,
@@ -41,7 +48,20 @@ import type {
   ToolResultBlock,
   UserEvent,
 } from '@claudescope/shared';
+import { resolveImageWithin } from '../safe-image.js';
 import { toolNamesCsv } from '../tool-names.js';
+
+/** One inline subagent run, segmented out of the parent's event stream. */
+export interface CopilotSubagent {
+  /** The spawning `task` toolCallId — the `agentId` tag on the run's events. */
+  agentId: string;
+  /** Copilot agent name from `subagent.started` (e.g. `explore`); '' if lost. */
+  agentType: string;
+  /** The `task` call's `arguments.description` — same string the canonical
+   *  `Task` block carries, so the run anchors to its spawn point. */
+  description: string;
+  events: (UserEvent | AssistantEvent)[];
+}
 
 export interface CopilotSession {
   sessionId: string;
@@ -49,6 +69,7 @@ export interface CopilotSession {
   branch: string | null;
   title: string;
   events: (UserEvent | AssistantEvent)[];
+  subagents: CopilotSubagent[];
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -137,37 +158,19 @@ function toolUseBlock(
   return { type: 'tool_use', id, name, input: args };
 }
 
-/** Cap an inline-embedded screenshot so a stray huge file can't bloat the
- *  session-detail payload / exhaust memory when base64-encoded. */
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
-
-const IMAGE_MIME: Record<string, string> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-};
-
 /**
  * Resolve a persisted attachment (`files/<displayName>`) to a base64 `ImageBlock`.
  * The `events.jsonl` attachment `path` is a deleted `$TMPDIR` copy, so we resolve by
- * `displayName` (basename only — never escape the `files/` dir). Returns null for a
- * non-image, or when the bytes weren't saved (screenshot-saving off) — the inline
- * `[📷 …]` marker in the message text already conveys the attachment in that case.
+ * `displayName` (basename, then symlink-safe containment inside `files/` via the
+ * shared resolver). Returns null for a non-image, or when the bytes weren't saved
+ * (screenshot-saving off) — the inline `[📷 …]` marker in the message text already
+ * conveys the attachment in that case.
  */
 function resolveImage(sessionDir: string, displayName: string): ContentBlock | null {
   const name = basename(displayName);
-  const mime = IMAGE_MIME[extname(name).toLowerCase()];
-  if (!name || !mime) return null;
-  try {
-    const full = join(sessionDir, 'files', name);
-    if (statSync(full).size > MAX_IMAGE_BYTES) return null; // don't inline an oversized file
-    const data = readFileSync(full).toString('base64');
-    return { type: 'image', source: { type: 'base64', media_type: mime, data } };
-  } catch {
-    return null;
-  }
+  if (!name) return null;
+  const filesDir = join(sessionDir, 'files');
+  return resolveImageWithin(filesDir, join(filesDir, name));
 }
 
 /** A `user.message` → canonical blocks: the literal text (which already carries the
@@ -199,6 +202,20 @@ interface CopilotEvent {
   id?: string;
   timestamp?: string;
   parentId?: string | null;
+  /** Present on every event belonging to an inline subagent run (= the
+   *  spawning `task` toolCallId); absent on main-thread events. */
+  agentId?: string;
+}
+
+/** Per-thread turn buffer: the main transcript and each subagent run get their
+ *  own event list, uuid chain, and running model. */
+interface TurnStream {
+  events: (UserEvent | AssistantEvent)[];
+  seq: number;
+  prevUuid: string | null;
+  uuidPrefix: string;
+  sidechain: boolean;
+  model: string;
 }
 
 /** Minimal `workspace.yaml` reader — only a few scalar keys are needed. */
@@ -248,13 +265,29 @@ export function parseCopilotSession(
   let cwd = '';
   let branch: string | null = null;
 
-  // Pass 1: session identity (session.start) + per-tool outcome (success/denied).
-  // The result/denial is needed when emitting a tool_use, which precedes its
-  // tool.execution_complete in the stream — so collect outcomes up front.
+  // Pass 1: session identity (session.start) + per-tool outcome (success/denied)
+  // + subagent identities. Outcomes and subagent metadata are needed when
+  // emitting a tool_use, which precedes both the tool.execution_complete and the
+  // subagent.started in the stream — so collect them up front.
   const resultById = new Map<string, { content: string; isError: boolean }>();
+  const agentMetaById = new Map<string, { agentType: string; model: string }>();
+  const knownAgentIds = new Set<string>();
+  // `task` toolRequest descriptions by toolCallId — the Task block and its
+  // SubagentSource must carry the SAME string (the anchor buildSubagentRuns
+  // matches on), so both sides read from this one map.
+  const taskDescById = new Map<string, string>();
   for (const ev of lines) {
     const d = rec(ev.data);
-    if (ev.type === 'session.start') {
+    if (str(ev.agentId)) knownAgentIds.add(str(ev.agentId));
+    if (ev.type === 'assistant.message') {
+      const reqs = Array.isArray(d.toolRequests) ? d.toolRequests : [];
+      for (const r of reqs) {
+        const tr = rec(r);
+        if (str(tr.name) === 'task' && str(tr.toolCallId)) {
+          taskDescById.set(str(tr.toolCallId), str(rec(tr.arguments).description));
+        }
+      }
+    } else if (ev.type === 'session.start') {
       const ctx = rec(d.context);
       if (str(d.sessionId)) sessionId = str(d.sessionId);
       if (str(ctx.cwd)) cwd = str(ctx.cwd);
@@ -270,6 +303,12 @@ export function parseCopilotSession(
       if (str(r.kind).startsWith('denied') && !resultById.has(id)) {
         resultById.set(id, { content: 'Permission denied by the user.', isError: true });
       }
+    } else if (ev.type === 'subagent.started') {
+      const id = str(d.toolCallId) || str(ev.agentId);
+      if (id) {
+        knownAgentIds.add(id);
+        agentMetaById.set(id, { agentType: str(d.agentName), model: str(d.model) });
+      }
     }
   }
   if (!cwd && ws.cwd) cwd = ws.cwd;
@@ -278,11 +317,35 @@ export function parseCopilotSession(
   const resolveImages = opts.resolveImages ?? false;
 
   // Pass 2: build the threaded events with a synthesized uuid/parent chain.
-  const events: (UserEvent | AssistantEvent)[] = [];
-  let seq = 0;
-  let prevUuid: string | null = null;
-  const nextUuid = (): string => `${sessionId}-${seq++}`;
-  const envelope = (ts: string): Pick<
+  // Events tagged with an `agentId` belong to an inline subagent run and are
+  // routed into that agent's own stream (never the main thread); untagged
+  // events build the main transcript.
+  const main: TurnStream = {
+    events: [],
+    seq: 0,
+    prevUuid: null,
+    uuidPrefix: sessionId,
+    sidechain: false,
+    model: '',
+  };
+  const subStreams = new Map<string, TurnStream>(); // insertion-ordered
+  const subStream = (agentId: string): TurnStream => {
+    let s = subStreams.get(agentId);
+    if (!s) {
+      s = {
+        events: [],
+        seq: 0,
+        prevUuid: null,
+        uuidPrefix: `${sessionId}-${agentId}`,
+        sidechain: true,
+        model: agentMetaById.get(agentId)?.model ?? '',
+      };
+      subStreams.set(agentId, s);
+    }
+    return s;
+  };
+
+  const envelope = (ts: string, sidechain: boolean): Pick<
     UserEvent,
     'sessionId' | 'timestamp' | 'cwd' | 'gitBranch' | 'isSidechain'
   > => ({
@@ -290,60 +353,83 @@ export function parseCopilotSession(
     timestamp: ts,
     cwd,
     ...(branch ? { gitBranch: branch } : {}),
-    isSidechain: false,
+    isSidechain: sidechain,
   });
-  let model = '';
-  let shutdown: MessageUsage | null = null;
 
+  const pushUser = (s: TurnStream, ts: string, content: ContentBlock[]): void => {
+    const uuid = `${s.uuidPrefix}-${s.seq++}`;
+    s.events.push({ uuid, parentUuid: s.prevUuid, ...envelope(ts, s.sidechain), type: 'user', message: { role: 'user', content } } as UserEvent);
+    s.prevUuid = uuid;
+  };
+
+  /** One `assistant.message` → an assistant turn (+ a tool-result user turn). */
+  const assistantTurn = (s: TurnStream, d: Record<string, unknown>, ts: string): void => {
+    if (str(d.model)) s.model = str(d.model);
+    const blocks: ContentBlock[] = [];
+    const reasoning = str(d.reasoningOpaque);
+    if (reasoning) blocks.push({ type: 'thinking', thinking: '', signature: reasoning });
+    const text = str(d.content);
+    if (text) blocks.push({ type: 'text', text });
+    const toolResults: ToolResultBlock[] = [];
+    const reqs = Array.isArray(d.toolRequests) ? d.toolRequests : [];
+    for (const r of reqs) {
+      const tr = rec(r);
+      const id = str(tr.toolCallId);
+      const args = rec(tr.arguments);
+      const outcome = resultById.get(id);
+      // A `task` call that actually ran a subagent → canonical `Task`: the spawn
+      // point the nested run anchors to (buildSubagentRuns matches the run by
+      // this description + subagent_type). A task with no trace of a run (never
+      // started, no tagged events) passes through under its raw name.
+      blocks.push(
+        str(tr.name) === 'task' && knownAgentIds.has(id)
+          ? {
+              type: 'tool_use',
+              id,
+              name: 'Task',
+              input: {
+                description: str(args.description),
+                subagent_type: agentMetaById.get(id)?.agentType ?? '',
+                prompt: str(args.prompt),
+              },
+            }
+          : toolUseBlock(str(tr.name), args, id, !!outcome && !outcome.isError),
+      );
+      if (outcome) {
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: id,
+          content: outcome.content,
+          ...(outcome.isError ? { is_error: true } : {}),
+        });
+      }
+    }
+    if (blocks.length === 0) return; // empty assistant scaffolding turn — skip
+    const uuid = `${s.uuidPrefix}-${s.seq++}`;
+    s.events.push({
+      uuid,
+      parentUuid: s.prevUuid,
+      ...envelope(ts, s.sidechain),
+      type: 'assistant',
+      message: { role: 'assistant', model: s.model, content: blocks, usage: zeroUsage() },
+    } as AssistantEvent);
+    s.prevUuid = uuid;
+    // Tool results ride a following synthetic user turn (assembler pairs by id).
+    if (toolResults.length > 0) pushUser(s, ts, toolResults);
+  };
+
+  let shutdown: MessageUsage | null = null;
   for (const ev of lines) {
     const d = rec(ev.data);
     const ts = str(ev.timestamp);
+    if (ev.type === 'subagent.started' || ev.type === 'subagent.completed') continue; // metadata (pass 1)
+    const stream = str(ev.agentId) ? subStream(str(ev.agentId)) : main;
     if (ev.type === 'session.model_change') {
-      if (str(d.newModel)) model = str(d.newModel);
+      if (str(d.newModel)) stream.model = str(d.newModel);
     } else if (ev.type === 'user.message') {
-      const content = userBlocks(d, sessionDir, resolveImages);
-      const uuid = nextUuid();
-      events.push({ uuid, parentUuid: prevUuid, ...envelope(ts), type: 'user', message: { role: 'user', content } } as UserEvent);
-      prevUuid = uuid;
+      pushUser(stream, ts, userBlocks(d, sessionDir, resolveImages));
     } else if (ev.type === 'assistant.message') {
-      if (str(d.model)) model = str(d.model);
-      const blocks: ContentBlock[] = [];
-      const reasoning = str(d.reasoningOpaque);
-      if (reasoning) blocks.push({ type: 'thinking', thinking: '', signature: reasoning });
-      const text = str(d.content);
-      if (text) blocks.push({ type: 'text', text });
-      const toolResults: ToolResultBlock[] = [];
-      const reqs = Array.isArray(d.toolRequests) ? d.toolRequests : [];
-      for (const r of reqs) {
-        const tr = rec(r);
-        const id = str(tr.toolCallId);
-        const outcome = resultById.get(id);
-        blocks.push(toolUseBlock(str(tr.name), rec(tr.arguments), id, !!outcome && !outcome.isError));
-        if (outcome) {
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: id,
-            content: outcome.content,
-            ...(outcome.isError ? { is_error: true } : {}),
-          });
-        }
-      }
-      if (blocks.length === 0) continue; // empty assistant scaffolding turn — skip
-      const uuid = nextUuid();
-      events.push({
-        uuid,
-        parentUuid: prevUuid,
-        ...envelope(ts),
-        type: 'assistant',
-        message: { role: 'assistant', model, content: blocks, usage: zeroUsage() },
-      } as AssistantEvent);
-      prevUuid = uuid;
-      // Tool results ride a following synthetic user turn (assembler pairs by id).
-      if (toolResults.length > 0) {
-        const ruid = nextUuid();
-        events.push({ uuid: ruid, parentUuid: prevUuid, ...envelope(ts), type: 'user', message: { role: 'user', content: toolResults } } as UserEvent);
-        prevUuid = ruid;
-      }
+      assistantTurn(stream, d, ts);
     } else if (ev.type === 'session.shutdown') {
       shutdown = shutdownUsage(d);
     }
@@ -351,10 +437,11 @@ export function parseCopilotSession(
     // permission.*, abort, and any unknown/new type are tolerated and skipped.
   }
 
-  // Tokens exist only at session level → attach to the last assistant turn.
+  // Tokens exist only at session level → attach to the last MAIN assistant turn
+  // (subagent turns carry no usage; Copilot reports no per-agent breakdown).
   if (shutdown) {
-    for (let i = events.length - 1; i >= 0; i--) {
-      const e = events[i];
+    for (let i = main.events.length - 1; i >= 0; i--) {
+      const e = main.events[i];
       if (e && e.type === 'assistant') {
         e.message.usage = shutdown;
         break;
@@ -362,7 +449,19 @@ export function parseCopilotSession(
     }
   }
 
-  return { sessionId, cwd, branch, title, events };
+  const subagents: CopilotSubagent[] = [];
+  for (const [agentId, s] of subStreams) {
+    if (s.events.length === 0) continue; // spawned but produced nothing — no run to show
+    subagents.push({
+      agentId,
+      agentType: agentMetaById.get(agentId)?.agentType ?? '',
+      // '' when the spawning call is lost — renders detached, never mismatched.
+      description: taskDescById.get(agentId) ?? '',
+      events: s.events,
+    });
+  }
+
+  return { sessionId, cwd, branch, title, events: main.events, subagents };
 }
 
 /** A canonical index row (matches the events NDJSON the projection reads). */
@@ -390,9 +489,12 @@ export interface CanonicalRow {
   title: string;
 }
 
-/** Flatten a parsed session into canonical index rows for one file. */
+/** Flatten a parsed session into canonical index rows for one file. Subagent
+ *  events are included (same session, `is_sidechain` true) so their text is
+ *  searchable under the session and `has_sidechain` flips on. */
 export function toCanonicalRows(session: CopilotSession, filePath: string): CanonicalRow[] {
-  return session.events.map((e) => {
+  const all = [...session.events, ...session.subagents.flatMap((s) => s.events)];
+  return all.map((e) => {
     const msg = e.message;
     const content = Array.isArray(msg.content) ? msg.content : [];
     const usage = (msg as { usage?: MessageUsage }).usage;
@@ -416,7 +518,7 @@ export function toCanonicalRows(session: CopilotSession, filePath: string): Cano
       cache_read_tokens: num(usage?.cache_read_input_tokens),
       cache_write_tokens: num(usage?.cache_creation_input_tokens),
       service_tier: null,
-      is_sidechain: false,
+      is_sidechain: e.isSidechain === true,
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(content),
       text_content: text,

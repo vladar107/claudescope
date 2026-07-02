@@ -19,9 +19,9 @@ import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { CLAUDESCOPE_HOME, COPILOT_SESSIONS_DIR } from '../../config.js';
 import { sqlString } from '../../db/duckdb.js';
-import type { SessionData } from '../../data/session-loader.js';
+import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
-import { parseCopilotSession, toCanonicalRows } from './normalize.js';
+import { parseCopilotSession, toCanonicalRows, type CopilotSession } from './normalize.js';
 import { copilotGlobalMemory } from './memory.js';
 
 const CACHE_DIR = join(CLAUDESCOPE_HOME, 'cache', 'copilot');
@@ -96,8 +96,21 @@ function auxProjections(filePath: string): AuxProjections {
 
 async function loadSession(_sessionId: string, paths: string[]): Promise<SessionData> {
   // resolveImages: pull saved-attachment bytes off disk for the detail view.
-  const mainEvents = paths.flatMap((p) => parseCopilotSession(p, { resolveImages: true })?.events ?? []);
-  return { mainEvents, subagents: [] };
+  const sessions = paths
+    .map((p) => parseCopilotSession(p, { resolveImages: true }))
+    .filter((s): s is CopilotSession => s !== null);
+  const mainEvents = sessions.flatMap((s) => s.events);
+  // Inline subagent runs, segmented out by the normalizer — each anchors to its
+  // canonical `Task` block via the shared description string.
+  const subagents: SubagentSource[] = sessions.flatMap((s) =>
+    s.subagents.map((sub) => ({
+      agentId: sub.agentId,
+      agentType: sub.agentType,
+      description: sub.description,
+      events: sub.events,
+    })),
+  );
+  return { mainEvents, subagents };
 }
 
 export const copilotConnector: AgentConnector = {

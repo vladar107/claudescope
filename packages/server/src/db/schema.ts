@@ -25,7 +25,9 @@
 // v6: usage dedup by billed API call (message_id / forked_from_session_id / usage_canonical).
 // v7: fallback title cleaning (strip markup/wrapper blobs) + `title_derived` flag.
 // v8: per-event tool_names (comma-joined canonical tool names) for the tool-usage breakdown.
-export const SCHEMA_VERSION = 8;
+// v9: subagent embedding for codex/pi/opencode/copilot — child transcripts re-key
+//     to their root session (is_sidechain), so stale child-as-session rows must go.
+export const SCHEMA_VERSION = 9;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
