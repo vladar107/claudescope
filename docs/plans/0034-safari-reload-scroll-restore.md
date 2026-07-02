@@ -1,8 +1,8 @@
 # 0034 — Restore reader's place after a full reload (Safari ⌘R)
 
-- **Status:** in-progress <!-- proposed | in-progress | done | superseded | abandoned -->
+- **Status:** done <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-07-02
-- **PR:** <link, once opened>
+- **PR:** https://github.com/vladar107/claudescope/pull/46
 
 ## Context
 
