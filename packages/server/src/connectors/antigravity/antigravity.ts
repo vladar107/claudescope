@@ -23,13 +23,15 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MemorySource, RawEvent } from '@claudescope/shared';
-import { ANTIGRAVITY_CLI_DIR, ANTIGRAVITY_DIRS, CLAUDESCOPE_HOME } from '../../config.js';
+import { ANTIGRAVITY_DIRS, ANTIGRAVITY_SOURCE_DIR, CLAUDESCOPE_HOME } from '../../config.js';
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
 import {
+  getContext,
   listTranscripts,
   parseAntigravitySession,
+  rootConvId,
   subagentMetaFor,
   toCanonicalRows,
 } from './normalize.js';
@@ -47,8 +49,22 @@ function cachePath(filePath: string): string {
 function discover(): DiscoveredFile[] {
   const out: DiscoveredFile[] = [];
   for (const dir of ANTIGRAVITY_DIRS) {
-    for (const t of listTranscripts(dir)) {
-      out.push({ path: t.path, mtimeMs: t.mtimeMs, size: t.size });
+    const transcripts = listTranscripts(dir);
+    if (transcripts.length === 0) continue;
+    const { subagents } = getContext(dir);
+    const mtimeByConv = new Map(transcripts.map((t) => [t.convId, t.mtimeMs]));
+    for (const t of transcripts) {
+      // A subagent is re-parented under its root conversation at prepare time
+      // using the cross-file linkage map. Fold the root transcript's mtime into
+      // the child's change-detection key, so when the parent gains (or loses) the
+      // link, the indexer re-processes the child instead of leaving a stale
+      // session_id behind (the child's own bytes never change once it finishes).
+      let mtimeMs = t.mtimeMs;
+      if (subagents.has(t.convId)) {
+        const rootMtime = mtimeByConv.get(rootConvId(t.convId, subagents));
+        if (rootMtime !== undefined) mtimeMs = Math.max(mtimeMs, rootMtime);
+      }
+      out.push({ path: t.path, mtimeMs, size: t.size });
     }
   }
   return out;
@@ -106,6 +122,12 @@ async function loadSession(sessionId: string, paths: string[]): Promise<SessionD
       });
     }
   }
+  // Fallback: a session whose main transcript is missing (e.g. the parent file was
+  // deleted while a re-parented subagent still resolves under its id) would render
+  // an empty main thread. Promote the subagents to the main thread so it shows.
+  if (mainEvents.length === 0 && subagents.length > 0) {
+    return { mainEvents: subagents.flatMap((s) => s.events), subagents: [] };
+  }
   return { mainEvents, subagents };
 }
 
@@ -116,7 +138,7 @@ function globalMemory(): MemorySource[] {
 export const antigravityConnector: AgentConnector = {
   id: 'antigravity',
   label: 'Antigravity',
-  sourceDir: ANTIGRAVITY_CLI_DIR,
+  sourceDir: ANTIGRAVITY_SOURCE_DIR,
   discover,
   prepare,
   eventsProjectionSql,

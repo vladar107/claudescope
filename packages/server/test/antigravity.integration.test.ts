@@ -164,7 +164,9 @@ function writeFixtures(): void {
     step(1, 'MODEL', 'PLANNER_RESPONSE', {
       thinking: 'Exploring the tree.',
       content: 'Found 3 projects.',
-      tool_calls: [{ name: 'view_file', args: { AbsolutePath: '/tmp/proj/a/README.md' } }],
+      // AbsolutePath is an empty string; the real path is in Path → firstStr must
+      // fall through past '' (a plain ?? would not).
+      tool_calls: [{ name: 'view_file', args: { AbsolutePath: '', Path: '/tmp/proj/a/README.md' } }],
     }),
     step(2, 'MODEL', 'VIEW_FILE', { content: 'File Path: `file:///tmp/proj/a/README.md`\n# A' }),
     step(3, 'MODEL', 'PLANNER_RESPONSE', {
@@ -180,6 +182,9 @@ function writeFixtures(): void {
   writeTranscript(ORPHAN, [
     step(0, 'USER_EXPLICIT', 'USER_INPUT', { content: '<USER_REQUEST>\nHello there\n</USER_REQUEST>' }),
     step(1, 'MODEL', 'PLANNER_RESPONSE', { content: 'Hi!' }),
+    // Orphan CODE_ACTION (no preceding write_to_file): must NOT become a canonical
+    // Write with blank content (which would render an emptied-file diff).
+    step(2, 'MODEL', 'CODE_ACTION', { content: 'Created file file:///tmp/orphan.md with requested content.' }),
   ]);
 
   // The uploaded image bytes referenced by the parent's USER_INPUT metadata.
@@ -297,6 +302,12 @@ describe('antigravity session detail', () => {
     expect(run.description).toBe('Inspect all subdirectories inside /tmp/proj.');
     expect(run.thread.length).toBeGreaterThan(0);
 
+    // Empty-string coalescing: the subagent's view_file had AbsolutePath:'' with
+    // the real path in Path → the Read must use the real path, not ''.
+    const subFlat = run.thread.flatMap((t: { blocks: Record<string, unknown>[] }) => t.blocks);
+    const subRead = subFlat.find((b: Record<string, unknown>) => b.kind === 'tool' && b.name === 'Read');
+    expect(subRead.input).toEqual({ file_path: '/tmp/proj/a/README.md' });
+
     // The run is anchored to the main-thread Task tool call spawned from invoke_subagent.
     const flat = detail.thread.flatMap((t: { blocks: Record<string, unknown>[] }) => t.blocks);
     const task = flat.find((b: Record<string, unknown>) => b.kind === 'tool' && b.name === 'Task');
@@ -330,6 +341,15 @@ describe('antigravity session detail', () => {
       type: 'image',
       source: { type: 'base64', media_type: 'image/png', data: PNG_B64 },
     });
+  });
+
+  it('does not synthesize a blank Write for an orphan write result', async () => {
+    const detail = (await get(`/api/sessions/${ORPHAN}`)).json();
+    const flat = detail.thread.flatMap((t: { blocks: Record<string, unknown>[] }) => t.blocks);
+    // The orphan CODE_ACTION must not become a canonical Write (no phantom empty diff).
+    expect(flat.some((b: Record<string, unknown>) => b.kind === 'tool' && b.name === 'Write')).toBe(false);
+    // Its content is still surfaced as text.
+    expect(JSON.stringify(detail.thread)).toContain('Created file');
   });
 
   it('renders the SYSTEM_MESSAGE subagent summary and drops truncation scaffolding', async () => {
