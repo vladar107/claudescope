@@ -18,6 +18,10 @@
  *  - A tool part carries BOTH the call and its result, so we emit the `tool_use`
  *    on the assistant turn and the `tool_result` on a following synthetic user
  *    turn (the Claude/Codex/pi convention the assembler pairs by id).
+ *  - **Task-spawned children** (`session.parent_id`) key their rows to the ROOT
+ *    ancestor with `is_sidechain: true`, and the spawning `task` part becomes a
+ *    canonical `Task` block — so the child nests under its parent session
+ *    (the antigravity pattern).
  */
 
 import type {
@@ -195,6 +199,19 @@ function toolPartBlocks(data: Record<string, unknown>): ToolBlocks {
       name: 'Bash',
       input: { command: str(input.command), timeout: input.timeout, description: str(input.description) },
     };
+  } else if (tool === 'task') {
+    // task (subagent spawn) → canonical `Task`, so the re-parented child session
+    // nests at this call (`buildSubagentRuns` anchors by matching description).
+    use = {
+      type: 'tool_use',
+      id: callID,
+      name: 'Task',
+      input: {
+        description: str(input.description),
+        subagent_type: str(input.subagent_type),
+        prompt: str(input.prompt),
+      },
+    };
   } else {
     // grep / glob / webfetch / skill / todowrite / unknown → generic passthrough
     use = { type: 'tool_use', id: callID, name: tool, input };
@@ -230,6 +247,11 @@ function toUsage(tokens: unknown): MessageUsage {
 export function buildEvents(session: OpencodeRawSession): (UserEvent | AssistantEvent)[] {
   const events: (UserEvent | AssistantEvent)[] = [];
   const cwd = session.directory;
+  // A task-spawned child keys to its root ancestor and flags sidechain, so it
+  // folds into the parent session (claude-code/antigravity convention). Uuids
+  // stay namespaced by the child's own id — no collision with parent rows.
+  const sessionId = session.rootId;
+  const isSidechain = session.rootId !== session.id;
   let seq = 0;
   let prevUuid: string | null = null;
   const nextUuid = (): string => `${session.id}-${seq++}`;
@@ -275,10 +297,10 @@ export function buildEvents(session: OpencodeRawSession): (UserEvent | Assistant
       events.push({
         uuid,
         parentUuid,
-        sessionId: session.id,
+        sessionId,
         timestamp: ts,
         cwd,
-        isSidechain: false,
+        isSidechain,
         type: 'assistant',
         message: { role: 'assistant', model, content: blocks, usage: toUsage(data.tokens) },
       } as AssistantEvent);
@@ -315,10 +337,10 @@ export function buildEvents(session: OpencodeRawSession): (UserEvent | Assistant
       events.push({
         uuid,
         parentUuid,
-        sessionId: session.id,
+        sessionId,
         timestamp: ts,
         cwd,
-        isSidechain: false,
+        isSidechain,
         type: 'user',
         message: { role: 'user', content: blocks },
       } as UserEvent);
@@ -326,6 +348,36 @@ export function buildEvents(session: OpencodeRawSession): (UserEvent | Assistant
   }
 
   return events;
+}
+
+/**
+ * Child-session spawn metadata from a session's `task` parts:
+ * `state.metadata.sessionId` (the spawned child) → the Task block's
+ * `{subagent_type, description}`. `loadSession` uses it to label each
+ * re-parented child with the SAME description as its Task block, which is what
+ * `buildSubagentRuns` matches to anchor the run at the spawn point.
+ */
+export function taskSpawns(
+  session: OpencodeRawSession,
+): Map<string, { agentType: string; description: string }> {
+  const map = new Map<string, { agentType: string; description: string }>();
+  for (const m of session.messages) {
+    for (const raw of session.partsByMessage.get(m.id) ?? []) {
+      const p = parseJson(raw);
+      if (str(p.type) !== 'tool' || str(p.tool) !== 'task') continue;
+      const state = (p.state ?? {}) as Record<string, unknown>;
+      const input = (state.input ?? {}) as Record<string, unknown>;
+      const metadata = (state.metadata ?? {}) as Record<string, unknown>;
+      const childId = str(metadata.sessionId);
+      if (childId) {
+        map.set(childId, {
+          agentType: str(input.subagent_type),
+          description: str(input.description),
+        });
+      }
+    }
+  }
+  return map;
 }
 
 /** A canonical index row (matches the events NDJSON the projection reads). */
@@ -355,6 +407,7 @@ export interface CanonicalRow {
 
 /** Flatten a parsed session into canonical index rows for one file. */
 export function toCanonicalRows(session: OpencodeRawSession, filePath: string): CanonicalRow[] {
+  const isSidechain = session.rootId !== session.id;
   return buildEvents(session).map((e) => {
     const msg = e.message;
     const content = Array.isArray(msg.content) ? msg.content : [];
@@ -365,7 +418,7 @@ export function toCanonicalRows(session: OpencodeRawSession, filePath: string): 
       .join(' ');
     return {
       file_path: filePath,
-      session_id: session.id,
+      session_id: session.rootId,
       uuid: e.uuid,
       parent_uuid: e.parentUuid,
       role: msg.role,
@@ -379,11 +432,13 @@ export function toCanonicalRows(session: OpencodeRawSession, filePath: string): 
       cache_read_tokens: num(usage?.cache_read_input_tokens),
       cache_write_tokens: num(usage?.cache_creation_input_tokens),
       service_tier: null,
-      is_sidechain: false,
+      is_sidechain: isSidechain,
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(content),
       text_content: text,
-      title: session.title,
+      // A child's title must not clobber the parent's via the titles projection
+      // (both files now share one session_id) — emit none for sidechain rows.
+      title: isSidechain ? '' : session.title,
     };
   });
 }

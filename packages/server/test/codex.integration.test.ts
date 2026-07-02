@@ -70,6 +70,68 @@ function writeRollout(): string {
       { type: 'response_item', timestamp: ts(11), payload: { type: 'function_call_output', call_id: 'call_4', output: 'oops\n' } },
       { type: 'response_item', timestamp: ts(12), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'found it' }] } },
       { type: 'event_msg', timestamp: ts(13), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 1000, cached_input_tokens: 200, output_tokens: 300, reasoning_output_tokens: 50, total_tokens: 1300 } }, rate_limits: {} } },
+      // ToolSearch-style deferred-tool discovery: call + output pair by call_id.
+      { type: 'response_item', timestamp: ts(14), payload: { type: 'tool_search_call', call_id: 'call_ts1', status: 'completed', arguments: { query: 'spawn subagent', limit: 8 } } },
+      { type: 'response_item', timestamp: ts(15), payload: { type: 'tool_search_output', call_id: 'call_ts1', status: 'completed', tools: [{ type: 'namespace', name: 'multi_agent_v1' }] } },
+      // spawn_agent → canonical Task; the output names the child thread id that the
+      // child rollout's session_meta carries as its own id.
+      { type: 'response_item', timestamp: ts(16), payload: { type: 'function_call', name: 'spawn_agent', arguments: '{"agent_type":"explorer","message":"Scan the repo for issues.\\nReport back concisely."}', call_id: 'call_spawn1' } },
+      { type: 'response_item', timestamp: ts(17), payload: { type: 'function_call_output', call_id: 'call_spawn1', output: '{"agent_id":"019f2222-aaaa-7bbb-8ccc-000000000001","nickname":"Linnaeus"}' } },
+      // wait_agent stays under its raw name (payload visible, no Task synthesized).
+      { type: 'response_item', timestamp: ts(18), payload: { type: 'function_call', name: 'wait_agent', arguments: '{"targets":["019f2222-aaaa-7bbb-8ccc-000000000001"]}', call_id: 'call_wait1' } },
+      { type: 'response_item', timestamp: ts(19), payload: { type: 'function_call_output', call_id: 'call_wait1', output: '{"status":{"019f2222-aaaa-7bbb-8ccc-000000000001":{"completed":"done"}}}' } },
+      // apply_patch (custom_tool_call: input is the raw V4A patch string) touching
+      // two files → fans out to one canonical block per file with #i suffixed ids.
+      { type: 'response_item', timestamp: ts(20), payload: { type: 'custom_tool_call', name: 'apply_patch', call_id: 'call_ap1', input: '*** Begin Patch\n*** Add File: /tmp/codexproj/notes.md\n+hello\n+world\n*** Update File: /tmp/codexproj/src/app.ts\n@@\n context line\n-old value\n+new value\n*** End Patch' } },
+      { type: 'response_item', timestamp: ts(21), payload: { type: 'custom_tool_call_output', call_id: 'call_ap1', output: 'Exit code: 0\nWall time: 0.1 seconds\nOutput:\nSuccess. Updated the following files:\nA /tmp/codexproj/notes.md\nM /tmp/codexproj/src/app.ts' } },
+      // Single-file patch: block keeps the bare call_id and the result is the
+      // envelope-stripped tool output.
+      { type: 'response_item', timestamp: ts(22), payload: { type: 'custom_tool_call', name: 'apply_patch', call_id: 'call_ap2', input: '*** Begin Patch\n*** Update File: /tmp/codexproj/single.ts\n@@\n-a\n+b\n*** End Patch' } },
+      { type: 'response_item', timestamp: ts(23), payload: { type: 'custom_tool_call_output', call_id: 'call_ap2', output: 'Exit code: 0\nWall time: 0.0 seconds\nOutput:\nSuccess. Updated the following files:\nM /tmp/codexproj/single.ts' } },
+      // web_search_call has no call_id and no paired output record.
+      { type: 'response_item', timestamp: ts(24), payload: { type: 'web_search_call', status: 'completed', action: { type: 'search', query: 'codex docs' } } },
+      // A REJECTED two-file patch (non-zero exit): nothing on disk changed, so the
+      // fanned canonical blocks must demote back to raw apply_patch (no file_path)
+      // and the real error text must survive on every result.
+      { type: 'response_item', timestamp: ts(25), payload: { type: 'custom_tool_call', name: 'apply_patch', call_id: 'call_ap3', input: '*** Begin Patch\n*** Update File: /tmp/codexproj/missing.ts\n@@\n-x\n+y\n*** Update File: /tmp/codexproj/other.ts\n@@\n-p\n+q\n*** End Patch' } },
+      { type: 'response_item', timestamp: ts(26), payload: { type: 'custom_tool_call_output', call_id: 'call_ap3', output: 'Exit code: 1\nWall time: 0.0 seconds\nOutput:\napply_patch: /tmp/codexproj/missing.ts: No such file or directory' } },
+    ]),
+  );
+  return file;
+}
+
+/** A subagent rollout: separate file, re-keyed under the parent via thread_spawn. */
+function writeChildRollout(): string {
+  const dir = join(codexDir, '2026', '01', '01');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'rollout-2026-01-01T10-01-00-019f2222-aaaa-7bbb-8ccc-000000000001.jsonl');
+  writeFileSync(
+    file,
+    jsonl([
+      { type: 'session_meta', timestamp: ts(30), payload: { id: '019f2222-aaaa-7bbb-8ccc-000000000001', cwd: '/tmp/codexproj', thread_source: 'subagent', source: { subagent: { thread_spawn: { parent_thread_id: 'codex-sess-1', depth: 1, agent_nickname: 'Linnaeus', agent_role: 'explorer' } } }, git: { branch: 'main' } } },
+      { type: 'turn_context', timestamp: ts(31), payload: { model: 'gpt-5.4' } },
+      { type: 'response_item', timestamp: ts(32), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Scan the repo for issues.' }] } },
+      { type: 'response_item', timestamp: ts(33), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'zebranugget report from the child' }] } },
+      // Child usage folds into the parent session's totals (claude-code precedent).
+      { type: 'event_msg', timestamp: ts(34), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 100, cached_input_tokens: 0, output_tokens: 50 } }, rate_limits: {} } },
+    ]),
+  );
+  return file;
+}
+
+/** A subagent rollout whose parent rollout does not exist: it indexes under the
+ *  (absent) root id and `loadSession` promotes its events to the main thread. */
+function writeOrphanRollout(): string {
+  const dir = join(codexDir, '2026', '01', '02');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'rollout-2026-01-02T09-00-00-019f3333-aaaa-7bbb-8ccc-000000000002.jsonl');
+  writeFileSync(
+    file,
+    jsonl([
+      { type: 'session_meta', timestamp: ts(40), payload: { id: '019f3333-aaaa-7bbb-8ccc-000000000002', cwd: '/tmp/codexproj', thread_source: 'subagent', source: { subagent: { thread_spawn: { parent_thread_id: 'codex-gone', depth: 1, agent_nickname: 'Orphan', agent_role: 'explorer' } } } } },
+      { type: 'turn_context', timestamp: ts(41), payload: { model: 'gpt-5.4' } },
+      { type: 'response_item', timestamp: ts(42), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'orphan probe text' }] } },
+      { type: 'response_item', timestamp: ts(43), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'orphan done' }] } },
     ]),
   );
   return file;
@@ -81,6 +143,8 @@ let closeConnection: () => Promise<void>;
 beforeAll(async () => {
   mkdirSync(claudeDir, { recursive: true });
   writeRollout();
+  writeChildRollout();
+  writeOrphanRollout();
 
   const Fastify = (await import('fastify')).default;
   const { registerRoutes } = await import('../src/routes/index.js');
@@ -104,13 +168,18 @@ const get = (url: string) => app.inject({ method: 'GET', url });
 describe('Codex session indexing', () => {
   it('lists the Codex session with model from turn_context and a codex agent tag', async () => {
     const sessions = (await get('/api/sessions')).json();
-    expect(sessions.map((s: { id: string }) => s.id)).toEqual(['codex-sess-1']);
-    expect(sessions[0].models).toContain('gpt-5.4');
-    expect(sessions[0].connectorId).toBe('codex');
+    // The child rollout folds into its parent (never its own session); the orphan
+    // child indexes under its absent root id `codex-gone`.
+    expect(sessions.map((s: { id: string }) => s.id).sort()).toEqual(['codex-gone', 'codex-sess-1']);
+    const main = sessions.find((s: { id: string }) => s.id === 'codex-sess-1');
+    expect(main.models).toContain('gpt-5.4');
+    expect(main.connectorId).toBe('codex');
     // Codex has no ai-title, so the title falls back to the (cleaned) first user
     // message and is flagged derived so the UI can mark it "from first message".
-    expect(sessions[0].title).toBe('find the needle in this codex haystack');
-    expect(sessions[0].titleDerived).toBe(true);
+    expect(main.title).toBe('find the needle in this codex haystack');
+    expect(main.titleDerived).toBe(true);
+    // The re-keyed subagent rollout flips the parent's sidechain flag.
+    expect(main.hasSidechain).toBe(true);
   });
 
   it('tags the project with its agent and groups analytics by agent', async () => {
@@ -126,12 +195,15 @@ describe('Codex session indexing', () => {
     expect(sources.some((s: { id: string }) => s.id === 'codex')).toBe(true);
   });
 
-  it('attributes token_count usage and computes a gpt-5.4 cost', async () => {
-    const s = (await get('/api/sessions')).json()[0];
-    // input 1000 - cached 200 = 800 input; 200 cache_read; 300 output → 1300 total.
-    expect(s.totalTokens).toBe(1300);
+  it('attributes token_count usage (incl. the subagent) and computes a gpt-5.4 cost', async () => {
+    const sessions = (await get('/api/sessions')).json();
+    const s = sessions.find((x: { id: string }) => x.id === 'codex-sess-1');
+    // Parent: input 1000 - cached 200 = 800 input; 200 cache_read; 300 output = 1300.
+    // Child rollout usage counts toward the parent session: +100 input +50 output.
+    expect(s.totalTokens).toBe(1450);
     // gpt-5.4 @ official cached 0.25: (800*2.5 + 300*15 + 200*0.25) / 1e6 = 0.00655
-    expect(s.totalCostUsd).toBeCloseTo(0.00655, 5);
+    // plus the child's (100*2.5 + 50*15) / 1e6 = 0.001 → 0.00755
+    expect(s.totalCostUsd).toBeCloseTo(0.00755, 5);
   });
 
   it('groups analytics by the OpenAI model', async () => {
@@ -143,12 +215,18 @@ describe('Codex session indexing', () => {
     const { sessions: results } = (await get('/api/search?q=needle')).json();
     expect(results.some((r: { sessionId: string }) => r.sessionId === 'codex-sess-1')).toBe(true);
   });
+
+  it('surfaces subagent text under the PARENT session in search', async () => {
+    const { sessions: results } = (await get('/api/search?q=zebranugget')).json();
+    const ids = results.map((r: { sessionId: string }) => r.sessionId);
+    expect(ids).toContain('codex-sess-1');
+    expect(ids).not.toContain('019f2222-aaaa-7bbb-8ccc-000000000001');
+  });
 });
 
 describe('Codex session detail', () => {
   it('normalizes response_items into a thread with paired tool call/result', async () => {
     const detail = (await get('/api/sessions/codex-sess-1')).json();
-    expect(detail.subagents).toEqual([]);
 
     // assembleThread pairs tool_use+tool_result into a `kind:'tool'` block and
     // folds the result-only user turn away.
@@ -199,5 +277,109 @@ describe('Codex session detail', () => {
     expect(img).toBeTruthy();
     expect((img.attachment as { source: { url: string } }).source.url).toMatch(/^data:image\/png;base64,/);
     expect(allText).not.toContain('codex-clipboard'); // placeholder path dropped
+  });
+
+  it('nests the subagent rollout at the spawn_agent → Task call', async () => {
+    const detail = (await get('/api/sessions/codex-sess-1')).json();
+    const flat = detail.thread.flatMap(
+      (t: { blocks: Record<string, unknown>[] }) => t.blocks,
+    );
+
+    // spawn_agent is canonicalized to a Task block whose description is the first
+    // line of the prompt — the correlation key the nested run anchors to.
+    const task = flat.find((b: Record<string, unknown>) => b.name === 'Task');
+    expect(task).toMatchObject({ id: 'call_spawn1' });
+    expect(task.input).toMatchObject({
+      description: 'Scan the repo for issues.',
+      subagent_type: 'explorer',
+    });
+
+    expect(detail.subagents).toHaveLength(1);
+    const run = detail.subagents[0];
+    expect(run).toMatchObject({
+      agentId: '019f2222-aaaa-7bbb-8ccc-000000000001',
+      agentType: 'explorer',
+      description: 'Scan the repo for issues.',
+      toolUseId: 'call_spawn1', // anchored to the Task block
+    });
+    expect(JSON.stringify(run.thread)).toContain('zebranugget');
+    // The subagent's turns must NOT be inlined into the main thread.
+    expect(JSON.stringify(detail.thread)).not.toContain('zebranugget');
+
+    // wait_agent is not a spawn — it stays under its raw name.
+    const wait = flat.find((b: Record<string, unknown>) => b.id === 'call_wait1');
+    expect(wait.name).toBe('wait_agent');
+  });
+
+  it('fans apply_patch out to canonical Write/Edit blocks the changeset keys off', async () => {
+    const detail = (await get('/api/sessions/codex-sess-1')).json();
+    const flat = detail.thread.flatMap(
+      (t: { blocks: Record<string, unknown>[] }) => t.blocks,
+    );
+
+    // Two-file patch → one canonical block per file, ids suffixed with #i.
+    const write = flat.find((b: Record<string, unknown>) => b.id === 'call_ap1#0');
+    expect(write).toMatchObject({ name: 'Write' });
+    expect(write.input).toEqual({ file_path: '/tmp/codexproj/notes.md', content: 'hello\nworld' });
+    expect(write.result.content[0].text).toBe('Created /tmp/codexproj/notes.md');
+
+    const edit = flat.find((b: Record<string, unknown>) => b.id === 'call_ap1#1');
+    expect(edit).toMatchObject({ name: 'MultiEdit' });
+    expect(edit.input).toEqual({
+      file_path: '/tmp/codexproj/src/app.ts',
+      edits: [{ old_string: 'context line\nold value', new_string: 'context line\nnew value' }],
+    });
+
+    // Single-file patch keeps the bare call_id and the envelope-stripped output.
+    const single = flat.find((b: Record<string, unknown>) => b.id === 'call_ap2');
+    expect(single).toMatchObject({ name: 'MultiEdit' });
+    const out = single.result.content[0].text as string;
+    expect(out).toContain('Success. Updated');
+    expect(out).not.toContain('Exit code');
+
+    // tool_search / web_search render as tool blocks instead of vanishing.
+    const search = flat.find((b: Record<string, unknown>) => b.id === 'call_ts1');
+    expect(search).toMatchObject({ name: 'tool_search' });
+    expect(search.result).toBeTruthy();
+    const web = flat.find((b: Record<string, unknown>) => b.name === 'web_search');
+    expect((web.input as { query: string }).query).toBe('codex docs');
+  });
+
+  it('demotes a REJECTED apply_patch to raw blocks so Files-changed never sees it', async () => {
+    const detail = (await get('/api/sessions/codex-sess-1')).json();
+    const flat = detail.thread.flatMap(
+      (t: { blocks: Record<string, unknown>[] }) => t.blocks,
+    );
+
+    const failed = flat.filter(
+      (b: Record<string, unknown>) => b.id === 'call_ap3#0' || b.id === 'call_ap3#1',
+    );
+    expect(failed).toHaveLength(2);
+    for (const b of failed) {
+      // Demoted: raw name and no file_path, so changeset.ts never lists the
+      // untouched files (the failed-edit convention the copilot connector set).
+      expect(b.name).toBe('apply_patch');
+      expect((b.input as { file_path?: string }).file_path).toBeUndefined();
+      // The real error output survives on every fanned result, envelope intact.
+      const out = b.result.content[0].text as string;
+      expect(out).toContain('Exit code: 1');
+      expect(out).toContain('No such file or directory');
+    }
+    // No canonical block may reference the rejected patch's files.
+    const canonical = flat.filter((b: Record<string, unknown>) =>
+      ['Write', 'Edit', 'MultiEdit'].includes(b.name as string),
+    );
+    for (const b of canonical) {
+      expect((b.input as { file_path: string }).file_path).not.toContain('missing.ts');
+      expect((b.input as { file_path: string }).file_path).not.toContain('other.ts');
+    }
+  });
+
+  it('promotes an orphaned subagent (missing parent rollout) to the main thread', async () => {
+    const detail = (await get('/api/sessions/codex-gone')).json();
+    expect(detail.subagents).toEqual([]);
+    const allText = JSON.stringify(detail.thread);
+    expect(allText).toContain('orphan probe text');
+    expect(allText).toContain('orphan done');
   });
 });

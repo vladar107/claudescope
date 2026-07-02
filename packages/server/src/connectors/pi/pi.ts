@@ -8,6 +8,10 @@
  * {@link parsePiSession}/{@link toCanonicalRows}) and `eventsProjectionSql` reads
  * that 1:1 — the indexer/FTS/cost stay native and Claude's path is untouched.
  *
+ * Subagent runs (`<sessionBase>/<runId>/run-<N>/session.jsonl`) are re-keyed to
+ * the parent session at index time and embedded as SubagentSources at their
+ * spawning `subagent` toolCall (→ canonical `Task`) in {@link loadSession}.
+ *
  * pi keeps no instruction/memory files in its home dir (only `settings.json` /
  * `auth.json`), so this connector contributes no memory.
  *
@@ -16,12 +20,12 @@
 
 import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { CLAUDESCOPE_HOME, PI_SESSIONS_DIR } from '../../config.js';
 import { sqlString } from '../../db/duckdb.js';
-import type { SessionData } from '../../data/session-loader.js';
+import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
-import { parsePiSession, toCanonicalRows } from './normalize.js';
+import { parentSessionFile, parsePiSession, subagentRuns, toCanonicalRows } from './normalize.js';
 
 const CACHE_DIR = join(CLAUDESCOPE_HOME, 'cache', 'pi');
 
@@ -31,7 +35,14 @@ function cachePath(filePath: string): string {
   return join(CACHE_DIR, `${hash}.ndjson`);
 }
 
-/** Recursively collect every `*.jsonl` under the pi sessions dir. */
+/**
+ * Recursively collect every `*.jsonl` under the pi sessions dir — including
+ * nested subagent transcripts (`<sessionBase>/<runId>/run-<N>/session.jsonl`),
+ * which normalize re-keys to their parent session. No parent-mtime folding is
+ * needed (unlike antigravity): a child's parentage is derived from the path
+ * shape and the parent's immutable session id, both fixed from the moment the
+ * child exists, so its re-key never changes retroactively.
+ */
 function discover(): DiscoveredFile[] {
   const out: DiscoveredFile[] = [];
   const walk = (dir: string): void => {
@@ -89,8 +100,47 @@ function auxProjections(_filePath: string): AuxProjections {
 }
 
 async function loadSession(_sessionId: string, paths: string[]): Promise<SessionData> {
-  const mainEvents = paths.flatMap((p) => parsePiSession(p)?.events ?? []);
-  return { mainEvents, subagents: [] };
+  // `paths` holds the top-level file(s) plus any nested subagent transcripts the
+  // index re-keyed to this session. Only top-level files feed the main thread;
+  // children are attached below at their spawning `Task` call. A child whose
+  // parent file has vanished no longer matches the nested shape and is promoted
+  // to a main file (mirrors antigravity's orphan fallback). If NO path is
+  // top-level (e.g. the parent indexed zero events, so only children map here),
+  // promote everything rather than serve an empty session.
+  let mainPaths = paths.filter((p) => parentSessionFile(p) === null);
+  if (mainPaths.length === 0) mainPaths = paths;
+  const mainSet = new Set(mainPaths);
+  const mainEvents = mainPaths.flatMap((p) => parsePiSession(p)?.events ?? []);
+
+  const subagents: SubagentSource[] = [];
+  const attached = new Set<string>();
+  for (const p of mainPaths) {
+    const childRoot = join(dirname(p), basename(p, '.jsonl'));
+    for (const run of subagentRuns(p)) {
+      const childPath = join(childRoot, run.runId, `run-${run.runIndex}`, 'session.jsonl');
+      const child = parsePiSession(childPath);
+      if (!child) continue; // run dir pruned since the session ran — tolerate
+      attached.add(childPath);
+      subagents.push({
+        agentId: child.ownId,
+        agentType: run.agentType,
+        description: run.description,
+        events: child.events,
+      });
+    }
+  }
+
+  // Children indexed under this session but never claimed by a subagent
+  // toolResult (crashed mid-run, an extra run-N beyond `results`, an unreadable
+  // parent): attach them detached — empty description ⇒ the thread assembler
+  // renders them unanchored — so their indexed text stays reachable in detail.
+  for (const p of paths) {
+    if (mainSet.has(p) || attached.has(p)) continue;
+    const child = parsePiSession(p);
+    if (!child) continue;
+    subagents.push({ agentId: child.ownId, agentType: '', description: '', events: child.events });
+  }
+  return { mainEvents, subagents };
 }
 
 export const piConnector: AgentConnector = {

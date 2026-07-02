@@ -20,21 +20,49 @@
  * `parentId` graph threads *through* `model_change`/`thinking_level_change`
  * records, so copying it verbatim would dangle.
  *
+ * Subagents: a `subagent` toolCall (`{agent, task}`) spawns a child run whose
+ * transcript nests on disk under the session's sibling dir —
+ * `<sessionBase>/<runId>/run-<N>/session.jsonl` (runId from the toolResult's
+ * `details`). A child carries its own `session` record with NO parent ref, so
+ * parentage is derived purely from that path shape: child rows are re-keyed to
+ * the parent's session id with `is_sidechain: true` (antigravity pattern), which
+ * folds them into the parent session for lists/search and hands their paths to
+ * `loadSession`, where they attach as SubagentSources at their spawning `Task`.
+ *
  * STRICTLY READ-ONLY with respect to ~/.pi — files are only ever read.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { basename, dirname } from 'node:path';
 import type { AssistantEvent, ContentBlock, MessageUsage, UserEvent } from '@claudescope/shared';
 import { toolNamesCsv } from '../tool-names.js';
 
 export interface PiSession {
+  /** Indexing key: the parent's session id for a nested subagent, else the own id. */
   sessionId: string;
+  /** The file's own `session` record id (uuid prefix; `SubagentSource.agentId`). */
+  ownId: string;
+  /** True for a nested subagent transcript (re-keyed to the parent session). */
+  isSidechain: boolean;
   cwd: string;
   events: (UserEvent | AssistantEvent)[];
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const rec = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+/**
+ * First line of a subagent task, truncated — used as the correlation key AND
+ * label: the synthesized `Task` block's `input.description` and the
+ * `SubagentSource.description` must be derived identically or the thread
+ * assembler can't anchor the run (mirrors antigravity's `subagentLabel`).
+ */
+export function subagentLabel(task: string): string {
+  const line = task.trim().split('\n')[0]?.trim() ?? '';
+  return line.length > 80 ? `${line.slice(0, 80)}…` : line;
+}
 
 /** pi assistant `usage` (`{input, output, cacheRead, cacheWrite, …}`) → canonical usage. */
 function toUsage(raw: unknown): MessageUsage {
@@ -90,6 +118,24 @@ function toolUseBlock(b: Record<string, unknown>): ContentBlock {
         name: 'Bash',
         input: { command: str(args.command), timeout: args.timeout, description: str(args.description) },
       };
+    case 'subagent':
+      // pi's agent-dispatch tool: `{agent, task}` spawns a child run → canonical
+      // `Task` so the embedded subagent transcript anchors at this call.
+      // Management actions (`{action:'list'}` etc.) have no agent/task and stay
+      // passthrough — they spawn nothing.
+      if (str(args.agent) && str(args.task)) {
+        return {
+          type: 'tool_use',
+          id,
+          name: 'Task',
+          input: {
+            description: subagentLabel(str(args.task)),
+            subagent_type: str(args.agent),
+            prompt: str(args.task),
+          },
+        };
+      }
+      return { type: 'tool_use', id, name: str(b.name), input: args };
     default:
       return { type: 'tool_use', id, name: str(b.name), input: args };
   }
@@ -176,13 +222,17 @@ interface PiLine {
     model?: string;
     usage?: unknown;
     toolCallId?: string;
+    /** Set on `toolResult` records — the tool the result belongs to. */
+    toolName?: string;
+    /** `subagent` toolResult metadata: `{mode, runId, results:[{agent, task}]}`. */
+    details?: unknown;
   };
   id?: string;
   cwd?: string;
 }
 
-/** Parse a pi session JSONL into a Claude-shaped session, or null if unreadable. */
-export function parsePiSession(path: string): PiSession | null {
+/** Tolerantly read a pi JSONL file, or null if unreadable. */
+function readLines(path: string): PiLine[] | null {
   let raw: string;
   try {
     raw = readFileSync(path, 'utf8');
@@ -199,16 +249,69 @@ export function parsePiSession(path: string): PiSession | null {
       /* tolerate a corrupt/partial trailing line */
     }
   }
+  return lines;
+}
+
+/**
+ * Memo for {@link sessionIdOf}, keyed on an mtime/size fingerprint: every child
+ * parse re-resolves its parent's id, so indexing N children of one session would
+ * otherwise re-read the parent file N times (and loadSession again).
+ */
+const sessionIdMemo = new Map<string, { fp: string; id: string }>();
+
+/** A file's own session id, with the same fallback rule as {@link parsePiSession}. */
+function sessionIdOf(path: string): string {
+  let fp = '';
+  try {
+    const st = statSync(path);
+    fp = `${Math.floor(st.mtimeMs)}:${st.size}`;
+    const hit = sessionIdMemo.get(path);
+    if (hit && hit.fp === fp) return hit.id;
+  } catch {
+    /* stat failed — fall through to the uncached read (and its path fallback) */
+  }
+  const session = readLines(path)?.find((l) => l.type === 'session');
+  const id = str(session?.id) || path;
+  if (fp) sessionIdMemo.set(path, { fp, id });
+  return id;
+}
+
+/**
+ * The parent session file for a nested subagent transcript, or null for a
+ * top-level session. Children live at `<parentBase>/<runId>/run-<N>/session.jsonl`
+ * next to `<parentBase>.jsonl`; the path shape alone is the parent link (a child
+ * carries no parent ref). A missing parent file → null, so an orphaned child
+ * indexes as its own top-level session instead of keying to a dead id.
+ */
+export function parentSessionFile(path: string): string | null {
+  if (basename(path) !== 'session.jsonl') return null;
+  const runDir = dirname(path); // …/<parentBase>/<runId>/run-<N>
+  if (!/^run-\d+$/.test(basename(runDir))) return null;
+  const parentFile = `${dirname(dirname(runDir))}.jsonl`;
+  return existsSync(parentFile) ? parentFile : null;
+}
+
+/** Parse a pi session JSONL into a Claude-shaped session, or null if unreadable. */
+export function parsePiSession(path: string): PiSession | null {
+  const lines = readLines(path);
+  if (!lines) return null;
 
   // The session record carries the immutable session id + cwd for every event.
   const session = lines.find((l) => l.type === 'session');
-  const sessionId = str(session?.id) || path;
+  const ownId = str(session?.id) || path;
   const cwd = str(session?.cwd);
+
+  // A nested subagent transcript indexes under its PARENT's session id (with
+  // is_sidechain), so it folds into the parent session; the own id still
+  // prefixes the synthesized uuids to keep them unique across the merged files.
+  const parentFile = parentSessionFile(path);
+  const sessionId = parentFile ? sessionIdOf(parentFile) : ownId;
+  const isSidechain = parentFile !== null;
 
   const events: (UserEvent | AssistantEvent)[] = [];
   let seq = 0;
   let prevUuid: string | null = null;
-  const nextUuid = (): string => `${sessionId}-${seq++}`;
+  const nextUuid = (): string => `${ownId}-${seq++}`;
 
   // Consecutive `toolResult` records coalesce into one user turn.
   let toolResults: ContentBlock[] = [];
@@ -222,7 +325,7 @@ export function parsePiSession(path: string): PiSession | null {
       sessionId,
       timestamp: toolResultTs,
       cwd,
-      isSidechain: false,
+      isSidechain,
       type: 'user',
       message: { role: 'user', content: toolResults },
     } as UserEvent);
@@ -258,7 +361,7 @@ export function parsePiSession(path: string): PiSession | null {
         sessionId,
         timestamp: ts,
         cwd,
-        isSidechain: false,
+        isSidechain,
         type: 'assistant',
         message: {
           role: 'assistant',
@@ -276,7 +379,7 @@ export function parsePiSession(path: string): PiSession | null {
         sessionId,
         timestamp: ts,
         cwd,
-        isSidechain: false,
+        isSidechain,
         type: 'user',
         message: { role: 'user', content: contentBlocks(msg.content) },
       } as UserEvent);
@@ -286,7 +389,69 @@ export function parsePiSession(path: string): PiSession | null {
   }
   flushToolResults();
 
-  return { sessionId, cwd, events };
+  return { sessionId, ownId, isSidechain, cwd, events };
+}
+
+/** One spawned child run recoverable from a session's `subagent` tool records. */
+export interface PiSubagentRun {
+  /** `details.runId` — names the child dir under `<sessionBase>/`. */
+  runId: string;
+  /** Index into `details.results` — names the `run-<N>` dir. */
+  runIndex: number;
+  /** The dispatched agent's name (`results[i].agent`). */
+  agentType: string;
+  /** Correlation key — same derivation as the `Task` block's `input.description`. */
+  description: string;
+}
+
+/**
+ * Scan a (main) session file for completed `subagent` runs. The description is
+ * derived from the spawning toolCall's `args.task` (found via `toolCallId`) —
+ * NOT from `results[i].task`, which pi may suffix with an output section — so it
+ * equals the synthesized `Task` block's `input.description` and the run anchors.
+ * Management calls (no `runId`) are skipped.
+ */
+export function subagentRuns(path: string): PiSubagentRun[] {
+  const lines = readLines(path);
+  if (!lines) return [];
+
+  const taskByCallId = new Map<string, string>();
+  for (const l of lines) {
+    if (l.type !== 'message' || str(l.message?.role) !== 'assistant') continue;
+    const content = l.message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const c of content) {
+      const b = rec(c);
+      const args = rec(b.arguments);
+      if (str(b.type) === 'toolCall' && str(b.name) === 'subagent' && str(args.task)) {
+        taskByCallId.set(str(b.id), str(args.task));
+      }
+    }
+  }
+
+  const runs: PiSubagentRun[] = [];
+  for (const l of lines) {
+    const msg = l.message;
+    if (l.type !== 'message' || !msg) continue;
+    if (str(msg.role) !== 'toolResult' || str(msg.toolName) !== 'subagent') continue;
+    const details = rec(msg.details);
+    const runId = str(details.runId);
+    if (!runId) continue; // management action — nothing spawned
+    const task = taskByCallId.get(str(msg.toolCallId));
+    const results = Array.isArray(details.results) ? details.results : [];
+    results.forEach((r, i) => {
+      const rr = rec(r);
+      // Fallback to results[i].task: subagentLabel keeps only the first line, so
+      // a suffixed output section can't diverge the key.
+      runs.push({
+        runId,
+        runIndex: i,
+        agentType: str(rr.agent),
+        description: subagentLabel(task ?? str(rr.task)),
+      });
+    });
+  }
+  return runs;
 }
 
 /** A canonical index row (matches the events NDJSON the projection reads). */
@@ -338,7 +503,7 @@ export function toCanonicalRows(session: PiSession, filePath: string): Canonical
       cache_read_tokens: num(usage?.cache_read_input_tokens),
       cache_write_tokens: num(usage?.cache_creation_input_tokens),
       service_tier: null,
-      is_sidechain: false,
+      is_sidechain: session.isSidechain,
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(content),
       text_content: text,

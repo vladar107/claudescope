@@ -14,11 +14,16 @@
  *   - a SUCCESSFUL `edit` → canonical `Edit` (feeds Files-changed), while a DENIED
  *     edit passes through under its raw name (excluded from Files-changed);
  *   - an unknown event type (`session.context_changed`) tolerated;
+ *   - an inline subagent (`subagent.started` + `agentId`-tagged events) segmented
+ *     out of the main thread and nested under a canonical `Task` block, with a
+ *     stray `agentId` (no started record) tolerated as a detached run;
+ *   - a symlinked saved attachment escaping `files/` refused (symlink-safe
+ *     containment);
  *   - global memory read from `~/.copilot/copilot-instructions.md`.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -44,6 +49,11 @@ const ts = (s: number) => `2026-06-16T10:00:${String(s).padStart(2, '0')}.000Z`;
 let evtId = 0;
 /** Wrap a `{type, data}` pair into a Copilot event envelope. */
 const ev = (type: string, data: unknown) => ({ type, data, id: `e${evtId++}`, timestamp: ts(evtId), parentId: null });
+/** Tag an event as belonging to an inline subagent run. */
+const sub = (e: Record<string, unknown>, agentId: string) => ({ ...e, agentId });
+
+// Bytes a poisoned symlink points at — must never surface in an API response.
+const SECRET_B64 = Buffer.from('copilot-secret-bytes').toString('base64');
 
 // 1x1 transparent PNG — stands in for a saved screenshot.
 const PNG_B64 =
@@ -139,12 +149,56 @@ function writeSession2(): void {
   ]);
 }
 
+/** Session 3: an inline `task` subagent (started + tagged events + completed),
+ *  a stray tagged turn with no `subagent.started`, and a POISONED saved
+ *  attachment — `files/evil.png` is a symlink escaping the session dir. */
+function writeSession3(): void {
+  writeSession('sc', 'Explore with subagent', [
+    ev('session.start', {
+      sessionId: 'copilot-sess-3',
+      context: { cwd: '/tmp/cproj', branch: 'main', repository: 'me/cproj', hostType: 'github' },
+    }),
+    ev('session.model_change', { newModel: 'gpt-5-mini' }),
+    ev('user.message', {
+      content: 'inspect the entry point [📷 evil.png]',
+      attachments: [{ type: 'file', path: '/var/folders/T/evil.png', displayName: 'evil.png' }],
+    }),
+    ev('assistant.message', {
+      messageId: 'm3',
+      model: 'gpt-5-mini',
+      content: 'Delegating to the explore agent.',
+      toolRequests: [
+        { toolCallId: 'call-task', name: 'task', arguments: { description: 'Inspect entry point', prompt: 'Find the entry point of this repo.' } },
+      ],
+    }),
+    sub(ev('subagent.started', { toolCallId: 'call-task', agentName: 'explore', agentDisplayName: 'Explore Agent', model: 'gpt-5-mini' }), 'call-task'),
+    sub(ev('assistant.message', {
+      model: 'gpt-5-mini',
+      content: 'Scanning for the zebrafinder entry.',
+      toolRequests: [{ toolCallId: 'call-sub-view', name: 'view', arguments: { path: '/tmp/cproj/package.json' } }],
+    }), 'call-task'),
+    sub(ev('tool.execution_start', { toolCallId: 'call-sub-view', toolName: 'view' }), 'call-task'),
+    sub(ev('tool.execution_complete', { toolCallId: 'call-sub-view', success: true, result: { content: '{"main":"src/index.ts"}' } }), 'call-task'),
+    sub(ev('subagent.completed', { toolCallId: 'call-task', agentName: 'explore' }), 'call-task'),
+    ev('tool.execution_complete', { toolCallId: 'call-task', success: true, result: { content: 'Entry point is src/index.ts.' } }),
+    // A tagged turn with no subagent.started — tolerated as a detached run.
+    sub(ev('assistant.message', { model: 'gpt-5-mini', content: 'ghost turn from a lost agent' }), 'call-ghost'),
+    ev('assistant.message', { messageId: 'm4', model: 'gpt-5-mini', content: 'The entry point is src/index.ts.' }),
+  ]);
+  // The poisoned attachment: textually inside files/, target outside the session.
+  const secret = join(work, 'secret-outside.png');
+  writeFileSync(secret, Buffer.from(SECRET_B64, 'base64'));
+  mkdirSync(join(sessionsDir, 'sc', 'files'), { recursive: true });
+  symlinkSync(secret, join(sessionsDir, 'sc', 'files', 'evil.png'));
+}
+
 let app: FastifyInstance;
 let closeConnection: () => Promise<void>;
 
 beforeAll(async () => {
   writeSession1();
   writeSession2();
+  writeSession3();
   // Global memory file in the Copilot home (parent of session-state).
   writeFileSync(join(copilotHome, 'copilot-instructions.md'), '# User profile\nuser.name: Vlad\n');
 
@@ -166,20 +220,23 @@ afterAll(async () => {
 });
 
 const get = (url: string) => app.inject({ method: 'GET', url });
-type Session = { id: string; connectorId: string; title: string; models: string[]; totalTokens: number; totalCostUsd: number };
+type Session = { id: string; connectorId: string; title: string; models: string[]; totalTokens: number; totalCostUsd: number; hasSidechain: boolean };
 const sessionById = async (id: string): Promise<Session> =>
   (await get('/api/sessions')).json().find((s: Session) => s.id === id);
 
 describe('copilot session indexing', () => {
-  it('lists both sessions tagged copilot, with model and workspace.yaml title', async () => {
+  it('lists the sessions tagged copilot, with model and workspace.yaml title', async () => {
     const sessions: Session[] = (await get('/api/sessions')).json();
-    expect(sessions.map((s) => s.id).sort()).toEqual(['copilot-sess-1', 'copilot-sess-2']);
+    expect(sessions.map((s) => s.id).sort()).toEqual(['copilot-sess-1', 'copilot-sess-2', 'copilot-sess-3']);
     for (const s of sessions) {
       expect(s.connectorId).toBe('copilot');
       expect(s.models).toContain('gpt-5-mini');
     }
     expect((await sessionById('copilot-sess-1')).title).toBe('Fix the bug');
     expect((await sessionById('copilot-sess-2')).title).toBe('Audit the project');
+    // The inline subagent flips has_sidechain on (and only there).
+    expect((await sessionById('copilot-sess-3')).hasSidechain).toBe(true);
+    expect((await sessionById('copilot-sess-1')).hasSidechain).toBe(false);
   });
 
   it('prices the shutdown session from tokenDetails and charges the no-shutdown session nothing', async () => {
@@ -261,5 +318,65 @@ describe('copilot session detail', () => {
     // Unsaved screenshot: no attachment block, but the inline marker remains.
     expect(flat.some((b: Record<string, unknown>) => b.kind === 'attachment')).toBe(false);
     expect(JSON.stringify(detail.thread)).toContain('[📷 missing.png]');
+  });
+});
+
+describe('copilot subagent embedding', () => {
+  type Block = Record<string, any>;
+  type Run = Record<string, any>;
+
+  it('segments the tagged run out of the main thread and nests it under a canonical Task block', async () => {
+    const detail = (await get('/api/sessions/copilot-sess-3')).json();
+    const flat: Block[] = detail.thread.flatMap((t: { blocks: Block[] }) => t.blocks);
+
+    // Main thread: no subagent turns leaked (its text and tools live in the run).
+    expect(JSON.stringify(detail.thread)).not.toContain('zebrafinder');
+    expect(detail.thread.every((t: { isSidechain?: boolean }) => !t.isSidechain)).toBe(true);
+
+    // The spawning `task` call is canonicalized to Task, its result (the final
+    // report) intact.
+    const task = flat.find((b) => b.kind === 'tool' && b.name === 'Task');
+    expect(task.input).toEqual({
+      description: 'Inspect entry point',
+      subagent_type: 'explore',
+      prompt: 'Find the entry point of this repo.',
+    });
+    expect(JSON.stringify(task.result.content)).toContain('Entry point is src/index.ts');
+
+    // The run is anchored to that Task block and carries the subagent's turns.
+    const runs: Run[] = detail.subagents;
+    expect(runs).toHaveLength(2);
+    const run = runs.find((r) => r.agentType === 'explore');
+    expect(run).toMatchObject({ description: 'Inspect entry point', toolUseId: task.id });
+    expect(run.spawnUuid).toBeTruthy();
+    expect(JSON.stringify(run.thread)).toContain('zebrafinder');
+    const runBlocks: Block[] = run.thread.flatMap((t: { blocks: Block[] }) => t.blocks);
+    const view = runBlocks.find((b) => b.kind === 'tool' && b.name === 'Read');
+    expect(view.input.file_path).toBe('/tmp/cproj/package.json');
+    expect(JSON.stringify(view.result.content)).toContain('src/index.ts');
+  });
+
+  it('tolerates a tagged turn with no subagent.started as a detached run', async () => {
+    const detail = (await get('/api/sessions/copilot-sess-3')).json();
+    const ghost = detail.subagents.find((r: Run) => r.agentId === 'call-ghost');
+    expect(ghost).toBeTruthy();
+    expect(JSON.stringify(ghost.thread)).toContain('ghost turn');
+    // No started record → no description → never matched to a spawn point.
+    expect(ghost.toolUseId).toBeUndefined();
+  });
+
+  it('finds subagent text via full-text search under the parent session', async () => {
+    const { sessions: results } = (await get('/api/search?q=zebrafinder')).json();
+    expect(results.some((r: { sessionId: string }) => r.sessionId === 'copilot-sess-3')).toBe(true);
+  });
+
+  it('refuses a saved attachment whose symlink escapes files/', async () => {
+    const detail = (await get('/api/sessions/copilot-sess-3')).json();
+    const flat: Block[] = detail.thread.flatMap((t: { blocks: Block[] }) => t.blocks);
+    // No attachment block for the poisoned name — only the inline marker survives —
+    // and the symlink target's bytes never appear anywhere in the response.
+    expect(flat.some((b) => b.kind === 'attachment')).toBe(false);
+    expect(JSON.stringify(detail.thread)).toContain('[📷 evil.png]');
+    expect(JSON.stringify(detail)).not.toContain(SECRET_B64);
   });
 });
