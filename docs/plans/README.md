@@ -58,3 +58,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0031 | [Google Antigravity connector](./0031-antigravity-connector.md) | done |
 | 0032 | [Subagent embedding for Codex, pi, opencode, Copilot](./0032-subagent-embedding-connectors.md) | done |
 | 0033 | [Symlink-safe image resolution](./0033-symlink-safe-image-resolution.md) | done |
+| 0034 | [Restore reader's place after a full reload (Safari ⌘R)](./0034-safari-reload-scroll-restore.md) | in-progress |

@@ -8,6 +8,7 @@ import { formatBytes, formatDateTime, formatDuration } from '../browse/format.js
 import { hasRenderableContent } from './blocks.js';
 import { SubagentBlock, SubagentJumpMenu, ThreadList, useHashTarget } from './ThreadView.js';
 import { useProgressiveMount } from './useProgressiveMount.js';
+import { useScrollRestore } from './useScrollRestore.js';
 import { ChangesetPanel } from './ChangesetPanel.js';
 import { buildChangeset } from './changeset.js';
 import { ExportMenu } from './ExportMenu.js';
@@ -226,6 +227,10 @@ function SessionView({
   const [activeIndex, setActiveIndex] = useState(0);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Safari can't intercept ⌘R (see the keydown handler above), so a full
+  // reload there — or a hard reload anywhere — restores the reader's place.
+  useScrollRestore({ sessionId: meta.id, items, mounted, allMounted, ensureMounted, threadRef });
 
   // Debounce the query and require >= 2 chars, so rapid typing (or a 1-char
   // query that matches everything) never triggers heavy work on every keystroke.
