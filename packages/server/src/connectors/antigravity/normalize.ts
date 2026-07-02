@@ -30,7 +30,7 @@
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, dirname, extname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type {
   AssistantEvent,
   ContentBlock,
@@ -38,6 +38,7 @@ import type {
   ToolUseBlock,
   UserEvent,
 } from '@claudescope/shared';
+import { resolveImageWithin } from '../safe-image.js';
 import { toolNamesCsv } from '../tool-names.js';
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -317,15 +318,6 @@ export function subagentLabel(prompt: string): string {
 
 // --- images -----------------------------------------------------------------
 
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
-const IMAGE_MIME: Record<string, string> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-};
-
 /** Absolute `uploaded_media_*.png` paths listed in a USER_INPUT metadata blob.
  *  Accepts POSIX (`/…`) and Windows (`C:\…`) paths, including spaces — only the
  *  basename is used downstream, so the leading form doesn't matter. */
@@ -339,21 +331,15 @@ function extractImagePaths(content: string): string[] {
 
 /**
  * Resolve an uploaded image to a base64 `ImageBlock`. Contained to the
- * conversation dir: only ever reads `<convDir>/<basename>`, so a traversal path
- * can never escape it. Returns null for a non-image or a missing/oversized file.
+ * conversation dir: only `<convDir>/<basename>` is considered, and the shared
+ * resolver refuses it unless its real path stays inside `convDir` (so neither
+ * traversal nor a planted symlink can escape). Returns null for a non-image or
+ * a missing/oversized file.
  */
 function resolveImage(convDir: string, absPath: string): ContentBlock | null {
   const name = basename(absPath);
-  const mime = IMAGE_MIME[extname(name).toLowerCase()];
-  if (!name || !mime) return null;
-  try {
-    const full = join(convDir, name);
-    if (statSync(full).size > MAX_IMAGE_BYTES) return null;
-    const data = readFileSync(full).toString('base64');
-    return { type: 'image', source: { type: 'base64', media_type: mime, data } };
-  } catch {
-    return null;
-  }
+  if (!name) return null;
+  return resolveImageWithin(convDir, join(convDir, name));
 }
 
 // --- tool mapping -----------------------------------------------------------

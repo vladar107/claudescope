@@ -11,7 +11,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -65,13 +65,16 @@ function writeSession(): void {
   writeFileSync(pngPath, Buffer.from(PNG_BASE64, 'base64'));
   writeFileSync(mentionPath, Buffer.from(PNG_BASE64, 'base64'));
 
-  // Two POISONED attachments the connector must refuse (F4): a real PNG OUTSIDE
-  // ~/.junie (arbitrary-file read / traversal), and a non-image file INSIDE the
-  // tree (extension gate). Both hold "secret" bytes that must never be inlined.
+  // Three POISONED attachments the connector must refuse (F4): a real PNG OUTSIDE
+  // ~/.junie (arbitrary-file read / traversal), a non-image file INSIDE the tree
+  // (extension gate), and a symlink INSIDE the tree whose target escapes it
+  // (realpath containment). All hold "secret" bytes that must never be inlined.
   const secretImg = join(outside, 'secret.png');
   const secretTxt = join(imgDir, 'secret.txt');
+  const secretLink = join(imgDir, 'link.png');
   writeFileSync(secretImg, Buffer.from(PNG_BASE64, 'base64'));
   writeFileSync(secretTxt, 'TOP SECRET');
+  symlinkSync(secretImg, secretLink);
 
   writeFileSync(
     join(junieDir, 'index.jsonl'),
@@ -95,7 +98,13 @@ function writeSession(): void {
       {
         kind: 'UserPromptEvent',
         prompt: `look at this screenshot @${mentionPath} and the old one @${missingPath}`,
-        customAttachments: [pngPath, secretImg, secretTxt, { kind: 'OnboardingMigrationAttachment' }],
+        customAttachments: [
+          pngPath,
+          secretImg,
+          secretTxt,
+          secretLink,
+          { kind: 'OnboardingMigrationAttachment' },
+        ],
       },
       { kind: 'SendToAgentEvent' },
       // Token usage for the assistant turn (haiku family → priced via substring).
@@ -267,8 +276,9 @@ describe('Junie session detail', () => {
         b.kind === 'attachment' && (b.attachment as { type?: string })?.type === 'image',
     );
     // Exactly two: the `@mention` one + the in-tree customAttachments PNG. The
-    // poisoned attachments (a PNG outside ~/.junie and an in-tree .txt) are refused
-    // by the F4 containment + extension gate, and the purged mention embeds nothing.
+    // poisoned attachments (a PNG outside ~/.junie, an in-tree .txt, and an
+    // in-tree symlink escaping ~/.junie) are refused by the F4 containment +
+    // extension gate, and the purged mention embeds nothing.
     expect(images).toHaveLength(2);
     for (const img of images) {
       const source = (img.attachment as { source: { type: string; media_type: string; data: string } })

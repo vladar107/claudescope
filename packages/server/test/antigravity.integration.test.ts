@@ -14,14 +14,15 @@
  *   - tool results are separate typed records correlated by order, and a result
  *     with no preceding call (implicit read) synthesizes a `Read`;
  *   - `write_to_file` → canonical `Write` (feeds Files-changed);
- *   - an uploaded `uploaded_media_*.png` → base64 ImageBlock;
+ *   - an uploaded `uploaded_media_*.png` → base64 ImageBlock, while a symlink
+ *     escaping the conversation dir is refused (symlink-safe containment);
  *   - the `SYSTEM_MESSAGE` subagent summary renders; CHECKPOINT/CONVERSATION_HISTORY
  *     are dropped; cost/tokens are zero (no token data exists);
  *   - global memory read from `~/.gemini/config/agents/AGENTS.md`.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -49,6 +50,11 @@ const CHILD = '22222222-2222-2222-2222-222222222222';
 const ORPHAN = '33333333-3333-3333-3333-333333333333';
 const IMG_NAME = 'uploaded_media_0_1782909688549.png';
 const IMG_ABS = join(cliDir, 'brain', PARENT, IMG_NAME);
+// A poisoned upload: textually inside the conversation dir, but a symlink whose
+// target lives outside it (the connector must refuse to inline it).
+const EVIL_NAME = 'uploaded_media_1_1782909688550.png';
+const EVIL_ABS = join(cliDir, 'brain', PARENT, EVIL_NAME);
+const SECRET_ABS = join(work, 'outside-secret.png');
 
 const PNG_B64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
@@ -86,7 +92,7 @@ function writeFixtures(): void {
       content:
         '<USER_REQUEST>\nAnalyze my projects\n</USER_REQUEST>\n' +
         '<ADDITIONAL_METADATA>\nThe current local time is: 2026-07-01T14:00:00+02:00.\n\n' +
-        `The user has uploaded 1 image(s):\n- ${IMG_ABS}\n</ADDITIONAL_METADATA>\n` +
+        `The user has uploaded 2 image(s):\n- ${IMG_ABS}\n- ${EVIL_ABS}\n</ADDITIONAL_METADATA>\n` +
         '<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from None to ' +
         'Gemini 3.5 Flash (Medium). No need to comment on this change.\n</USER_SETTINGS_CHANGE>',
     }),
@@ -187,8 +193,11 @@ function writeFixtures(): void {
     step(2, 'MODEL', 'CODE_ACTION', { content: 'Created file file:///tmp/orphan.md with requested content.' }),
   ]);
 
-  // The uploaded image bytes referenced by the parent's USER_INPUT metadata.
+  // The uploaded image bytes referenced by the parent's USER_INPUT metadata,
+  // plus the poisoned one: a symlink escaping the conversation dir.
   writeFileSync(IMG_ABS, Buffer.from(PNG_B64, 'base64'));
+  writeFileSync(SECRET_ABS, 'secret bytes that must never be inlined');
+  symlinkSync(SECRET_ABS, EVIL_ABS);
 
   // history.jsonl maps the PARENT (and only it) to a workspace. A leading
   // slash-command line without a conversationId is present (as in real data).
@@ -336,11 +345,17 @@ describe('antigravity session detail', () => {
     expect(JSON.stringify(read.result.content)).toContain('README.md');
 
     // Uploaded screenshot → base64 ImageBlock (carried as an attachment block).
-    const att = flat.find((b: Record<string, unknown>) => b.kind === 'attachment');
-    expect(att.attachment).toMatchObject({
+    // Only the legit upload is inlined — the symlinked one escaping the
+    // conversation dir is refused, so exactly one image comes back.
+    const atts = flat.filter((b: Record<string, unknown>) => b.kind === 'attachment');
+    expect(atts).toHaveLength(1);
+    expect(atts[0].attachment).toMatchObject({
       type: 'image',
       source: { type: 'base64', media_type: 'image/png', data: PNG_B64 },
     });
+    expect(JSON.stringify(detail)).not.toContain(
+      Buffer.from('secret bytes that must never be inlined').toString('base64'),
+    );
   });
 
   it('does not synthesize a blank Write for an orphan write result', async () => {
