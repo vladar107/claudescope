@@ -17,6 +17,13 @@
   gap: var(--tv-space-1);
 }
 
+/* From/To (+ clear) move as one unit when the toolbar wraps. */
+.tv-analytics__dates {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--tv-space-4);
+}
+
 /* "Show cache" toggle — aligned to the bottom of the toolbar row. */
 .tv-analytics__toggle {
   display: inline-flex;
