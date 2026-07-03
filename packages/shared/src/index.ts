@@ -8,3 +8,4 @@ export * from './categories.js';
 export * from './diff.js';
 export * from './redact.js';
 export * from './markdown.js';
+export * from './changeset.js';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SubagentRun, ThreadItem } from '@claudescope/shared';
-import { buildChangeset, fileStats } from '../src/pages/session/changeset.js';
+import { buildChangeset, collectEditCalls, fileStats } from '../src/changeset.js';
 
 function turn(blocks: ThreadItem['blocks']): ThreadItem {
   return { uuid: 'u', parentUuid: null, role: 'assistant', timestamp: 't', isSidechain: false, blocks };
@@ -51,5 +51,39 @@ describe('buildChangeset', () => {
   it('ignores non-file tools and returns empty when nothing changed', () => {
     const thread = [turn([tool('Bash', { command: 'ls' }), tool('Read', { file_path: 'x.ts' })])];
     expect(buildChangeset(thread, [])).toEqual([]);
+  });
+});
+
+describe('collectEditCalls', () => {
+  it('keys each edit-bearing call by (uuid, toolUseId) and flags subagent edits', () => {
+    const main: ThreadItem[] = [
+      {
+        uuid: 'u1', parentUuid: null, role: 'assistant', timestamp: '2026-01-01T00:00:00Z',
+        isSidechain: false,
+        blocks: [
+          { kind: 'tool', id: 'call_1', name: 'MultiEdit', input: {
+            file_path: 'src/a.ts',
+            edits: [
+              { old_string: 'a', new_string: 'b' },
+              { old_string: 'c', new_string: 'd' },
+            ],
+          } },
+        ],
+      },
+    ];
+    const sub: SubagentRun = {
+      agentId: 's1', agentType: 'Explore', description: 'd',
+      messageCount: 1, toolCallCount: 1, totalTokens: 0,
+      thread: [turn([tool('Write', { file_path: 'sub/c.py', content: 'print(1)' })])],
+    };
+    const calls = collectEditCalls(main, [sub]);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({
+      path: 'src/a.ts', toolName: 'MultiEdit', uuid: 'u1', toolUseId: 'call_1',
+      isSidechain: false,
+    });
+    // One call, two inner edits — not two calls.
+    expect(calls[0]!.edits).toHaveLength(2);
+    expect(calls[1]).toMatchObject({ path: 'sub/c.py', toolName: 'Write', isSidechain: true });
   });
 });

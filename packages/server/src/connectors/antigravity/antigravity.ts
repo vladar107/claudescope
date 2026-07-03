@@ -83,14 +83,14 @@ function eventsProjectionSql(filePath: string): string {
     SELECT
       file_path, session_id, uuid, parent_uuid, role, type, ts, cwd, git_branch,
       model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-      service_tier, is_sidechain, tool_use_count, tool_names, text_content,
+      service_tier, is_sidechain, tool_use_count, tool_names, tool_error_count, text_content,
       CAST(NULL AS VARCHAR) AS message_id, CAST(NULL AS VARCHAR) AS forked_from_session_id
     FROM read_ndjson(${path}, format='newline_delimited', maximum_object_size=268435456, ignore_errors=true, columns={
       file_path:'VARCHAR', session_id:'VARCHAR', uuid:'VARCHAR', parent_uuid:'VARCHAR',
       role:'VARCHAR', type:'VARCHAR', ts:'TIMESTAMP', cwd:'VARCHAR', git_branch:'VARCHAR',
       model:'VARCHAR', input_tokens:'BIGINT', output_tokens:'BIGINT', cache_read_tokens:'BIGINT',
       cache_write_tokens:'BIGINT', service_tier:'VARCHAR', is_sidechain:'BOOLEAN',
-      tool_use_count:'INTEGER', tool_names:'VARCHAR', text_content:'VARCHAR'
+      tool_use_count:'INTEGER', tool_names:'VARCHAR', tool_error_count:'INTEGER', text_content:'VARCHAR'
     })`;
 }
 
