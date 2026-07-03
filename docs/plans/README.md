@@ -62,3 +62,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0035 | [Roadmap: agent-facing access (MCP + CLI) & analytics depth](./0035-agent-access-and-analytics-roadmap.md) | proposed |
 | 0036 | [API seams for agent consumers (windowing, limits, plain snippets, shared redact/markdown)](./0036-agent-api-seams.md) | done |
 | 0038 | [`claudescope mcp`: agent-facing MCP server](./0038-mcp-server.md) | done |
+| 0040 | [CLI query subcommands (search/sessions/session/projects/analytics)](./0040-cli-query-subcommands.md) | done |

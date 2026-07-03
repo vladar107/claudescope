@@ -18,17 +18,21 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import type { MemorySource, SessionMeta } from '@claudescope/shared';
-import { redactText, threadItemsToMarkdown, truncateText } from '@claudescope/shared';
+import { truncateText } from '@claudescope/shared';
 import { APP_VERSION } from '../config.js';
 import { ensureDaemon } from '../daemon.js';
 import { ApiClient } from './api-client.js';
+import {
+  DEFAULT_LIMIT,
+  DEFAULT_MAX_TOOL_CHARS,
+  DEFAULT_TURNS,
+  day,
+  fmtCost,
+  fmtTokens,
+  shapeSearchResults,
+  shapeSessionMarkdown,
+} from './shape.js';
 
-/** Default hits/rows returned by the list-shaped tools. */
-const DEFAULT_LIMIT = 20;
-/** Default per-tool-payload char cap in `get_session`. */
-const DEFAULT_MAX_TOOL_CHARS = 2000;
-/** Default turns per `get_session` window when no windowing params are given. */
-const DEFAULT_TURNS = 20;
 /** Char cap for memory bodies in `get_memory`. */
 const MEMORY_BODY_CHARS = 2000;
 
@@ -39,10 +43,6 @@ const errorText = (t: string) => ({ content: [{ type: 'text' as const, text: t }
 export interface McpDeps {
   resolveClient: () => Promise<ApiClient>;
 }
-
-const fmtCost = (usd: number): string => `$${usd.toFixed(2)}`;
-const fmtTokens = (n: number): string => n.toLocaleString('en-US');
-const day = (iso: string): string => iso.slice(0, 10);
 
 function sessionLine(s: SessionMeta): string {
   const branch = s.gitBranch ? ` · ${s.gitBranch}` : '';
@@ -126,32 +126,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         scope: args.scope ?? 'sessions',
         format: 'plain',
       });
-      const sessions = res.sessions.slice(0, limit);
-      const memory = res.memory.slice(0, limit);
-      if (sessions.length === 0 && memory.length === 0) return 'No matches.';
-
-      const parts: string[] = [];
-      if (sessions.length > 0) {
-        parts.push(
-          `${sessions.length} transcript hit(s):`,
-          ...sessions.map(
-            (h) =>
-              `- [${h.role}] ${h.title} (session ${h.sessionId}, project ${h.projectId}, uuid ${h.messageUuid})\n` +
-              `  "${h.snippet}"`,
-          ),
-        );
-      }
-      if (memory.length > 0) {
-        parts.push(
-          `${memory.length} memory hit(s):`,
-          ...memory.map(
-            (h) =>
-              `- ${h.title}${h.category ? ` (${h.category})` : ''} [${h.connectorId}] — ${h.sourcePath}\n` +
-              `  "${h.snippet}"`,
-          ),
-        );
-      }
-      return parts.join('\n');
+      return shapeSearchResults(res, limit);
     }),
   );
 
@@ -205,32 +180,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         ...windowed,
         maxToolChars: args.maxToolChars ?? DEFAULT_MAX_TOOL_CHARS,
       });
-
-      const { meta, window } = data;
-      const r = args.redact ? redactText : (s: string) => s;
-      const head = [
-        `# ${r(meta.title)}`,
-        `session ${meta.id} [${meta.connectorId}] · project ${meta.projectDisplayName} · ` +
-          `${meta.startedAt} → ${meta.endedAt} · ${fmtTokens(meta.totalTokens)} tok · ${fmtCost(meta.totalCostUsd)}`,
-      ];
-      if (window) {
-        const end = window.offset + window.limit;
-        head.push(
-          `Turns ${window.offset + 1}–${end} of ${window.total}` +
-            (window.anchorFound === false ? ' (around uuid not found — showing the start)' : '') +
-            (end < window.total ? ` — page on with {offset: ${end}}` : ''),
-        );
-      }
-
-      const opts = { redact: args.redact ?? false };
-      const parts = [head.join('\n'), '---', threadItemsToMarkdown(data.thread, opts)];
-      for (const run of data.subagents) {
-        parts.push(
-          `--- subagent · ${run.agentType} — ${r(run.description || run.agentId)} ---`,
-          threadItemsToMarkdown(run.thread, opts),
-        );
-      }
-      return parts.join('\n\n');
+      return shapeSessionMarkdown(data, args.redact ?? false);
     }),
   );
 
