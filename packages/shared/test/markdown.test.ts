@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { SessionDetailResponse, ThreadItem } from '@claudescope/shared';
-import { redactText, sessionToMarkdown } from '../src/pages/session/export.js';
+import type { SessionDetailResponse, ThreadItem } from '../src/index.js';
+import { redactText, sessionToMarkdown, threadItemsToMarkdown, truncateText } from '../src/index.js';
 
 describe('redactText', () => {
   it('masks home-dir paths to ~', () => {
@@ -21,14 +21,26 @@ describe('redactText', () => {
   });
 });
 
+describe('truncateText', () => {
+  it('reports exactly how many chars were dropped', () => {
+    expect(truncateText('a'.repeat(100), 40)).toBe('a'.repeat(40) + '… [truncated, 60 more chars]');
+  });
+
+  it('leaves text at or under the cap untouched, and ignores a zero cap', () => {
+    expect(truncateText('short', 5)).toBe('short');
+    expect(truncateText('anything', 0)).toBe('anything');
+  });
+});
+
 function turn(role: 'user' | 'assistant', blocks: ThreadItem['blocks'], model?: string): ThreadItem {
   return { uuid: 'u', parentUuid: null, role, timestamp: '2026-01-01T00:00:00Z', isSidechain: false, blocks, ...(model ? { model } : {}) };
 }
 
 const baseMeta: SessionDetailResponse['meta'] = {
-  id: 's1', projectId: 'p', title: 'My session', startedAt: '2026-01-01T00:00:00Z',
+  id: 's1', projectId: 'p', projectDisplayName: 'p', title: 'My session', startedAt: '2026-01-01T00:00:00Z',
   endedAt: '2026-01-01T01:00:00Z', messageCount: 2, toolCallCount: 1, totalTokens: 1234,
   totalCostUsd: 0.5, models: ['claude-opus-4-8'], sizeBytes: 100, hasSidechain: false,
+  connectorId: 'claude-code',
 };
 
 describe('sessionToMarkdown', () => {
@@ -61,5 +73,34 @@ describe('sessionToMarkdown', () => {
     expect(red).not.toContain('/Users/me/');
     expect(red).toContain('~/app/settings.ts');
     expect(red).toContain('redaction');
+  });
+});
+
+describe('threadItemsToMarkdown with maxToolChars', () => {
+  const bigResult = 'x'.repeat(500);
+  const items: ThreadItem[] = [
+    turn('assistant', [
+      {
+        kind: 'tool',
+        id: 't1',
+        name: 'Bash',
+        input: { command: 'echo hi' },
+        result: { isError: false, content: [{ type: 'text', text: bigResult }] },
+      },
+    ], 'claude-opus-4-8'),
+    turn('user', [{ kind: 'text', type: 'text', text: 'prose is never truncated '.repeat(20) }]),
+  ];
+
+  it('caps tool payloads but not prose', () => {
+    const md = threadItemsToMarkdown(items, { redact: false, maxToolChars: 50 });
+    expect(md).toContain('… [truncated, 450 more chars]');
+    expect(md).not.toContain(bigResult);
+    expect(md).toContain('prose is never truncated '.repeat(20).trim());
+  });
+
+  it('leaves everything intact without a cap', () => {
+    const md = threadItemsToMarkdown(items, { redact: false });
+    expect(md).toContain(bigResult);
+    expect(md).not.toContain('[truncated');
   });
 });

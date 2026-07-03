@@ -163,6 +163,11 @@ describe('GET /api/sessions', () => {
     expect(sessions.map((s: { id: string }) => s.id)).toEqual(['sessB']);
   });
 
+  it('caps the list with limit; a bogus limit is ignored', async () => {
+    expect((await get('/api/sessions?limit=1')).json()).toHaveLength(1);
+    expect((await get('/api/sessions?limit=bogus')).json()).toHaveLength(2);
+  });
+
   // Regression: sessB's transcript contains a malformed JSON line (invalid `\p`
   // escape). The indexer must skip just that line, not abort the whole reindex.
   it('indexes a session despite a malformed line in its transcript', async () => {
@@ -213,11 +218,67 @@ describe('GET /api/sessions/:id', () => {
   });
 });
 
+describe('GET /api/sessions/:id — windowing (agent/CLI consumers)', () => {
+  it('no windowing params → full thread and no window object (the web path)', async () => {
+    const detail = (await get('/api/sessions/sessA')).json();
+    expect(detail.window).toBeUndefined();
+    expect(detail.subagents).toHaveLength(2);
+  });
+
+  it('windows around a uuid and keeps only subagents spawned inside the slice', async () => {
+    const full = (await get('/api/sessions/sessA')).json();
+    const detail = (await get('/api/sessions/sessA?around=a3&radius=0')).json();
+    expect(detail.window).toEqual({ offset: expect.any(Number), limit: 1, total: full.thread.length, anchorFound: true });
+    expect(detail.thread.map((t: { uuid: string }) => t.uuid)).toEqual(['a3']);
+    // Only the workflow run (spawned at a3) is visible; the Explore run (a2) is not.
+    expect(detail.subagents.map((s: { toolUseId: string }) => s.toolUseId)).toEqual(['tu_wf']);
+  });
+
+  it('an around uuid living inside a subagent resolves to its spawn turn', async () => {
+    const detail = (await get('/api/sessions/sessA?around=sa-a1&radius=0')).json();
+    expect(detail.window.anchorFound).toBe(true);
+    expect(detail.thread.map((t: { uuid: string }) => t.uuid)).toEqual(['a2']);
+  });
+
+  it('an unknown around uuid falls back to the start with anchorFound=false', async () => {
+    const detail = (await get('/api/sessions/sessA?around=nope&radius=1')).json();
+    expect(detail.window).toMatchObject({ offset: 0, anchorFound: false });
+  });
+
+  it('offset/limit slices the thread and reports the window', async () => {
+    const full = (await get('/api/sessions/sessA')).json();
+    const detail = (await get('/api/sessions/sessA?offset=1&limit=2')).json();
+    expect(detail.window).toEqual({ offset: 1, limit: 2, total: full.thread.length });
+    expect(detail.thread.map((t: { uuid: string }) => t.uuid)).toEqual(
+      full.thread.slice(1, 3).map((t: { uuid: string }) => t.uuid),
+    );
+  });
+
+  it('maxToolChars truncates tool payloads without adding a window', async () => {
+    const detail = (await get('/api/sessions/sessA?maxToolChars=10')).json();
+    expect(detail.window).toBeUndefined();
+    const texts = detail.thread.flatMap((t: { blocks: { kind: string; result?: { content: { type: string; text?: string }[] } }[] }) =>
+      t.blocks
+        .filter((b) => b.kind === 'tool' && b.result)
+        .flatMap((b) => b.result!.content.filter((c) => c.type === 'text').map((c) => c.text!)),
+    );
+    expect(texts.some((s: string) => s.includes('[truncated,'))).toBe(true);
+  });
+});
+
 describe('GET /api/search', () => {
   it('finds a session by full-text content', async () => {
     const { sessions: results } = (await get('/api/search?q=needle')).json();
     expect(results.length).toBeGreaterThan(0);
     expect(results.some((r: { sessionId: string }) => r.sessionId === 'sessA')).toBe(true);
+  });
+
+  it('format=plain drops the <mark> markup; the default keeps it', async () => {
+    const html = (await get('/api/search?q=needle')).json();
+    expect(html.sessions[0].snippet).toContain('<mark>needle</mark>');
+    const plain = (await get('/api/search?q=needle&format=plain')).json();
+    expect(plain.sessions[0].snippet).toContain('needle');
+    expect(plain.sessions[0].snippet).not.toContain('<mark>');
   });
 });
 

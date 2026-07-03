@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Copy, Download } from 'lucide-react';
 import type { SessionDetailResponse } from '@claudescope/shared';
-import { sessionToMarkdown } from './export.js';
+import { sessionToMarkdown } from '@claudescope/shared';
 
 /** An "Export" dropdown: download the session as Markdown, or copy it. */
 export function ExportMenu({ data }: { data: SessionDetailResponse }) {
