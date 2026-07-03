@@ -71,7 +71,7 @@ export interface SearchResult {
   sessionId: string;
   projectId: string;
   title: string;
-  /** Snippet with matched terms highlighted (HTML `<mark>`). */
+  /** Snippet with matched terms highlighted (HTML `<mark>`), or raw text with `format=plain`. */
   snippet: string;
   /** BM25 relevance score. */
   score: number;
@@ -117,6 +117,27 @@ export interface SessionsQuery {
   q?: string;
   /** Filter to a single agent connector id, e.g. `codex`. */
   agent?: string;
+  /** Max rows returned (positive int). Absent = all rows (the web UI's default). */
+  limit?: number;
+}
+
+/**
+ * Windowing params for GET /api/sessions/:id — agent/CLI consumers slice large
+ * sessions instead of downloading megabytes. `around` (a message uuid, e.g.
+ * from a search hit) takes precedence over `offset`/`limit`. No params = the
+ * full session, unchanged (the web UI's default).
+ */
+export interface SessionDetailQuery {
+  /** 0-based index into the top-level thread. */
+  offset?: number;
+  /** Max thread items returned. */
+  limit?: number;
+  /** Center the window on this message uuid (`radius` items each side). */
+  around?: string;
+  /** Items on each side of `around` (default 10). */
+  radius?: number;
+  /** Cap tool input/result strings at this many chars (with a truncation marker). */
+  maxToolChars?: number;
 }
 
 export type SearchType = 'user' | 'assistant' | 'all';
@@ -129,11 +150,18 @@ export type SearchType = 'user' | 'assistant' | 'all';
  */
 export type SearchScope = 'sessions' | 'all' | 'memory';
 
+/**
+ * Snippet rendering: `html` (default) escapes and wraps matches in `<mark>`;
+ * `plain` returns the raw text window (for agent/CLI consumers).
+ */
+export type SnippetFormat = 'html' | 'plain';
+
 export interface SearchQuery {
   q: string;
   project?: string;
   type?: SearchType;
   scope?: SearchScope;
+  format?: SnippetFormat;
 }
 
 export type AnalyticsGroupBy = 'project' | 'model' | 'day' | 'agent';
@@ -265,6 +293,21 @@ export interface ResumeInfo {
   forkCommand?: string;
 }
 
+/**
+ * Which slice of the thread a windowed session detail covers. Present only when
+ * the request carried windowing params (`offset`/`limit`/`around`).
+ */
+export interface SessionWindow {
+  /** 0-based index of the first returned thread item. */
+  offset: number;
+  /** Number of thread items returned. */
+  limit: number;
+  /** Total top-level thread items in the session. */
+  total: number;
+  /** For `around` requests: false when the uuid could not be located. */
+  anchorFound?: boolean;
+}
+
 /** GET /api/sessions/:id */
 export interface SessionDetailResponse {
   meta: SessionMeta;
@@ -274,6 +317,8 @@ export interface SessionDetailResponse {
   subagents: SubagentRun[];
   /** Resume/fork commands for this session, when the connector supports it. */
   resume?: ResumeInfo;
+  /** Present when the response is a window over the thread (see {@link SessionWindow}). */
+  window?: SessionWindow;
 }
 
 /** A full-text search hit in agent memory (instruction file or distilled fact). */
@@ -288,7 +333,7 @@ export interface MemorySearchHit {
   projectDisplayName?: string;
   title: string;
   category?: string;
-  /** Snippet with matched terms in `<mark>` (the server HTML-escapes the rest). */
+  /** Snippet with matched terms in `<mark>` (HTML-escaped), or raw text with `format=plain`. */
   snippet: string;
   /** Source path, home contracted to `~`. */
   sourcePath: string;

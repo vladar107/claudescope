@@ -20,6 +20,14 @@ import { assembleThread, buildSubagentRuns } from '../data/parser.js';
 import { loadSessionData } from '../data/session-loader.js';
 import { connectorById } from '../connectors/registry.js';
 import { buildResumeInfo } from '../connectors/resume.js';
+import { resolveWindow, subagentsInWindow, truncateToolChars } from '../data/window.js';
+
+/** Parse a non-negative integer query param; undefined for anything else. */
+function intParam(v: string | undefined): number | undefined {
+  if (v === undefined) return undefined;
+  const n = Number.parseInt(v, 10);
+  return Number.isInteger(n) && n >= 0 ? n : undefined;
+}
 
 const SORT_SQL: Record<SessionSort, string> = {
   recent: 'ended_at DESC NULLS LAST',
@@ -59,10 +67,11 @@ function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
 
 export async function registerSessionsRoutes(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { project?: string; sort?: string; q?: string; agent?: string };
+    Querystring: { project?: string; sort?: string; q?: string; agent?: string; limit?: string };
   }>('/api/sessions', async (req): Promise<SessionMeta[]> => {
     const conn = await getConnection();
     const { project, sort, q, agent } = req.query;
+    const limit = intParam(req.query.limit);
 
     const where: string[] = [];
     if (agent) {
@@ -87,14 +96,18 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
     const sortKey: SessionSort = (sort as SessionSort) in SORT_SQL ? (sort as SessionSort) : 'recent';
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
+    const limitSql = limit !== undefined && limit > 0 ? ` LIMIT ${limit}` : '';
     const rows = await queryRows(
       conn,
-      `SELECT * FROM sessions ${whereSql} ORDER BY ${SORT_SQL[sortKey]}`,
+      `SELECT * FROM sessions ${whereSql} ORDER BY ${SORT_SQL[sortKey]}${limitSql}`,
     );
     return rows.map(rowToSessionMeta);
   });
 
-  app.get<{ Params: { id: string } }>(
+  app.get<{
+    Params: { id: string };
+    Querystring: { offset?: string; limit?: string; around?: string; radius?: string; maxToolChars?: string };
+  }>(
     '/api/sessions/:id',
     async (req, reply): Promise<SessionDetailResponse | void> => {
       const conn = await getConnection();
@@ -111,13 +124,34 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
       const meta = rowToSessionMeta(rows[0] as Record<string, unknown>);
 
       const { mainEvents, subagents: subagentSources } = await loadSessionData(id);
-      const thread = assembleThread(mainEvents);
-      const subagents = buildSubagentRuns(thread, subagentSources);
+      let thread = assembleThread(mainEvents);
+      let subagents = buildSubagentRuns(thread, subagentSources);
 
       const cwd = readRow(rows[0] as Record<string, unknown>, 'sessions').str('project_cwd');
       const resume = buildResumeInfo(connectorById(meta.connectorId), id, cwd || null);
 
       const res: SessionDetailResponse = { meta, thread, subagents };
+
+      // Windowing/truncation for token-frugal consumers (MCP/CLI). No params →
+      // the full session, byte-identical to the pre-windowing behavior.
+      const offset = intParam(req.query.offset);
+      const limit = intParam(req.query.limit);
+      const radius = intParam(req.query.radius);
+      const maxToolChars = intParam(req.query.maxToolChars);
+      const around = req.query.around;
+      if (offset !== undefined || limit !== undefined || around !== undefined) {
+        const window = resolveWindow(thread, subagents, { offset, limit, around, radius });
+        thread = thread.slice(window.offset, window.offset + window.limit);
+        subagents = subagentsInWindow(thread, subagents);
+        res.window = window;
+      }
+      if (maxToolChars !== undefined && maxToolChars > 0) {
+        thread = truncateToolChars(thread, maxToolChars);
+        subagents = subagents.map((r) => ({ ...r, thread: truncateToolChars(r.thread, maxToolChars) }));
+      }
+      res.thread = thread;
+      res.subagents = subagents;
+
       if (resume) res.resume = resume;
       return res;
     },

@@ -15,50 +15,16 @@ import type {
   SearchResult,
   SearchScope,
   SearchType,
+  SnippetFormat,
 } from '@claudescope/shared';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { projectIdFromCwd } from '../data/project-id.js';
 import { collectMemory } from '../data/memory.js';
+import { makeSnippet } from './snippet.js';
 
-/** Max characters of context around the first match in a snippet. */
-const SNIPPET_RADIUS = 120;
 /** Cap on live memory hits returned. */
 const MEMORY_LIMIT = 50;
-
-/** Escape HTML special chars so snippets are safe to render. */
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * Build a highlighted snippet: find the first occurrence of any query term in
- * the text, return a window around it, and wrap matching terms in <mark>.
- */
-function makeSnippet(text: string, terms: string[]): string {
-  const lower = text.toLowerCase();
-  let firstIdx = -1;
-  for (const t of terms) {
-    const i = lower.indexOf(t.toLowerCase());
-    if (i >= 0 && (firstIdx === -1 || i < firstIdx)) firstIdx = i;
-  }
-  const start = firstIdx === -1 ? 0 : Math.max(0, firstIdx - SNIPPET_RADIUS);
-  const end = Math.min(text.length, (firstIdx === -1 ? 0 : firstIdx) + SNIPPET_RADIUS * 2);
-  let window = text.slice(start, end);
-  if (start > 0) window = '…' + window;
-  if (end < text.length) window = window + '…';
-
-  let escaped = escapeHtml(window);
-  for (const t of terms) {
-    if (!t) continue;
-    escaped = escaped.replace(new RegExp(`(${escapeRegExp(escapeHtml(t))})`, 'gi'), '<mark>$1</mark>');
-  }
-  return escaped;
-}
 
 /** Sessions (BM25) search. Empty unless scope includes sessions. */
 async function searchSessions(
@@ -66,6 +32,7 @@ async function searchSessions(
   terms: string[],
   type: SearchType,
   project: string | undefined,
+  format: SnippetFormat,
 ): Promise<SearchResult[]> {
   const conn = await getConnection();
   // `events.uuid` is duplicated by fork/resume copies (the same lines re-listed
@@ -114,7 +81,7 @@ async function searchSessions(
       sessionId: rd.str('session_id'),
       projectId: cwd ? projectIdFromCwd(cwd) : '',
       title: rd.str('title'),
-      snippet: makeSnippet(text, terms),
+      snippet: makeSnippet(text, terms, format),
       score: rd.num('score'),
       messageUuid: rd.str('message_uuid'),
       role: rd.str('role'),
@@ -126,6 +93,7 @@ async function searchSessions(
 async function searchMemory(
   terms: string[],
   project: string | undefined,
+  format: SnippetFormat,
 ): Promise<MemorySearchHit[]> {
   const lowered = terms.map((t) => t.toLowerCase());
   const items = await collectMemory();
@@ -142,7 +110,7 @@ async function searchMemory(
 
     // Snippet from the body where possible, else the title.
     const bodyHasTerm = lowered.some((t) => t && s.markdown.toLowerCase().includes(t));
-    const snippet = makeSnippet(bodyHasTerm ? s.markdown : s.title, terms);
+    const snippet = makeSnippet(bodyHasTerm ? s.markdown : s.title, terms, format);
 
     scored.push({
       hits,
@@ -169,7 +137,7 @@ async function searchMemory(
 
 export async function registerSearchRoute(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { q?: string; project?: string; type?: string; scope?: string };
+    Querystring: { q?: string; project?: string; type?: string; scope?: string; format?: string };
   }>('/api/search', async (req): Promise<SearchResponse> => {
     const q = (req.query.q ?? '').trim();
     if (!q) return { sessions: [], memory: [] };
@@ -178,13 +146,14 @@ export async function registerSearchRoute(app: FastifyInstance): Promise<void> {
     const type = (req.query.type as SearchType) ?? 'all';
     const project = req.query.project;
     const scope = (req.query.scope as SearchScope) ?? 'sessions';
+    const format: SnippetFormat = req.query.format === 'plain' ? 'plain' : 'html';
 
     // Each kind is guarded so a failure in one (e.g. an FTS edge case) still
     // returns the other rather than 500-ing the whole request.
     const sessions =
       scope === 'memory'
         ? []
-        : await searchSessions(q, terms, type, project).catch((err) => {
+        : await searchSessions(q, terms, type, project, format).catch((err) => {
             // Don't 500 the whole request, but don't let a real FTS regression
             // silently look like "no results" either — leave a trace.
             req.log.warn({ err }, 'session search failed');
@@ -193,7 +162,7 @@ export async function registerSearchRoute(app: FastifyInstance): Promise<void> {
     const memory =
       scope === 'sessions'
         ? []
-        : await searchMemory(terms, project).catch((err) => {
+        : await searchMemory(terms, project, format).catch((err) => {
             req.log.warn({ err }, 'memory search failed');
             return [];
           });
