@@ -89,6 +89,14 @@ per-column n/a tooltips. `ErrorsTable.tsx` and the web client's
 `analyticsErrors` call were removed; the `/api/analytics/errors` route stays
 (scripting surface + digest reuse).
 
+**Second consolidation:** the Session-efficiency tab merged in too — it is the
+same analysis at a different grain. One **Efficiency** tab with a grain toggle
+(**Agents** scorecard | **Sessions** top-50 table); the shared project selector
+now applies to both grains (`/api/analytics/sessions` gained `project=`). The
+duplicated scope block (project-slug resolution + date bounds) across the
+analytics routes was extracted to `data/analytics-scope.ts` (used by
+agents/errors/impact/sessions).
+
 ## Testing
 
 `npm test` (318 passing, incl. the 7 new integration tests) and

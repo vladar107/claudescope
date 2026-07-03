@@ -72,7 +72,10 @@ export function AnalyticsPage() {
   const [to, setTo] = useState('');
   // Cache tokens dwarf input/output and clutter the charts — hidden by default.
   const [showCache, setShowCache] = useState(false);
-  const [view, setView] = useState<'overview' | 'sessions' | 'activity' | 'agents' | 'digest'>('overview');
+  const [view, setView] = useState<'overview' | 'efficiency' | 'activity' | 'digest'>('overview');
+  // Efficiency grain: the same analysis at two grouping levels — per-agent
+  // scorecard (comparison) or per-session table (outlier hunting).
+  const [grain, setGrain] = useState<'agents' | 'sessions'>('agents');
   const [effSort, setEffSort] = useState<SessionEfficiencySort>('cost');
   const [effDir, setEffDir] = useState<SortDir>('desc');
   const [eff, setEff] = useState<{
@@ -81,8 +84,8 @@ export function AnalyticsPage() {
     error: unknown;
   }>({ data: null, loading: true, error: null });
   const [effRetry, setEffRetry] = useState(0);
-  // Agents view: optional project scope ('' = whole corpus) + fetch state.
-  const [agentsProject, setAgentsProject] = useState('');
+  // Efficiency view: optional project scope ('' = whole corpus), shared by both grains.
+  const [effProject, setEffProject] = useState('');
   const [agents, setAgents] = useState<{
     data: AgentComparisonResponse | null;
     loading: boolean;
@@ -148,12 +151,12 @@ export function AnalyticsPage() {
   useEffect(() => load(), [load]);
 
   useEffect(() => {
-    if (view !== 'sessions') return;
+    if (view !== 'efficiency' || grain !== 'sessions') return;
     const ctrl = new AbortController();
     setEff((s) => ({ ...s, loading: true, error: null }));
     api
       .sessionEfficiency(
-        { from: range.from, to: range.to, sort: effSort, dir: effDir, limit: 50 },
+        { project: effProject || undefined, from: range.from, to: range.to, sort: effSort, dir: effDir, limit: 50 },
         ctrl.signal,
       )
       .then((data) => setEff({ data, loading: false, error: null }))
@@ -162,21 +165,21 @@ export function AnalyticsPage() {
         setEff({ data: null, loading: false, error });
       });
     return () => ctrl.abort();
-  }, [view, range.from, range.to, effSort, effDir, effRetry]);
+  }, [view, grain, effProject, range.from, range.to, effSort, effDir, effRetry]);
 
   useEffect(() => {
-    if (view !== 'agents') return;
+    if (view !== 'efficiency' || grain !== 'agents') return;
     const ctrl = new AbortController();
     setAgents((s) => ({ ...s, loading: true, error: null }));
     api
-      .analyticsAgents({ project: agentsProject || undefined, from: range.from, to: range.to }, ctrl.signal)
+      .analyticsAgents({ project: effProject || undefined, from: range.from, to: range.to }, ctrl.signal)
       .then((data) => setAgents({ data, loading: false, error: null }))
       .catch((error) => {
         if (ctrl.signal.aborted) return;
         setAgents({ data: null, loading: false, error });
       });
     return () => ctrl.abort();
-  }, [view, agentsProject, range.from, range.to, agentsRetry]);
+  }, [view, grain, effProject, range.from, range.to, agentsRetry]);
 
   useEffect(() => {
     if (view !== 'digest') return;
@@ -268,11 +271,11 @@ export function AnalyticsPage() {
             </button>
             <button
               type="button"
-              className={view === 'sessions' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
-              aria-pressed={view === 'sessions'}
-              onClick={() => setView('sessions')}
+              className={view === 'efficiency' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
+              aria-pressed={view === 'efficiency'}
+              onClick={() => setView('efficiency')}
             >
-              Session efficiency
+              Efficiency
             </button>
             <button
               type="button"
@@ -281,14 +284,6 @@ export function AnalyticsPage() {
               onClick={() => setView('activity')}
             >
               Activity
-            </button>
-            <button
-              type="button"
-              className={view === 'agents' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
-              aria-pressed={view === 'agents'}
-              onClick={() => setView('agents')}
-            >
-              Agents
             </button>
             <button
               type="button"
@@ -301,16 +296,40 @@ export function AnalyticsPage() {
           </div>
         </div>
 
-        {view === 'agents' && (
+        {view === 'efficiency' && (
           <div className="tv-analytics__field">
-            <label className="tv-analytics__field-label" htmlFor="tv-agents-project">
+            <span className="tv-analytics__field-label">Grain</span>
+            <div className="tv-segmented" role="group" aria-label="Grain">
+              <button
+                type="button"
+                className={grain === 'agents' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
+                aria-pressed={grain === 'agents'}
+                onClick={() => setGrain('agents')}
+              >
+                Agents
+              </button>
+              <button
+                type="button"
+                className={grain === 'sessions' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
+                aria-pressed={grain === 'sessions'}
+                onClick={() => setGrain('sessions')}
+              >
+                Sessions
+              </button>
+            </div>
+          </div>
+        )}
+
+        {view === 'efficiency' && (
+          <div className="tv-analytics__field">
+            <label className="tv-analytics__field-label" htmlFor="tv-eff-project">
               Project
             </label>
             <select
-              id="tv-agents-project"
+              id="tv-eff-project"
               className="tv-analytics__select"
-              value={agentsProject}
-              onChange={(e) => setAgentsProject(e.target.value)}
+              value={effProject}
+              onChange={(e) => setEffProject(e.target.value)}
             >
               <option value="">All projects</option>
               {[...projectsById.values()]
@@ -401,7 +420,7 @@ export function AnalyticsPage() {
         )}
       </div>
 
-      {view === 'sessions' ? (
+      {view === 'efficiency' && grain === 'sessions' ? (
         eff.error ? (
           <ErrorBox
             error={eff.error}
@@ -445,7 +464,7 @@ export function AnalyticsPage() {
             }}
           />
         )
-      ) : view === 'agents' ? (
+      ) : view === 'efficiency' ? (
         agents.error ? (
           <ErrorBox
             error={agents.error}

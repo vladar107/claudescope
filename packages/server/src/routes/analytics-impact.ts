@@ -16,9 +16,9 @@
 
 import type { FastifyInstance } from 'fastify';
 import type { ImpactGroupBy, ImpactResponse, ImpactRow, ImpactTotals } from '@claudescope/shared';
-import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import { getConnection, queryRows } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
-import { projectIdFromCwd } from '../data/project-id.js';
+import { scopeFilters } from '../data/analytics-scope.js';
 
 /** Cap for `groupBy=file` — the long tail of one-touch files isn't informative. */
 const FILE_ROW_LIMIT = 200;
@@ -44,22 +44,11 @@ export async function registerImpactRoute(app: FastifyInstance): Promise<void> {
       ? (req.query.groupBy as ImpactGroupBy)
       : 'agent';
 
-    const filters: string[] = ['fe.edit_canonical'];
-    if (req.query.project) {
-      // project is the slug id; resolve it against the sessions' project_cwd
-      // (the same resolution /api/sessions uses).
-      const cwds = await queryRows(
-        conn,
-        'SELECT DISTINCT project_cwd FROM sessions WHERE project_cwd IS NOT NULL',
-      );
-      const match = cwds
-        .map((c) => String(c.project_cwd))
-        .find((c) => projectIdFromCwd(c) === req.query.project);
-      filters.push(`s.project_cwd = ${match ? sqlString(match) : "'\\0'"}`);
-    }
     const tsExpr = 'COALESCE(fe.ts, s.started_at)';
-    if (req.query.from) filters.push(`${tsExpr} >= ${sqlString(req.query.from)}::TIMESTAMP`);
-    if (req.query.to) filters.push(`${tsExpr} <= ${sqlString(req.query.to)}::TIMESTAMP`);
+    const filters = [
+      'fe.edit_canonical',
+      ...(await scopeFilters(conn, req.query, { cwd: 's.project_cwd', ts: tsExpr })),
+    ];
 
     const baseSql = `
       FROM file_edits fe

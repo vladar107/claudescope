@@ -25,9 +25,9 @@ import type {
   AgentUsageGranularity,
   PrLinkedStats,
 } from '@claudescope/shared';
-import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import { getConnection, queryRows } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
-import { projectIdFromCwd } from '../data/project-id.js';
+import { scopeFilters } from '../data/analytics-scope.js';
 import { errorSignalsByAgent } from './analytics-errors.js';
 
 /**
@@ -71,21 +71,7 @@ export async function registerAgentComparisonRoute(app: FastifyInstance): Promis
   }>('/api/analytics/agents', async (req): Promise<AgentComparisonResponse> => {
     const conn = await getConnection();
 
-    const filters: string[] = [];
-    if (req.query.project) {
-      // project is the slug id; match against the slug of project_cwd (the
-      // same resolution /api/sessions uses).
-      const cwds = await queryRows(
-        conn,
-        'SELECT DISTINCT project_cwd FROM sessions WHERE project_cwd IS NOT NULL',
-      );
-      const match = cwds
-        .map((c) => String(c.project_cwd))
-        .find((c) => projectIdFromCwd(c) === req.query.project);
-      filters.push(`project_cwd = ${match ? sqlString(match) : "'\\0'"}`);
-    }
-    if (req.query.from) filters.push(`started_at >= ${sqlString(req.query.from)}::TIMESTAMP`);
-    if (req.query.to) filters.push(`started_at <= ${sqlString(req.query.to)}::TIMESTAMP`);
+    const filters = await scopeFilters(conn, req.query);
     const whereSql = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
 
     // Sessions in scope, then: per-agent session counts + per-agent deduped

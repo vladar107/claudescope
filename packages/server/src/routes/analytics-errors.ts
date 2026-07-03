@@ -24,7 +24,7 @@ import type { DuckDBConnection } from '@duckdb/node-api';
 import type { ErrorAnalyticsResponse, ErrorAnalyticsRow } from '@claudescope/shared';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
-import { projectIdFromCwd } from '../data/project-id.js';
+import { scopeFilters } from '../data/analytics-scope.js';
 
 /** Prefix of the user-message text Claude Code stores on an interrupt (both
  *  variants: `…by user]` and `…by user for tool use]`). */
@@ -62,21 +62,7 @@ export async function errorSignalsByAgent(
   conn: DuckDBConnection,
   scope: ErrorScope,
 ): Promise<ErrorSignals[]> {
-  const filters: string[] = [];
-  if (scope.project) {
-    // project is the slug id; resolve it against the sessions' project_cwd
-    // (the same resolution /api/sessions uses).
-    const cwds = await queryRows(
-      conn,
-      'SELECT DISTINCT project_cwd FROM sessions WHERE project_cwd IS NOT NULL',
-    );
-    const match = cwds
-      .map((c) => String(c.project_cwd))
-      .find((c) => projectIdFromCwd(c) === scope.project);
-    filters.push(`project_cwd = ${match ? sqlString(match) : "'\\0'"}`);
-  }
-  if (scope.from) filters.push(`started_at >= ${sqlString(scope.from)}::TIMESTAMP`);
-  if (scope.to) filters.push(`started_at <= ${sqlString(scope.to)}::TIMESTAMP`);
+  const filters = await scopeFilters(conn, scope);
   const whereSql = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
 
   const rows = await queryRows(

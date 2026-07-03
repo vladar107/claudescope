@@ -101,6 +101,7 @@ export interface AnalyticsParams {
 }
 
 export interface SessionEfficiencyParams {
+  project?: string;
   from?: string;
   to?: string;
   sort?: SessionEfficiencySort;
@@ -193,6 +194,7 @@ export const api = {
   ): Promise<SessionEfficiencyResponse> {
     return request<SessionEfficiencyResponse>(
       `/analytics/sessions${qs({
+        project: params.project,
         from: params.from,
         to: params.to,
         sort: params.sort,

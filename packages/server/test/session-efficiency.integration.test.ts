@@ -202,6 +202,17 @@ describe('GET /api/analytics/sessions', () => {
     expect(floored.summary.sessionCount).toBe(byId(floored).size);
   });
 
+  it('filters by project slug (shared scope resolution; bogus slug matches nothing)', async () => {
+    // Dynamic import, matching the file's env-before-server-modules pattern.
+    const { projectIdFromCwd } = await import('../src/data/project-id.js');
+    const slug = projectIdFromCwd(CWD);
+    const scoped = await fetchEff(`?minResponses=1&project=${encodeURIComponent(slug)}`);
+    const all = await fetchEff('?minResponses=1');
+    expect(scoped.rows.length).toBe(all.rows.length);
+    const none = await fetchEff('?minResponses=1&project=no-such-project');
+    expect(none.rows.length).toBe(0);
+  });
+
   it('filters by session start (from)', async () => {
     const m = byId(await fetchEff('?minResponses=1&from=2026-01-01T00:00:00.000Z'));
     expect(m.has('oldStamp')).toBe(false);
