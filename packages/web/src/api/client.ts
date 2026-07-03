@@ -6,6 +6,7 @@
 
 import type {
   ActivityResponse,
+  AgentComparisonResponse,
   AnalyticsGroupBy,
   AnalyticsResponse,
   HealthResponse,
@@ -24,7 +25,6 @@ import type {
   SessionsResponse,
   SourcesResponse,
   ToolUsageResponse,
-  ErrorAnalyticsResponse,
   DigestResponse,
 } from '@claudescope/shared';
 
@@ -170,13 +170,13 @@ export const api = {
     return request<ToolUsageResponse>(`/analytics/tools${qs({ from: params.from, to: params.to })}`, { signal });
   },
 
-  /** GET /api/analytics/errors?project=&from=&to= */
-  analyticsErrors(
-    params: { project?: string; from?: string; to?: string },
+  /** GET /api/analytics/agents?project=&from=&to= */
+  analyticsAgents(
+    params: { project?: string; from?: string; to?: string } = {},
     signal?: AbortSignal,
-  ): Promise<ErrorAnalyticsResponse> {
-    return request<ErrorAnalyticsResponse>(
-      `/analytics/errors${qs({ project: params.project, from: params.from, to: params.to })}`,
+  ): Promise<AgentComparisonResponse> {
+    return request<AgentComparisonResponse>(
+      `/analytics/agents${qs({ project: params.project, from: params.from, to: params.to })}`,
       { signal },
     );
   },

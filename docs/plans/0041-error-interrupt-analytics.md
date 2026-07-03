@@ -63,6 +63,12 @@ either signal.
   `AnalyticsPage.tsx`, `analytics.css`, `packages/web/src/api/client.ts`
 - `packages/server/test/analytics-errors.integration.test.ts` (new)
 
+## Update (2026-07-03)
+
+The standalone Errors tab shipped here was folded into the Agents comparison
+view in PR #49 (columns on `AgentComparisonTable`); the route and the shared
+`errorSignalsByAgent` aggregation are unchanged and still serve the digest.
+
 ## Testing
 
 Integration suite over synthetic fixtures: Claude Code `is_error` counted with
