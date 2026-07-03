@@ -17,7 +17,8 @@ import type {
   SessionEfficiencyRow,
   SessionEfficiencySort,
 } from '@claudescope/shared';
-import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import { getConnection, queryRows } from '../db/duckdb.js';
+import { scopeFilters } from '../data/analytics-scope.js';
 import { readRow } from '../db/row.js';
 import { projectIdFromCwd, displayNameFromCwd } from '../data/project-id.js';
 import { toIso } from './projects.js';
@@ -45,6 +46,7 @@ function clampInt(raw: string | undefined, dflt: number, min: number, max: numbe
 export async function registerSessionEfficiencyRoute(app: FastifyInstance): Promise<void> {
   app.get<{
     Querystring: {
+      project?: string;
       from?: string;
       to?: string;
       sort?: string;
@@ -63,8 +65,9 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
     const dir = req.query.dir === 'asc' ? 'ASC' : 'DESC';
     const limit = clampInt(req.query.limit, 50, 1, 500);
     const minResponses = clampInt(req.query.minResponses, 1, 1, 1_000_000);
-    const fromClause = req.query.from ? `AND s.started_at >= ${sqlString(req.query.from)}::TIMESTAMP` : '';
-    const toClause = req.query.to ? `AND s.started_at <= ${sqlString(req.query.to)}::TIMESTAMP` : '';
+    // Optional project + inclusive date bounds (shared resolution/semantics).
+    const scoped = await scopeFilters(conn, req.query, { cwd: 's.project_cwd', ts: 's.started_at' });
+    const scopeClause = scoped.map((f) => `AND ${f}`).join('\n          ');
 
     // Shared CTE: per-session deduped sums -> derived ratios, filtered.
     const cte = `
@@ -118,8 +121,7 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
         FROM agg a
         JOIN sessions s ON s.id = a.session_id
         WHERE a.responses >= ${minResponses}
-          ${fromClause}
-          ${toClause}
+          ${scopeClause}
       )
     `;
 
