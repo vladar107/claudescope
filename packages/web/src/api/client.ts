@@ -24,6 +24,8 @@ import type {
   SessionsResponse,
   SourcesResponse,
   ToolUsageResponse,
+  ErrorAnalyticsResponse,
+  DigestResponse,
 } from '@claudescope/shared';
 
 /** Thrown when an `/api/*` response is not 2xx. Carries the HTTP status. */
@@ -166,6 +168,22 @@ export const api = {
   /** GET /api/analytics/tools?from=&to= */
   analyticsTools(params: { from?: string; to?: string }, signal?: AbortSignal): Promise<ToolUsageResponse> {
     return request<ToolUsageResponse>(`/analytics/tools${qs({ from: params.from, to: params.to })}`, { signal });
+  },
+
+  /** GET /api/analytics/errors?project=&from=&to= */
+  analyticsErrors(
+    params: { project?: string; from?: string; to?: string },
+    signal?: AbortSignal,
+  ): Promise<ErrorAnalyticsResponse> {
+    return request<ErrorAnalyticsResponse>(
+      `/analytics/errors${qs({ project: params.project, from: params.from, to: params.to })}`,
+      { signal },
+    );
+  },
+
+  /** GET /api/analytics/digest?from=&to= */
+  analyticsDigest(params: { from?: string; to?: string }, signal?: AbortSignal): Promise<DigestResponse> {
+    return request<DigestResponse>(`/analytics/digest${qs({ from: params.from, to: params.to })}`, { signal });
   },
 
   /** GET /api/analytics/sessions?from=&to=&sort=&dir=&limit=&minResponses= */
