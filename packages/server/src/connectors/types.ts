@@ -46,6 +46,7 @@ export const CANONICAL_EVENT_COLUMNS = [
   'is_sidechain',
   'tool_use_count',
   'tool_names',
+  'tool_error_count',
   'text_content',
 ] as const;
 

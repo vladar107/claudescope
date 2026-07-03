@@ -607,6 +607,7 @@ export interface CanonicalRow {
   is_sidechain: boolean;
   tool_use_count: number;
   tool_names: string;
+  tool_error_count: number | null;
   text_content: string;
 }
 
@@ -638,6 +639,7 @@ export function toCanonicalRows(session: AntigravitySession, filePath: string): 
       is_sidechain: session.isSidechain,
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(content),
+      tool_error_count: null, // Antigravity's typed result records carry no error signal
       text_content: text,
     };
   });

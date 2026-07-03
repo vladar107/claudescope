@@ -366,6 +366,38 @@ export interface AnalyticsResponse {
   totals: AnalyticsTotals;
 }
 
+export type ImpactGroupBy = 'agent' | 'day' | 'file';
+
+/**
+ * One code-impact aggregation row: agent-reported churn from canonical
+ * Edit/MultiEdit/Write tool calls (deduped across fork copies at index time).
+ * NOT git truth — reverted/overwritten edits count each time they were made.
+ */
+export interface ImpactRow {
+  /** The group key value (connector id, YYYY-MM-DD day, or file path). */
+  key: string;
+  additions: number;
+  deletions: number;
+  /** Edit-bearing tool calls in the group. */
+  edits: number;
+  filesTouched: number;
+  sessions: number;
+}
+
+export interface ImpactTotals {
+  additions: number;
+  deletions: number;
+  edits: number;
+  filesTouched: number;
+  sessions: number;
+}
+
+/** GET /api/analytics/impact */
+export interface ImpactResponse {
+  rows: ImpactRow[];
+  totals: ImpactTotals;
+}
+
 /** POST /api/reindex */
 export interface ReindexResponse {
   reindexed: number;

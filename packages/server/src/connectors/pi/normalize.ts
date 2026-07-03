@@ -36,6 +36,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import type { AssistantEvent, ContentBlock, MessageUsage, UserEvent } from '@claudescope/shared';
 import { toolNamesCsv } from '../tool-names.js';
+import { toolErrorCount } from '../tool-errors.js';
 
 export interface PiSession {
   /** Indexing key: the parent's session id for a nested subagent, else the own id. */
@@ -474,6 +475,7 @@ export interface CanonicalRow {
   is_sidechain: boolean;
   tool_use_count: number;
   tool_names: string;
+  tool_error_count: number | null;
   text_content: string;
 }
 
@@ -506,6 +508,7 @@ export function toCanonicalRows(session: PiSession, filePath: string): Canonical
       is_sidechain: session.isSidechain,
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(content),
+      tool_error_count: toolErrorCount(content),
       text_content: text,
     };
   });

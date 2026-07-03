@@ -435,6 +435,7 @@ export interface CanonicalRow {
   is_sidechain: boolean;
   tool_use_count: number;
   tool_names: string;
+  tool_error_count: number | null;
   text_content: string;
   /** Not a canonical column — read separately by the title aux projection. */
   title: string;
@@ -476,6 +477,7 @@ export function toCanonicalRows(session: JunieSession, filePath: string): Canoni
       is_sidechain: false,
       tool_use_count: arr.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(arr),
+      tool_error_count: null, // Junie results are 'modified: path' strings — no error signal
       text_content: text,
       title: session.title,
     };

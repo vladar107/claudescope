@@ -50,6 +50,7 @@ import type {
 } from '@claudescope/shared';
 import { resolveImageWithin } from '../safe-image.js';
 import { toolNamesCsv } from '../tool-names.js';
+import { toolErrorCount } from '../tool-errors.js';
 
 /** One inline subagent run, segmented out of the parent's event stream. */
 export interface CopilotSubagent {
@@ -484,6 +485,7 @@ export interface CanonicalRow {
   is_sidechain: boolean;
   tool_use_count: number;
   tool_names: string;
+  tool_error_count: number | null;
   text_content: string;
   /** Session title (read by auxProjections; ignored by the events projection). */
   title: string;
@@ -521,6 +523,7 @@ export function toCanonicalRows(session: CopilotSession, filePath: string): Cano
       is_sidechain: e.isSidechain === true,
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(content),
+      tool_error_count: toolErrorCount(content),
       text_content: text,
       title: session.title,
     };
