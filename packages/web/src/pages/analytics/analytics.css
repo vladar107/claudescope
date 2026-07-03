@@ -426,3 +426,22 @@
   font-size: 9px;
   vertical-align: 1px;
 }
+
+/* n/a marker for metrics an agent's source format cannot report (hover = why). */
+.tv-na {
+  color: var(--tv-fg-muted);
+  font-size: 12px;
+  cursor: help;
+}
+
+/* Project scope <select> — mirrors the date inputs. */
+.tv-analytics__select {
+  background: var(--tv-bg-inset);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius-sm);
+  color: var(--tv-fg);
+  font-family: inherit;
+  font-size: var(--tv-fs-md);
+  padding: var(--tv-space-2) var(--tv-space-3);
+  max-width: 220px;
+}
