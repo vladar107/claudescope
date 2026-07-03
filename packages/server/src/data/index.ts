@@ -22,6 +22,7 @@ import { connectors } from '../connectors/registry.js';
 import type { AgentConnector, DiscoveredFile } from '../connectors/types.js';
 import { loadPricing } from './pricing.js';
 import { cleanFallbackTitle } from './title.js';
+import { electCanonicalEdits, refreshFileEdits } from './file-edits.js';
 
 /** Tracks whether the initial index build has finished (server readiness). */
 let ready = false;
@@ -151,7 +152,8 @@ async function loadFile(
       ev.service_tier, ev.is_sidechain, ev.tool_use_count, ev.tool_names,
       ${costExpr} AS cost_usd,
       ev.text_content,
-      ev.message_id, ev.forked_from_session_id, TRUE AS usage_canonical
+      ev.message_id, ev.forked_from_session_id, TRUE AS usage_canonical,
+      ev.tool_error_count
     FROM (
       ${connector.eventsProjectionSql(file.path)}
     ) AS ev
@@ -419,11 +421,22 @@ async function doReindex(): Promise<ReindexResponse> {
 
   const discoveredPaths = new Set(discovered.map((d) => d.file.path));
 
+  // Sessions touched by this pass (files loaded, reloaded, or removed) — the
+  // unit `file_edits` extraction is refreshed by (see data/file-edits.ts).
+  const editSessions = new Set<string>();
+
   // Drop files that no longer exist on disk (and their events) — but skip files
   // owned by a connector whose discovery failed this pass (transient, not gone).
   let removed = 0;
   for (const [path, meta] of existing) {
     if (!discoveredPaths.has(path) && !(meta.connectorId && failedConnectors.has(meta.connectorId))) {
+      // A removed file's session must re-extract (or drop) its file_edits rows;
+      // resolve the ids while the events still exist.
+      const gone = await queryRows(
+        conn,
+        `SELECT DISTINCT session_id FROM events WHERE file_path = ${sqlString(path)}`,
+      );
+      for (const r of gone) editSessions.add(String(r.session_id ?? ''));
       // Delete stale aux rows before clearing events: the subquery reads events
       // to resolve session ids, so aux deletes must precede the events delete.
       await conn.run(`DELETE FROM titles   WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${sqlString(path)})`);
@@ -456,6 +469,7 @@ async function doReindex(): Promise<ReindexResponse> {
         `SELECT session_id FROM events WHERE file_path = ${sqlString(file.path)} LIMIT 1`,
       );
       const sessionId = sidRows.length > 0 ? String(sidRows[0]?.session_id ?? '') : null;
+      if (sessionId) editSessions.add(sessionId);
       const cwdRows = await queryRows(
         conn,
         `SELECT cwd FROM events WHERE file_path = ${sqlString(file.path)} AND cwd IS NOT NULL LIMIT 1`,
@@ -485,6 +499,10 @@ async function doReindex(): Promise<ReindexResponse> {
   // Something changed: re-elect the usage-canonical rows globally, then rebuild
   // derived tables + FTS so additions, edits, and removals are all reflected.
   await electCanonicalUsage(conn);
+  // Refresh code-impact rows for the touched sessions, then re-elect the
+  // canonical edit per (uuid, tool_use_id) globally (fork copies dedup).
+  await refreshFileEdits(conn, editSessions);
+  await electCanonicalEdits(conn);
   await rebuildSessions(conn);
   await rebuildFtsIndex(conn);
 

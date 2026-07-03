@@ -34,6 +34,7 @@ import type {
 } from '@claudescope/shared';
 import type { OpencodeRawSession } from './db.js';
 import { toolNamesCsv } from '../tool-names.js';
+import { toolErrorCount } from '../tool-errors.js';
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -400,6 +401,7 @@ export interface CanonicalRow {
   is_sidechain: boolean;
   tool_use_count: number;
   tool_names: string;
+  tool_error_count: number | null;
   text_content: string;
   /** Session title (read by auxProjections; ignored by the events projection). */
   title: string;
@@ -435,6 +437,7 @@ export function toCanonicalRows(session: OpencodeRawSession, filePath: string): 
       is_sidechain: isSidechain,
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(content),
+      tool_error_count: toolErrorCount(content),
       text_content: text,
       // A child's title must not clobber the parent's via the titles projection
       // (both files now share one session_id) — emit none for sidechain rows.

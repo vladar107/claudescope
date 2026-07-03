@@ -29,49 +29,78 @@ import { globalMemory, projectMemory } from './memory.js';
 const READ_OPTS = `union_by_name=true, format='newline_delimited', maximum_object_size=268435456, ignore_errors=true`;
 
 /**
- * SQL extracting FTS-searchable plain text from a `message` JSON value.
- * `message.content` is either a plain string or an array of blocks; for arrays
- * we concatenate the `text`/`thinking` block bodies.
+ * One shared pass over a message's content blocks, as a LATERAL join: plain
+ * text (text/thinking bodies for FTS), tool_use count + names, and the count
+ * of tool_results flagged `is_error` — four aggregates from a single
+ * `json_each` scan per row (correlated subqueries would re-scan the array per
+ * aggregate, which measurably slows cold indexing). For a plain-string
+ * `content` the scan yields scalar rows no block filter matches, so every
+ * aggregate comes back empty and the CASEs in the SELECT keep the original
+ * per-shape semantics (string content → its text, zero tools).
  */
-const TEXT_CONTENT_EXPR = `
-  CASE
-    WHEN message IS NULL THEN NULL
-    WHEN json_type(message -> '$.content') = 'VARCHAR'
-      THEN json_extract_string(message, '$.content')
-    ELSE (
-      SELECT string_agg(
+const BLOCK_AGG_LATERAL = `
+  LEFT JOIN LATERAL (
+    SELECT
+      count(*) FILTER (
+        WHERE json_extract_string(b.value, '$.type') = 'tool_use'
+      ) AS tool_use_count,
+      string_agg(json_extract_string(b.value, '$.name'), ',') FILTER (
+        WHERE json_extract_string(b.value, '$.type') = 'tool_use'
+          AND json_extract_string(b.value, '$.name') IS NOT NULL
+      ) AS tool_names,
+      count(*) FILTER (
+        WHERE json_extract_string(b.value, '$.type') = 'tool_result'
+          AND json_extract_string(b.value, '$.is_error') = 'true'
+      ) AS tool_error_count,
+      string_agg(
         coalesce(
           json_extract_string(b.value, '$.text'),
           json_extract_string(b.value, '$.thinking')
         ),
         ' '
-      )
-      FROM json_each(message, '$.content') AS b
-      WHERE json_extract_string(b.value, '$.type') IN ('text', 'thinking')
-    )
+      ) FILTER (
+        WHERE json_extract_string(b.value, '$.type') IN ('text', 'thinking')
+      ) AS block_text
+    FROM json_each(message, '$.content') AS b
+  ) blocks ON TRUE`;
+
+/** True when the message's `content` is a plain string rather than blocks. */
+const STRING_CONTENT = `json_type(message -> '$.content') = 'VARCHAR'`;
+
+/**
+ * FTS-searchable plain text: the string content itself, or the concatenated
+ * text/thinking block bodies (NULL when there are none).
+ */
+const TEXT_CONTENT_EXPR = `
+  CASE
+    WHEN message IS NULL THEN NULL
+    WHEN ${STRING_CONTENT} THEN json_extract_string(message, '$.content')
+    ELSE blocks.block_text
   END`;
 
-/** Count of `tool_use` blocks inside a message's content array (0 for strings). */
+/** Count of `tool_use` blocks (0 for strings). */
 const TOOL_USE_COUNT_EXPR = `
   CASE
-    WHEN message IS NULL OR json_type(message -> '$.content') = 'VARCHAR' THEN 0
-    ELSE (
-      SELECT count(*)
-      FROM json_each(message, '$.content') AS b
-      WHERE json_extract_string(b.value, '$.type') = 'tool_use'
-    )
+    WHEN message IS NULL OR ${STRING_CONTENT} THEN 0
+    ELSE COALESCE(blocks.tool_use_count, 0)
   END`;
 
-/** Comma-joined `$.name` of `tool_use` blocks in a message's content array. */
+/**
+ * Count of `tool_result` blocks flagged `is_error` (0 for strings/no errors).
+ * Claude Code records the flag natively, so the count is always known — never
+ * NULL (unlike Junie/Antigravity).
+ */
+const TOOL_ERROR_COUNT_EXPR = `
+  CASE
+    WHEN message IS NULL OR ${STRING_CONTENT} THEN 0
+    ELSE COALESCE(blocks.tool_error_count, 0)
+  END`;
+
+/** Comma-joined `$.name` of `tool_use` blocks ('' when there are none). */
 const TOOL_NAMES_EXPR = `
   CASE
-    WHEN message IS NULL OR json_type(message -> '$.content') = 'VARCHAR' THEN ''
-    ELSE COALESCE((
-      SELECT string_agg(json_extract_string(b.value, '$.name'), ',')
-      FROM json_each(message, '$.content') AS b
-      WHERE json_extract_string(b.value, '$.type') = 'tool_use'
-        AND json_extract_string(b.value, '$.name') IS NOT NULL
-    ), '')
+    WHEN message IS NULL OR ${STRING_CONTENT} THEN ''
+    ELSE COALESCE(blocks.tool_names, '')
   END`;
 
 /**
@@ -137,10 +166,12 @@ function eventsProjectionSql(filePath: string): string {
       COALESCE(isSidechain, FALSE) AS is_sidechain,
       ${TOOL_USE_COUNT_EXPR} AS tool_use_count,
       ${TOOL_NAMES_EXPR} AS tool_names,
+      ${TOOL_ERROR_COUNT_EXPR} AS tool_error_count,
       ${TEXT_CONTENT_EXPR} AS text_content,
       json_extract_string(message, '$.id') AS message_id,
       json_extract_string(forkedFrom, '$.sessionId') AS forked_from_session_id
     FROM ${readFn}
+    ${BLOCK_AGG_LATERAL}
     WHERE type IN ('user', 'assistant')`;
 }
 

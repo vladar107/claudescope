@@ -27,7 +27,10 @@
 // v8: per-event tool_names (comma-joined canonical tool names) for the tool-usage breakdown.
 // v9: subagent embedding for codex/pi/opencode/copilot — child transcripts re-key
 //     to their root session (is_sidechain), so stale child-as-session rows must go.
-export const SCHEMA_VERSION = 9;
+// v10: code-impact analytics — per-tool-call `file_edits` rows (extracted at
+//      index time from the assembled thread) + nullable `events.tool_error_count`
+//      (NULL = the source format carries no error signal, distinct from 0).
+export const SCHEMA_VERSION = 10;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -68,7 +71,10 @@ export const SCHEMA_DDL: readonly string[] = [
      text_content VARCHAR,
      message_id   VARCHAR,
      forked_from_session_id VARCHAR,
-     usage_canonical BOOLEAN DEFAULT TRUE
+     usage_canonical BOOLEAN DEFAULT TRUE,
+     -- Failed tool calls on the row (tool_result blocks with is_error). NULL when
+     -- the source format has no error signal (Junie, Antigravity) — not 0.
+     tool_error_count INTEGER
    )`,
 
   `CREATE TABLE IF NOT EXISTS sessions (
@@ -108,7 +114,27 @@ export const SCHEMA_DDL: readonly string[] = [
      title      VARCHAR
    )`,
 
+  // One row per edit-bearing tool call (canonical Edit/MultiEdit/Write),
+  // extracted at index time from the assembled thread (see data/file-edits.ts).
+  // Rows are deleted/re-extracted per SESSION (the extraction unit — a session
+  // spans its main + subagent files). Fork/resume copies duplicate calls across
+  // sessions; `edit_canonical` marks one row per (uuid, tool_use_id, file_path)
+  // as the counted one (see electCanonicalEdits), mirroring usage_canonical.
+  `CREATE TABLE IF NOT EXISTS file_edits (
+     session_id   VARCHAR NOT NULL,
+     uuid         VARCHAR,
+     tool_use_id  VARCHAR DEFAULT '',
+     ts           TIMESTAMP,
+     is_sidechain BOOLEAN DEFAULT FALSE,
+     tool_name    VARCHAR,
+     file_path    VARCHAR NOT NULL,
+     additions    INTEGER DEFAULT 0,
+     deletions    INTEGER DEFAULT 0,
+     edit_canonical BOOLEAN DEFAULT TRUE
+   )`,
+
   `CREATE INDEX IF NOT EXISTS idx_events_session ON events (session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_events_cwd ON events (cwd)`,
   `CREATE INDEX IF NOT EXISTS idx_events_ts ON events (ts)`,
+  `CREATE INDEX IF NOT EXISTS idx_file_edits_session ON file_edits (session_id)`,
 ];
