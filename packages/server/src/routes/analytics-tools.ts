@@ -10,13 +10,17 @@ import type { FastifyInstance } from 'fastify';
 import type { ToolUsageResponse, ToolUsageRow } from '@claudescope/shared';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
+import { scopeFilters } from '../data/analytics-scope.js';
 
 export async function registerToolsRoute(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { from?: string; to?: string };
+    Querystring: { project?: string; from?: string; to?: string };
   }>('/api/analytics/tools', async (req): Promise<ToolUsageResponse> => {
     const conn = await getConnection();
     const filters: string[] = ["e.type = 'assistant'", 'e.usage_canonical', "e.tool_names <> ''"];
+    // Project scope resolves like every other analytics route; date bounds stay
+    // on the event timestamp (a call belongs to the day it happened).
+    filters.push(...(await scopeFilters(conn, { project: req.query.project }, { cwd: 's.project_cwd' })));
     if (req.query.from) filters.push(`e.ts >= ${sqlString(req.query.from)}::TIMESTAMP`);
     if (req.query.to) filters.push(`e.ts <= ${sqlString(req.query.to)}::TIMESTAMP`);
 

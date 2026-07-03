@@ -71,6 +71,17 @@ afterAll(async () => {
 });
 
 describe('GET /api/analytics/tools', () => {
+  it('scopes to a project slug (shared resolution; bogus slug matches nothing)', async () => {
+    const { projectIdFromCwd } = await import('../src/data/project-id.js');
+    const slug = projectIdFromCwd('/tmp/tools');
+    const scoped = (await app.inject({ method: 'GET', url: `/api/analytics/tools?project=${encodeURIComponent(slug)}` })).json() as { rows: unknown[] };
+    const all = (await app.inject({ method: 'GET', url: '/api/analytics/tools' })).json() as { rows: unknown[] };
+    expect(scoped.rows.length).toBe(all.rows.length);
+    const none = (await app.inject({ method: 'GET', url: '/api/analytics/tools?project=no-such-project' })).json() as { rows: unknown[] };
+    expect(none.rows.length).toBe(0);
+  });
+
+
   it('counts each tool occurrence (unnested), descending', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/analytics/tools' });
     const body = res.json() as { rows: { tool: string; agent: string; count: number }[] };
