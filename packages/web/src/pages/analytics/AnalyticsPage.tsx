@@ -326,63 +326,66 @@ export function AnalyticsPage() {
 
         {view === 'overview' && (
           <div className="tv-analytics__field">
-            <span className="tv-analytics__field-label">Group by</span>
-            <div className="tv-segmented" role="group" aria-label="Group by">
+            <label className="tv-analytics__field-label" htmlFor="tv-group-by">
+              Group by
+            </label>
+            <select
+              id="tv-group-by"
+              className="tv-analytics__select"
+              value={groupBy}
+              onChange={(e) => setGroupBy(e.target.value as AnalyticsGroupBy)}
+            >
               {GROUP_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className={groupBy === opt.value ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
-                  aria-pressed={groupBy === opt.value}
-                  onClick={() => setGroupBy(opt.value)}
-                >
+                <option key={opt.value} value={opt.value}>
                   {opt.label}
-                </button>
+                </option>
               ))}
-            </div>
+            </select>
           </div>
         )}
 
-        <div className="tv-analytics__field">
-          <label className="tv-analytics__field-label" htmlFor="tv-from">
-            From
-          </label>
-          <input
-            id="tv-from"
-            type="date"
-            className="tv-analytics__date"
-            value={from}
-            max={to || undefined}
-            onChange={(e) => setFrom(e.target.value)}
-          />
-        </div>
+        <div className="tv-analytics__dates">
+          <div className="tv-analytics__field">
+            <label className="tv-analytics__field-label" htmlFor="tv-from">
+              From
+            </label>
+            <input
+              id="tv-from"
+              type="date"
+              className="tv-analytics__date"
+              value={from}
+              max={to || undefined}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+          </div>
 
-        <div className="tv-analytics__field">
-          <label className="tv-analytics__field-label" htmlFor="tv-to">
-            To
-          </label>
-          <input
-            id="tv-to"
-            type="date"
-            className="tv-analytics__date"
-            value={to}
-            min={from || undefined}
-            onChange={(e) => setTo(e.target.value)}
-          />
-        </div>
+          <div className="tv-analytics__field">
+            <label className="tv-analytics__field-label" htmlFor="tv-to">
+              To
+            </label>
+            <input
+              id="tv-to"
+              type="date"
+              className="tv-analytics__date"
+              value={to}
+              min={from || undefined}
+              onChange={(e) => setTo(e.target.value)}
+            />
+          </div>
 
-        {(from || to) && (
-          <button
-            type="button"
-            className="tv-analytics__clear"
-            onClick={() => {
-              setFrom('');
-              setTo('');
-            }}
-          >
-            Clear dates
-          </button>
-        )}
+          {(from || to) && (
+            <button
+              type="button"
+              className="tv-analytics__clear"
+              onClick={() => {
+                setFrom('');
+                setTo('');
+              }}
+            >
+              Clear dates
+            </button>
+          )}
+        </div>
 
         {view !== 'activity' && view !== 'errors' && view !== 'digest' && (
           <label className="tv-analytics__toggle">
