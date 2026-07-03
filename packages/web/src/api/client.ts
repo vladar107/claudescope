@@ -167,8 +167,14 @@ export const api = {
   },
 
   /** GET /api/analytics/tools?from=&to= */
-  analyticsTools(params: { from?: string; to?: string }, signal?: AbortSignal): Promise<ToolUsageResponse> {
-    return request<ToolUsageResponse>(`/analytics/tools${qs({ from: params.from, to: params.to })}`, { signal });
+  analyticsTools(
+    params: { project?: string; from?: string; to?: string },
+    signal?: AbortSignal,
+  ): Promise<ToolUsageResponse> {
+    return request<ToolUsageResponse>(
+      `/analytics/tools${qs({ project: params.project, from: params.from, to: params.to })}`,
+      { signal },
+    );
   },
 
   /** GET /api/analytics/agents?project=&from=&to= */

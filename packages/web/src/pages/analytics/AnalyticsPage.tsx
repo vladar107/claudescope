@@ -26,11 +26,11 @@ import type {
   SessionEfficiencyResponse,
   SessionEfficiencySort,
   SortDir,
+  StreakInfo,
   ToolUsageResponse,
 } from '@claudescope/shared';
 import { api } from '../../api/client.js';
 import { ErrorBox, Spinner } from '../../components/index.js';
-import { ActivityHeatmap } from './ActivityHeatmap.js';
 import { AgentComparisonTable } from './AgentComparisonTable.js';
 import { DigestView } from './DigestView.js';
 import { BreakdownChart } from './BreakdownChart.js';
@@ -72,7 +72,7 @@ export function AnalyticsPage() {
   const [to, setTo] = useState('');
   // Cache tokens dwarf input/output and clutter the charts — hidden by default.
   const [showCache, setShowCache] = useState(false);
-  const [view, setView] = useState<'overview' | 'efficiency' | 'activity' | 'digest'>('overview');
+  const [view, setView] = useState<'overview' | 'efficiency' | 'digest'>('overview');
   // Efficiency grain: the same analysis at two grouping levels — per-agent
   // scorecard (comparison) or per-session table (outlier hunting).
   const [grain, setGrain] = useState<'agents' | 'sessions'>('agents');
@@ -196,6 +196,7 @@ export function AnalyticsPage() {
   }, [view, range.from, range.to, digestRetry]);
 
   useEffect(() => {
+    if (view !== 'overview') return;
     const ctrl = new AbortController();
     const tzOffsetMinutes = -new Date().getTimezoneOffset(); // east-of-UTC positive
     const today = (() => {
@@ -211,20 +212,21 @@ export function AnalyticsPage() {
         setActivity({ data: null, loading: false, error });
       });
     return () => ctrl.abort();
-  }, [range.from, range.to]);
+  }, [view, range.from, range.to]);
 
   useEffect(() => {
+    if (view !== 'efficiency' || grain !== 'agents') return;
     const ctrl = new AbortController();
     setTools((s) => ({ ...s, loading: true }));
     api
-      .analyticsTools({ from: range.from, to: range.to }, ctrl.signal)
+      .analyticsTools({ project: effProject || undefined, from: range.from, to: range.to }, ctrl.signal)
       .then((data) => setTools({ data, loading: false, error: null }))
       .catch((error) => {
         if (ctrl.signal.aborted) return;
         setTools({ data: null, loading: false, error });
       });
     return () => ctrl.abort();
-  }, [range.from, range.to]);
+  }, [view, grain, effProject, range.from, range.to]);
 
   // Header click: re-clicking the active column flips direction; a new column
   // starts at descending (largest first).
@@ -276,14 +278,6 @@ export function AnalyticsPage() {
               onClick={() => setView('efficiency')}
             >
               Efficiency
-            </button>
-            <button
-              type="button"
-              className={view === 'activity' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
-              aria-pressed={view === 'activity'}
-              onClick={() => setView('activity')}
-            >
-              Activity
             </button>
             <button
               type="button"
@@ -406,7 +400,7 @@ export function AnalyticsPage() {
           )}
         </div>
 
-        {view !== 'activity' && view !== 'digest' && (
+        {view !== 'digest' && (
           <label className="tv-analytics__toggle">
             <input
               type="checkbox"
@@ -491,33 +485,28 @@ export function AnalyticsPage() {
               />
             </div>
             <AgentComparisonTable rows={agents.data.rows} showCache={showCache} />
+            <div className="tv-analytics__charts">
+              <ChartCard
+                title="Tool usage"
+                hint="calls by category"
+                loading={tools.loading}
+                empty={!tools.data || tools.data.rows.length === 0}
+              >
+                {tools.data && <ToolUsageChart rows={tools.data.rows} />}
+              </ChartCard>
+            </div>
           </>
         )
-      ) : view === 'activity' ? (
-        <div className="tv-analytics__charts">
-          <ChartCard
-            title="Activity"
-            hint="user prompts, your local time"
-            loading={activity.loading}
-            empty={!activity.data || activity.data.heatmap.length === 0}
-          >
-            {activity.data && <ActivityHeatmap data={activity.data} />}
-          </ChartCard>
-
-          <ChartCard
-            title="Tool usage"
-            hint="calls by category"
-            loading={tools.loading}
-            empty={!tools.data || tools.data.rows.length === 0}
-          >
-            {tools.data && <ToolUsageChart rows={tools.data.rows} />}
-          </ChartCard>
-        </div>
       ) : error ? (
         <ErrorBox error={error} title="Failed to load analytics" onRetry={load} />
       ) : (
         <>
-          <SummaryCards totals={totals} loading={totalsLoading} showCache={showCache} />
+          <SummaryCards
+            totals={totals}
+            loading={totalsLoading}
+            showCache={showCache}
+            streak={activity.data?.streak ?? null}
+          />
 
           <div className="tv-analytics__charts">
             <ChartCard
@@ -587,10 +576,12 @@ function SummaryCards({
   totals,
   loading,
   showCache,
+  streak,
 }: {
   totals: AnalyticsTotals | null;
   loading: boolean;
   showCache: boolean;
+  streak: StreakInfo | null;
 }) {
   if (loading) {
     return (
@@ -639,6 +630,13 @@ function SummaryCards({
         value={formatCount(totals.messageCount)}
         sub="usage-bearing events"
       />
+      {streak && (
+        <StatCard
+          label="Prompt streak"
+          value={`🔥 ${streak.current} ${streak.current === 1 ? 'day' : 'days'}`}
+          sub={`longest ${streak.longest}`}
+        />
+      )}
       {showCache && (
         <StatCard
           label="Input from cache"

@@ -67,3 +67,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0040 | [CLI query subcommands (search/sessions/session/projects/analytics)](./0040-cli-query-subcommands.md) | done |
 | 0041 | [Error & interrupt analytics](./0041-error-interrupt-analytics.md) | done |
 | 0042 | [Week-in-review digest (page + copy-md + CLI)](./0042-digest.md) | done |
+| 0043 | [Retire the Activity tab: redistribute its pieces](./0043-activity-tab-redistribution.md) | done |
