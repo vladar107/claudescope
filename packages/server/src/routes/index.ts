@@ -13,6 +13,7 @@ import { registerSessionsRoutes } from './sessions.js';
 import { registerSearchRoute } from './search.js';
 import { registerAnalyticsRoute } from './analytics.js';
 import { registerSessionEfficiencyRoute } from './analytics-sessions.js';
+import { registerAgentComparisonRoute } from './analytics-agents.js';
 import { registerActivityRoute } from './analytics-activity.js';
 import { registerToolsRoute } from './analytics-tools.js';
 import { registerImpactRoute } from './analytics-impact.js';
@@ -31,6 +32,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await registerSearchRoute(app);
   await registerAnalyticsRoute(app);
   await registerSessionEfficiencyRoute(app);
+  await registerAgentComparisonRoute(app);
   await registerActivityRoute(app);
   await registerToolsRoute(app);
   await registerImpactRoute(app);

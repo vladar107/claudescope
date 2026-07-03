@@ -17,8 +17,8 @@ import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   ActivityResponse,
+  AgentComparisonResponse,
   DigestResponse,
-  ErrorAnalyticsResponse,
   AnalyticsGroupBy,
   AnalyticsResponse,
   AnalyticsTotals,
@@ -31,8 +31,8 @@ import type {
 import { api } from '../../api/client.js';
 import { ErrorBox, Spinner } from '../../components/index.js';
 import { ActivityHeatmap } from './ActivityHeatmap.js';
+import { AgentComparisonTable } from './AgentComparisonTable.js';
 import { DigestView } from './DigestView.js';
-import { ErrorsTable } from './ErrorsTable.js';
 import { BreakdownChart } from './BreakdownChart.js';
 import { ToolUsageChart } from './ToolUsageChart.js';
 import type { BreakdownMetric, BreakdownSort } from './BreakdownChart.js';
@@ -72,7 +72,7 @@ export function AnalyticsPage() {
   const [to, setTo] = useState('');
   // Cache tokens dwarf input/output and clutter the charts — hidden by default.
   const [showCache, setShowCache] = useState(false);
-  const [view, setView] = useState<'overview' | 'sessions' | 'activity' | 'errors' | 'digest'>('overview');
+  const [view, setView] = useState<'overview' | 'sessions' | 'activity' | 'agents' | 'digest'>('overview');
   const [effSort, setEffSort] = useState<SessionEfficiencySort>('cost');
   const [effDir, setEffDir] = useState<SortDir>('desc');
   const [eff, setEff] = useState<{
@@ -81,14 +81,14 @@ export function AnalyticsPage() {
     error: unknown;
   }>({ data: null, loading: true, error: null });
   const [effRetry, setEffRetry] = useState(0);
-  // Errors view: optional project scope ('' = whole corpus) + fetch state.
-  const [errProject, setErrProject] = useState('');
-  const [errs, setErrs] = useState<{
-    data: ErrorAnalyticsResponse | null;
+  // Agents view: optional project scope ('' = whole corpus) + fetch state.
+  const [agentsProject, setAgentsProject] = useState('');
+  const [agents, setAgents] = useState<{
+    data: AgentComparisonResponse | null;
     loading: boolean;
     error: unknown;
   }>({ data: null, loading: true, error: null });
-  const [errsRetry, setErrsRetry] = useState(0);
+  const [agentsRetry, setAgentsRetry] = useState(0);
   // Digest view fetch state (range comes from the shared from/to inputs).
   const [digest, setDigest] = useState<{
     data: DigestResponse | null;
@@ -165,18 +165,18 @@ export function AnalyticsPage() {
   }, [view, range.from, range.to, effSort, effDir, effRetry]);
 
   useEffect(() => {
-    if (view !== 'errors') return;
+    if (view !== 'agents') return;
     const ctrl = new AbortController();
-    setErrs((s) => ({ ...s, loading: true, error: null }));
+    setAgents((s) => ({ ...s, loading: true, error: null }));
     api
-      .analyticsErrors({ project: errProject || undefined, from: range.from, to: range.to }, ctrl.signal)
-      .then((data) => setErrs({ data, loading: false, error: null }))
+      .analyticsAgents({ project: agentsProject || undefined, from: range.from, to: range.to }, ctrl.signal)
+      .then((data) => setAgents({ data, loading: false, error: null }))
       .catch((error) => {
         if (ctrl.signal.aborted) return;
-        setErrs({ data: null, loading: false, error });
+        setAgents({ data: null, loading: false, error });
       });
     return () => ctrl.abort();
-  }, [view, errProject, range.from, range.to, errsRetry]);
+  }, [view, agentsProject, range.from, range.to, agentsRetry]);
 
   useEffect(() => {
     if (view !== 'digest') return;
@@ -284,11 +284,11 @@ export function AnalyticsPage() {
             </button>
             <button
               type="button"
-              className={view === 'errors' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
-              aria-pressed={view === 'errors'}
-              onClick={() => setView('errors')}
+              className={view === 'agents' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
+              aria-pressed={view === 'agents'}
+              onClick={() => setView('agents')}
             >
-              Errors
+              Agents
             </button>
             <button
               type="button"
@@ -301,16 +301,16 @@ export function AnalyticsPage() {
           </div>
         </div>
 
-        {view === 'errors' && (
+        {view === 'agents' && (
           <div className="tv-analytics__field">
-            <label className="tv-analytics__field-label" htmlFor="tv-errors-project">
+            <label className="tv-analytics__field-label" htmlFor="tv-agents-project">
               Project
             </label>
             <select
-              id="tv-errors-project"
+              id="tv-agents-project"
               className="tv-analytics__select"
-              value={errProject}
-              onChange={(e) => setErrProject(e.target.value)}
+              value={agentsProject}
+              onChange={(e) => setAgentsProject(e.target.value)}
             >
               <option value="">All projects</option>
               {[...projectsById.values()]
@@ -387,7 +387,7 @@ export function AnalyticsPage() {
           )}
         </div>
 
-        {view !== 'activity' && view !== 'errors' && view !== 'digest' && (
+        {view !== 'activity' && view !== 'digest' && (
           <label className="tv-analytics__toggle">
             <input
               type="checkbox"
@@ -445,21 +445,34 @@ export function AnalyticsPage() {
             }}
           />
         )
-      ) : view === 'errors' ? (
-        errs.error ? (
+      ) : view === 'agents' ? (
+        agents.error ? (
           <ErrorBox
-            error={errs.error}
-            title="Failed to load error analytics"
-            onRetry={() => setErrsRetry((n) => n + 1)}
+            error={agents.error}
+            title="Failed to load agent comparison"
+            onRetry={() => setAgentsRetry((n) => n + 1)}
           />
-        ) : errs.loading && !errs.data ? (
+        ) : agents.loading && !agents.data ? (
           <div className="tv-card">
             <Spinner label="Loading…" />
           </div>
-        ) : !errs.data || errs.data.rows.length === 0 ? (
+        ) : !agents.data || agents.data.rows.length === 0 ? (
           <div className="tv-card tv-chart-empty">No sessions in range.</div>
         ) : (
-          <ErrorsTable rows={errs.data.rows} />
+          <>
+            <div className="tv-analytics__cards">
+              <StatCard
+                label="PR-linked sessions"
+                value={formatCount(agents.data.prLinked.sessions)}
+                sub={
+                  agents.data.prLinked.costPerPrSession !== null
+                    ? `${formatCost(agents.data.prLinked.costUsd)} total · ${formatCost(agents.data.prLinked.costPerPrSession)} per PR session · PR links recorded by Claude Code only`
+                    : 'PR links are recorded by Claude Code only'
+                }
+              />
+            </div>
+            <AgentComparisonTable rows={agents.data.rows} showCache={showCache} />
+          </>
         )
       ) : view === 'activity' ? (
         <div className="tv-analytics__charts">

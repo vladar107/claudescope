@@ -676,3 +676,84 @@ export interface DigestResponse {
   /** Claude Code user interrupts in range; null when no Claude Code sessions. */
   interrupts: number | null;
 }
+
+// ---------------------------------------------------------------------------
+// Analytics — cross-agent comparison
+// ---------------------------------------------------------------------------
+
+/**
+ * How an agent records token usage — decides which comparison metrics are real
+ * numbers and which are `null` ("not available", never 0):
+ * - `per-response` — usage on each assistant message (claude-code, codex, pi,
+ *   opencode, junie): every metric is real.
+ * - `session-level` — one usage total per session (copilot, attached to the
+ *   last response): session sums are real, per-response ratios are null.
+ * - `none` — no token data at all (antigravity): all token/cost metrics null.
+ */
+export type AgentUsageGranularity = 'per-response' | 'session-level' | 'none';
+
+/**
+ * One agent's row in the cross-agent comparison. A `null` metric means the
+ * agent's transcripts don't carry the data (see {@link AgentUsageGranularity}
+ * and `availabilityNote`) — it must never be rendered as 0.
+ */
+export interface AgentComparisonRow {
+  connectorId: string;
+  usageGranularity: AgentUsageGranularity;
+  /** Human explanation of any data gap, for the UI's n/a tooltips. */
+  availabilityNote?: string;
+  sessions: number;
+  /** Deduped assistant responses (billed API calls for per-response agents). */
+  responses: number;
+  toolCalls: number;
+  toolCallsPerResponse: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+  totalTokens: number | null;
+  costUsd: number | null;
+  costPerSession: number | null;
+  costPerResponse: number | null;
+  tokensPerResponse: number | null;
+  /** cache_read / (cache_read + cache_write + input), in [0, 1]. */
+  cacheHitRatio: number | null;
+  subagentSessions: number;
+  /** subagentSessions / sessions; null when delegation is invisible (junie). */
+  subagentShare: number | null;
+  /**
+   * Failed tool calls (`tool_error_count` sums). `null` when the source format
+   * carries no error signal (Junie, Antigravity) — "can't know", never 0.
+   */
+  toolErrors: number | null;
+  /** toolErrors / toolCalls; null when unknowable or there are no calls. */
+  errorRate: number | null;
+  /**
+   * User interrupts (the `[Request interrupted by user…]` transcript marker).
+   * Recorded by Claude Code only — null for every other agent.
+   */
+  interrupts: number | null;
+}
+
+/** Ride-along: sessions that produced a linked PR (recorded by Claude Code only). */
+export interface PrLinkedStats {
+  sessions: number;
+  costUsd: number;
+  /** costUsd / sessions; null when no PR-linked sessions are in scope. */
+  costPerPrSession: number | null;
+}
+
+export interface AgentComparisonQuery {
+  /** Project slug id (as returned by /api/projects); omit for the whole corpus. */
+  project?: string;
+  /** Inclusive ISO lower bound on session START. */
+  from?: string;
+  /** Inclusive ISO upper bound on session START. */
+  to?: string;
+}
+
+/** GET /api/analytics/agents */
+export interface AgentComparisonResponse {
+  rows: AgentComparisonRow[];
+  prLinked: PrLinkedStats;
+}
