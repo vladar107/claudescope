@@ -40,7 +40,7 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bench": "tsx packages/server/perf/run.ts",
+    "bench": "npm run build --workspace @claudescope/shared && tsx packages/server/perf/run.ts",
     "bench:compare": "tsx packages/server/perf/compare.ts",
     "update-pricing": "node scripts/update-pricing.mjs",
     "screenshots": "node scripts/screenshots.mjs"
