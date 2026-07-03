@@ -17,6 +17,7 @@ import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   ActivityResponse,
+  ErrorAnalyticsResponse,
   AnalyticsGroupBy,
   AnalyticsResponse,
   AnalyticsTotals,
@@ -29,6 +30,7 @@ import type {
 import { api } from '../../api/client.js';
 import { ErrorBox, Spinner } from '../../components/index.js';
 import { ActivityHeatmap } from './ActivityHeatmap.js';
+import { ErrorsTable } from './ErrorsTable.js';
 import { BreakdownChart } from './BreakdownChart.js';
 import { ToolUsageChart } from './ToolUsageChart.js';
 import type { BreakdownMetric, BreakdownSort } from './BreakdownChart.js';
@@ -68,7 +70,7 @@ export function AnalyticsPage() {
   const [to, setTo] = useState('');
   // Cache tokens dwarf input/output and clutter the charts — hidden by default.
   const [showCache, setShowCache] = useState(false);
-  const [view, setView] = useState<'overview' | 'sessions' | 'activity'>('overview');
+  const [view, setView] = useState<'overview' | 'sessions' | 'activity' | 'errors'>('overview');
   const [effSort, setEffSort] = useState<SessionEfficiencySort>('cost');
   const [effDir, setEffDir] = useState<SortDir>('desc');
   const [eff, setEff] = useState<{
@@ -77,6 +79,14 @@ export function AnalyticsPage() {
     error: unknown;
   }>({ data: null, loading: true, error: null });
   const [effRetry, setEffRetry] = useState(0);
+  // Errors view: optional project scope ('' = whole corpus) + fetch state.
+  const [errProject, setErrProject] = useState('');
+  const [errs, setErrs] = useState<{
+    data: ErrorAnalyticsResponse | null;
+    loading: boolean;
+    error: unknown;
+  }>({ data: null, loading: true, error: null });
+  const [errsRetry, setErrsRetry] = useState(0);
   // Breakdown chart controls (default to tokens, preserving prior behavior):
   // `metric` picks what the bars render, `sortBy` picks the row order.
   const [metric, setMetric] = useState<BreakdownMetric>('tokens');
@@ -144,6 +154,20 @@ export function AnalyticsPage() {
       });
     return () => ctrl.abort();
   }, [view, range.from, range.to, effSort, effDir, effRetry]);
+
+  useEffect(() => {
+    if (view !== 'errors') return;
+    const ctrl = new AbortController();
+    setErrs((s) => ({ ...s, loading: true, error: null }));
+    api
+      .analyticsErrors({ project: errProject || undefined, from: range.from, to: range.to }, ctrl.signal)
+      .then((data) => setErrs({ data, loading: false, error: null }))
+      .catch((error) => {
+        if (ctrl.signal.aborted) return;
+        setErrs({ data: null, loading: false, error });
+      });
+    return () => ctrl.abort();
+  }, [view, errProject, range.from, range.to, errsRetry]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -235,8 +259,39 @@ export function AnalyticsPage() {
             >
               Activity
             </button>
+            <button
+              type="button"
+              className={view === 'errors' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
+              aria-pressed={view === 'errors'}
+              onClick={() => setView('errors')}
+            >
+              Errors
+            </button>
           </div>
         </div>
+
+        {view === 'errors' && (
+          <div className="tv-analytics__field">
+            <label className="tv-analytics__field-label" htmlFor="tv-errors-project">
+              Project
+            </label>
+            <select
+              id="tv-errors-project"
+              className="tv-analytics__select"
+              value={errProject}
+              onChange={(e) => setErrProject(e.target.value)}
+            >
+              <option value="">All projects</option>
+              {[...projectsById.values()]
+                .sort((a, b) => a.displayName.localeCompare(b.displayName))
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.displayName}
+                  </option>
+                ))}
+            </select>
+          </div>
+        )}
 
         {view === 'overview' && (
           <div className="tv-analytics__field">
@@ -298,7 +353,7 @@ export function AnalyticsPage() {
           </button>
         )}
 
-        {view !== 'activity' && (
+        {view !== 'activity' && view !== 'errors' && (
           <label className="tv-analytics__toggle">
             <input
               type="checkbox"
@@ -333,6 +388,22 @@ export function AnalyticsPage() {
             onSortChange={onEffSort}
             showCache={showCache}
           />
+        )
+      ) : view === 'errors' ? (
+        errs.error ? (
+          <ErrorBox
+            error={errs.error}
+            title="Failed to load error analytics"
+            onRetry={() => setErrsRetry((n) => n + 1)}
+          />
+        ) : errs.loading && !errs.data ? (
+          <div className="tv-card">
+            <Spinner label="Loading…" />
+          </div>
+        ) : !errs.data || errs.data.rows.length === 0 ? (
+          <div className="tv-card tv-chart-empty">No sessions in range.</div>
+        ) : (
+          <ErrorsTable rows={errs.data.rows} />
         )
       ) : view === 'activity' ? (
         <div className="tv-analytics__charts">

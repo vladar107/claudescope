@@ -571,3 +571,108 @@ export interface ToolUsageRow {
 export interface ToolUsageResponse {
   rows: ToolUsageRow[];
 }
+
+// ---------------------------------------------------------------------------
+// Analytics — error/interrupt signals and the periodic digest
+// ---------------------------------------------------------------------------
+
+/** One agent's error/interrupt signals (GET /api/analytics/errors). */
+export interface ErrorAnalyticsRow {
+  connectorId: string;
+  sessions: number;
+  /** Canonical tool calls (deduped, same semantics as the tools breakdown). */
+  toolCalls: number;
+  /**
+   * Failed tool calls (`tool_error_count` sums). `null` when the source format
+   * carries no error signal (Junie, Antigravity) — "can't know", never 0.
+   */
+  toolErrors: number | null;
+  /** toolErrors / toolCalls; null when unknowable or there are no calls. */
+  errorRate: number | null;
+  /**
+   * User interrupts (the `[Request interrupted by user…]` transcript marker).
+   * Recorded by Claude Code only — null for every other agent.
+   */
+  interrupts: number | null;
+  interruptsPerSession: number | null;
+  /** Why a metric is n/a (or skewed), when it is. */
+  availabilityNote?: string;
+}
+
+/** GET /api/analytics/errors */
+export interface ErrorAnalyticsResponse {
+  rows: ErrorAnalyticsRow[];
+}
+
+/** Digest totals — session-atomic: a session belongs to the range its start falls in. */
+export interface DigestTotals {
+  sessions: number;
+  activeProjects: number;
+  /** Canonical assistant responses. */
+  responses: number;
+  /** Token/cost sums cover only agents that report usage (Antigravity none; crashed Copilot sessions none). */
+  totalTokens: number;
+  costUsd: number;
+}
+
+export interface DigestProjectRow {
+  projectId: string;
+  cwd: string;
+  sessions: number;
+  totalTokens: number;
+  costUsd: number;
+}
+
+/** A key → count line (model mix, tool mix, sessions per agent). */
+export interface DigestCountRow {
+  key: string;
+  count: number;
+}
+
+export interface DigestBiggestSession {
+  id: string;
+  title: string;
+  connectorId: string;
+  costUsd: number;
+  totalTokens: number;
+}
+
+/** Agent-reported churn over the range (see /api/analytics/impact — not git truth). */
+export interface DigestImpact {
+  additions: number;
+  deletions: number;
+  edits: number;
+  filesTouched: number;
+  /** Top files by churn (additions + deletions). */
+  topFiles: { path: string; additions: number; deletions: number }[];
+}
+
+/** Tool-error rollup over agents whose formats record errors. */
+export interface DigestErrors {
+  toolCalls: number;
+  toolErrors: number;
+  errorRate: number | null;
+  /** Agents in range whose formats carry no error signal (excluded from the counts). */
+  unknownAgents: string[];
+}
+
+/** GET /api/analytics/digest */
+export interface DigestResponse {
+  /** Resolved inclusive range (ISO timestamps); defaults to the last 7 days. */
+  from: string;
+  to: string;
+  totals: DigestTotals;
+  topProjects: DigestProjectRow[];
+  models: DigestCountRow[];
+  topTools: DigestCountRow[];
+  /** Sessions per agent. */
+  agents: DigestCountRow[];
+  biggestSession: DigestBiggestSession | null;
+  /** All-time prompt streak (UTC days) as of the range end. */
+  streak: StreakInfo;
+  impact: DigestImpact;
+  /** null when no agent in range records tool errors. */
+  errors: DigestErrors | null;
+  /** Claude Code user interrupts in range; null when no Claude Code sessions. */
+  interrupts: number | null;
+}
