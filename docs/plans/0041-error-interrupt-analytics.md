@@ -1,8 +1,8 @@
 # 0041 — Error & interrupt analytics
 
-- **Status:** in-progress
+- **Status:** done
 - **Date:** 2026-07-03
-- **PR:** <link, once opened>
+- **PR:** [#53](https://github.com/vladar107/claudescope/pull/53)
 
 ## Context
 

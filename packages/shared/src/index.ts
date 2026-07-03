@@ -9,3 +9,4 @@ export * from './diff.js';
 export * from './redact.js';
 export * from './markdown.js';
 export * from './changeset.js';
+export * from './digest-markdown.js';

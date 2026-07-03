@@ -64,4 +64,5 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0038 | [`claudescope mcp`: agent-facing MCP server](./0038-mcp-server.md) | done |
 | 0039 | [Code-impact index: file_edits + tool_error_count (schema v10)](./0039-file-edits-index.md) | done |
 | 0040 | [CLI query subcommands (search/sessions/session/projects/analytics)](./0040-cli-query-subcommands.md) | done |
-| 0041 | [Error & interrupt analytics](./0041-error-interrupt-analytics.md) | in-progress |
+| 0041 | [Error & interrupt analytics](./0041-error-interrupt-analytics.md) | done |
+| 0042 | [Week-in-review digest (page + copy-md + CLI)](./0042-digest.md) | done |
