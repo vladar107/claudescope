@@ -17,6 +17,7 @@ import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   ActivityResponse,
+  DigestResponse,
   ErrorAnalyticsResponse,
   AnalyticsGroupBy,
   AnalyticsResponse,
@@ -30,6 +31,7 @@ import type {
 import { api } from '../../api/client.js';
 import { ErrorBox, Spinner } from '../../components/index.js';
 import { ActivityHeatmap } from './ActivityHeatmap.js';
+import { DigestView } from './DigestView.js';
 import { ErrorsTable } from './ErrorsTable.js';
 import { BreakdownChart } from './BreakdownChart.js';
 import { ToolUsageChart } from './ToolUsageChart.js';
@@ -70,7 +72,7 @@ export function AnalyticsPage() {
   const [to, setTo] = useState('');
   // Cache tokens dwarf input/output and clutter the charts — hidden by default.
   const [showCache, setShowCache] = useState(false);
-  const [view, setView] = useState<'overview' | 'sessions' | 'activity' | 'errors'>('overview');
+  const [view, setView] = useState<'overview' | 'sessions' | 'activity' | 'errors' | 'digest'>('overview');
   const [effSort, setEffSort] = useState<SessionEfficiencySort>('cost');
   const [effDir, setEffDir] = useState<SortDir>('desc');
   const [eff, setEff] = useState<{
@@ -87,6 +89,13 @@ export function AnalyticsPage() {
     error: unknown;
   }>({ data: null, loading: true, error: null });
   const [errsRetry, setErrsRetry] = useState(0);
+  // Digest view fetch state (range comes from the shared from/to inputs).
+  const [digest, setDigest] = useState<{
+    data: DigestResponse | null;
+    loading: boolean;
+    error: unknown;
+  }>({ data: null, loading: true, error: null });
+  const [digestRetry, setDigestRetry] = useState(0);
   // Breakdown chart controls (default to tokens, preserving prior behavior):
   // `metric` picks what the bars render, `sortBy` picks the row order.
   const [metric, setMetric] = useState<BreakdownMetric>('tokens');
@@ -168,6 +177,20 @@ export function AnalyticsPage() {
       });
     return () => ctrl.abort();
   }, [view, errProject, range.from, range.to, errsRetry]);
+
+  useEffect(() => {
+    if (view !== 'digest') return;
+    const ctrl = new AbortController();
+    setDigest((s) => ({ ...s, loading: true, error: null }));
+    api
+      .analyticsDigest({ from: range.from, to: range.to }, ctrl.signal)
+      .then((data) => setDigest({ data, loading: false, error: null }))
+      .catch((error) => {
+        if (ctrl.signal.aborted) return;
+        setDigest({ data: null, loading: false, error });
+      });
+    return () => ctrl.abort();
+  }, [view, range.from, range.to, digestRetry]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -267,6 +290,14 @@ export function AnalyticsPage() {
             >
               Errors
             </button>
+            <button
+              type="button"
+              className={view === 'digest' ? 'tv-segmented__btn is-active' : 'tv-segmented__btn'}
+              aria-pressed={view === 'digest'}
+              onClick={() => setView('digest')}
+            >
+              Digest
+            </button>
           </div>
         </div>
 
@@ -353,7 +384,7 @@ export function AnalyticsPage() {
           </button>
         )}
 
-        {view !== 'activity' && view !== 'errors' && (
+        {view !== 'activity' && view !== 'errors' && view !== 'digest' && (
           <label className="tv-analytics__toggle">
             <input
               type="checkbox"
@@ -387,6 +418,28 @@ export function AnalyticsPage() {
             dir={effDir}
             onSortChange={onEffSort}
             showCache={showCache}
+          />
+        )
+      ) : view === 'digest' ? (
+        digest.error ? (
+          <ErrorBox
+            error={digest.error}
+            title="Failed to load the digest"
+            onRetry={() => setDigestRetry((n) => n + 1)}
+          />
+        ) : digest.loading && !digest.data ? (
+          <div className="tv-card">
+            <Spinner label="Loading…" />
+          </div>
+        ) : !digest.data ? (
+          <div className="tv-card tv-chart-empty">No data.</div>
+        ) : (
+          <DigestView
+            data={digest.data}
+            onRange={(f, t) => {
+              setFrom(f);
+              setTo(t);
+            }}
           />
         )
       ) : view === 'errors' ? (

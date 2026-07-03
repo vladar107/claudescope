@@ -10,6 +10,7 @@
 import type {
   AnalyticsGroupBy,
   AnalyticsResponse,
+  DigestResponse,
   HealthResponse,
   MemoryResponse,
   ProjectMemoryResponse,
@@ -68,5 +69,9 @@ export class ApiClient {
 
   analytics(q: { groupBy: AnalyticsGroupBy; from?: string; to?: string }): Promise<AnalyticsResponse> {
     return this.get('/api/analytics', q);
+  }
+
+  digest(q: { from?: string; to?: string } = {}): Promise<DigestResponse> {
+    return this.get('/api/analytics/digest', q);
   }
 }

@@ -203,6 +203,7 @@ claudescope search "duckdb lock" --limit 5      # where did I hit this before?
 claudescope sessions --agent codex --sort cost  # priciest Codex sessions
 claudescope session <id> --around <uuid>        # open a search hit, windowed
 claudescope analytics --group-by day --json | jq '.rows[] | [.key, .costUsd]'
+claudescope digest --from 2026-06-23 --to 2026-06-29   # week in review, as Markdown
 ```
 
 `session` prints a pageable window of turns as Markdown (`--offset/--limit`,

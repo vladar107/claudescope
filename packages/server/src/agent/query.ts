@@ -9,6 +9,7 @@
  */
 
 import type { AnalyticsGroupBy, SearchScope, SearchType, SessionSort } from '@claudescope/shared';
+import { digestToMarkdown } from '@claudescope/shared';
 import type { ApiClient } from './api-client.js';
 import {
   DEFAULT_LIMIT,
@@ -164,4 +165,18 @@ export async function queryAnalytics(client: ApiClient, args: AnalyticsArgs): Pr
     `\n\nTotal: ${fmtTokens(t.totalTokens)} tok · ${fmtCost(t.costUsd)} · ${t.messageCount} responses · ` +
     `cache hit ${(t.cacheHitRatio * 100).toFixed(0)}%`
   );
+}
+
+export interface DigestArgs {
+  from?: string;
+  to?: string;
+  json?: boolean;
+}
+
+/** Week-in-review digest — the human output IS the shared Markdown renderer,
+ *  so the CLI prints exactly what the web "Copy as Markdown" button copies. */
+export async function queryDigest(client: ApiClient, args: DigestArgs): Promise<string> {
+  const res = await client.digest({ from: args.from, to: args.to });
+  if (args.json) return json(res);
+  return digestToMarkdown(res).trimEnd();
 }

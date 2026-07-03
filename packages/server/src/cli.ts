@@ -40,6 +40,7 @@ import { runMcpServer } from './agent/mcp.js';
 import { ApiClient } from './agent/api-client.js';
 import {
   queryAnalytics,
+  queryDigest,
   queryProjects,
   querySearch,
   querySession,
@@ -393,6 +394,7 @@ Query commands (read-only; start the background server on first use):
                    [--max-tool-chars N] [--redact]
   projects         List projects
   analytics        Token/cost aggregates [--group-by project|model|day|agent] [--from date] [--to date]
+  digest           Week-in-review Markdown [--from date] [--to date] (default: last 7 days)
   All query commands accept --json for the raw API response (ignores --redact).
 
 Options:
@@ -513,6 +515,12 @@ async function main(): Promise<void> {
       break;
     case 'projects':
       await runQuery(() => (client) => queryProjects(client, { json: values.json }));
+      break;
+    case 'digest':
+      await runQuery(() => {
+        const args = { from: values.from, to: values.to, json: values.json };
+        return (client) => queryDigest(client, args);
+      });
       break;
     case 'analytics':
       await runQuery(() => {
