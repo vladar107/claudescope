@@ -17,6 +17,7 @@ import { registerActivityRoute } from './analytics-activity.js';
 import { registerToolsRoute } from './analytics-tools.js';
 import { registerImpactRoute } from './analytics-impact.js';
 import { registerErrorsRoute } from './analytics-errors.js';
+import { registerDigestRoute } from './analytics-digest.js';
 import { registerSourcesRoute } from './sources.js';
 import { registerMemoryRoute } from './memory.js';
 
@@ -34,6 +35,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await registerToolsRoute(app);
   await registerImpactRoute(app);
   await registerErrorsRoute(app);
+  await registerDigestRoute(app);
   await registerSourcesRoute(app);
   await registerMemoryRoute(app);
 

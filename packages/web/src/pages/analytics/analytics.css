@@ -445,3 +445,30 @@
   padding: var(--tv-space-2) var(--tv-space-3);
   max-width: 220px;
 }
+
+/* Digest view. */
+.tv-digest__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-4);
+  margin-bottom: var(--tv-space-4);
+  flex-wrap: wrap;
+}
+.tv-digest__list {
+  margin: 0;
+  padding-left: var(--tv-space-5);
+  display: grid;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-md);
+}
+.tv-digest__list code {
+  font-size: 12px;
+  word-break: break-all;
+}
+.tv-digest__empty {
+  color: var(--tv-fg-muted);
+  list-style: none;
+}
+.tv-digest__agent {
+  margin-right: var(--tv-space-2);
+}
