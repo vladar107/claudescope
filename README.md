@@ -192,6 +192,23 @@ payloads truncated), `get_analytics` (token/cost aggregates), and `get_memory`
 agent's context window; pass `redact: true` to mask home paths and likely
 secrets. Everything stays read-only and on localhost.
 
+### Scripting (CLI)
+
+The same lookups work from the terminal — read-only query subcommands that
+start the background server on first use and print tables (or raw JSON with
+`--json`, handy with `jq`):
+
+```bash
+claudescope search "duckdb lock" --limit 5      # where did I hit this before?
+claudescope sessions --agent codex --sort cost  # priciest Codex sessions
+claudescope session <id> --around <uuid>        # open a search hit, windowed
+claudescope analytics --group-by day --json | jq '.rows[] | [.key, .costUsd]'
+```
+
+`session` prints a pageable window of turns as Markdown (`--offset/--limit`,
+`--redact` to mask paths/secrets); `--json` returns the raw API response
+unredacted. See `claudescope help` for the full flag list.
+
 ---
 
 ## Configuration
