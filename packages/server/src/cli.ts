@@ -13,126 +13,45 @@
  *   claudescope update     # upgrade to the latest published version
  */
 
-import { spawn, spawnSync } from 'node:child_process';
-import {
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
-import { dirname, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { APP_VERSION, CLAUDE_PROJECTS_DIR, CLAUDESCOPE_HOME, PORT as DEFAULT_PORT } from './config.js';
+import {
+  DAEMON_FILE,
+  EXIT_WAIT_MS,
+  LOG_FILE,
+  classifyExisting,
+  isAlive,
+  isHealthy,
+  readDaemon,
+  spawnDaemon,
+  waitForExit,
+  waitForHealth,
+} from './daemon.js';
+import { runMcpServer } from './agent/mcp.js';
 import { refreshPricing } from './data/pricing-refresh.js';
 import { openBrowser } from './util/open-browser.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-/** The server bundle, a sibling of this CLI in the published package. */
-const SERVER_ENTRY = join(__dirname, 'server.js');
-const DAEMON_FILE = join(CLAUDESCOPE_HOME, 'daemon.json');
-const LOG_FILE = join(CLAUDESCOPE_HOME, 'daemon.log');
+// Daemon lifecycle primitives live in daemon.js (shared with the MCP server);
+// re-exported here so existing importers (tests) keep working.
+export {
+  classifyExisting,
+  isAlive,
+  isHealthy,
+  readDaemon,
+  waitForExit,
+  waitForHealth,
+  type DaemonRecord,
+  type ExistingState,
+} from './daemon.js';
+
 const UPDATE_CHECK_FILE = join(CLAUDESCOPE_HOME, 'update-check.json');
 const PKG = '@vladar107/claudescope';
 const UPDATE_CHECK_TTL_MS = 24 * 60 * 60 * 1000;
-/** Roll the append-only daemon log once it grows past this, so a long-lived or
- *  crash-looping daemon doesn't grow the log without bound. */
-const LOG_MAX_BYTES = 5 * 1024 * 1024;
-/** How long to wait for a signalled process to actually exit before giving up. */
-const EXIT_WAIT_MS = 5000;
-
-export interface DaemonRecord {
-  pid: number;
-  port: number;
-  url: string;
-  version: string;
-  startedAt: string;
-}
-
-/** Read the daemon record, or null if absent/corrupt. */
-export function readDaemon(): DaemonRecord | null {
-  if (!existsSync(DAEMON_FILE)) return null;
-  try {
-    return JSON.parse(readFileSync(DAEMON_FILE, 'utf8')) as DaemonRecord;
-  } catch {
-    return null;
-  }
-}
-
-/** Is a process with this PID currently alive? */
-export function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Probe the server's health endpoint (short timeout, never throws). */
-export async function isHealthy(port: number): Promise<boolean> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
-      signal: AbortSignal.timeout(1500),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-/** Poll health until ready or the deadline, printing progress dots. */
-export async function waitForHealth(port: number, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await isHealthy(port)) return true;
-    process.stdout.write('.');
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  return false;
-}
-
-/** Poll until the process is gone or the deadline; returns whether it exited. */
-export async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (!isAlive(pid)) return true;
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  return !isAlive(pid);
-}
-
-/** What the recorded daemon (if any) currently is, so callers can decide whether
- *  to reuse it, clear a stale record, or replace a wedged (alive-but-unhealthy)
- *  process. Injectable probes keep this pure and unit-testable. */
-export type ExistingState = 'healthy' | 'stale' | 'wedged' | 'none';
-export async function classifyExisting(
-  record: DaemonRecord | null,
-  aliveFn: (pid: number) => boolean,
-  healthyFn: (port: number) => Promise<boolean>,
-): Promise<ExistingState> {
-  if (!record) return 'none';
-  if (!aliveFn(record.pid)) return 'stale';
-  return (await healthyFn(record.port)) ? 'healthy' : 'wedged';
-}
-
-/** Roll the daemon log to `.1` once it exceeds {@link LOG_MAX_BYTES}. Best-effort. */
-function rotateLogIfLarge(): void {
-  try {
-    if (existsSync(LOG_FILE) && statSync(LOG_FILE).size > LOG_MAX_BYTES) {
-      rmSync(`${LOG_FILE}.1`, { force: true });
-      renameSync(LOG_FILE, `${LOG_FILE}.1`);
-    }
-  } catch {
-    /* non-fatal: logging is best-effort */
-  }
-}
 
 /** Start the server in the background, idempotently. */
 async function start(port: number, open: boolean): Promise<void> {
@@ -169,28 +88,10 @@ async function start(port: number, open: boolean): Promise<void> {
   }
 
   const url = `http://localhost:${port}`;
-  rotateLogIfLarge();
-  const logFd = openSync(LOG_FILE, 'a');
-  // Detached + stdio→log + unref: the server keeps running after this CLI exits.
-  // OPEN_BROWSER=0 so the daemon never opens a browser; the CLI owns that.
-  const child = spawn(process.execPath, [SERVER_ENTRY], {
-    detached: true,
-    stdio: ['ignore', logFd, logFd],
-    env: { ...process.env, PORT: String(port), OPEN_BROWSER: '0' },
-  });
-  child.unref();
-
-  writeFileSync(
-    DAEMON_FILE,
-    JSON.stringify(
-      { pid: child.pid, port, url, version: APP_VERSION, startedAt: new Date().toISOString() },
-      null,
-      2,
-    ),
-  );
+  spawnDaemon(port);
 
   process.stdout.write('› Starting claudescope');
-  const ok = await waitForHealth(port, 20000);
+  const ok = await waitForHealth(port, 20000, () => process.stdout.write('.'));
   if (!ok) {
     console.error(`\n✗ Server did not become healthy in time. Inspect: claudescope logs`);
     process.exitCode = 1;
@@ -425,6 +326,8 @@ Commands:
   status           Show whether the server is running and if an update exists
   open             Open the running app in your browser
   logs [-f]        Print the server log (-f / --follow to tail it)
+  mcp              Run an MCP stdio server exposing transcript search/reading
+                   (register with: claude mcp add claudescope -- claudescope mcp)
   update [-y]      Upgrade to the latest published version and restart
   pricing update   Fetch current model prices (LiteLLM) into the local rate table
   help             Show this help
@@ -479,6 +382,11 @@ async function main(): Promise<void> {
       break;
     case 'logs':
       logs(Boolean(values.follow));
+      break;
+    case 'mcp':
+      // Stdio MCP server: stdout is the protocol channel — nothing else may
+      // print to it. The server ensures the daemon on first tool use.
+      await runMcpServer();
       break;
     case 'update':
       await update(Boolean(values.yes));

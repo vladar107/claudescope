@@ -174,6 +174,24 @@ npm start        # builds on first run, then serves the app in the foreground
 `npm start` runs in the foreground (`Ctrl-C` to stop). For the watch-mode dev
 loop and how to contribute, see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
+### Agent access (MCP)
+
+Claudescope doubles as an MCP server, so a coding agent can query its own
+history — "have I hit this error before?", "what did we decide last month?":
+
+```bash
+claude mcp add claudescope -- claudescope mcp
+```
+
+`claudescope mcp` speaks MCP over stdio and starts the background server on
+first use if it isn't already running. Tools: `search_transcripts` (full-text
+search with snippet hits), `list_sessions` / `list_projects` (compact listings),
+`get_session` (a windowed Markdown slice of one session — pageable, tool
+payloads truncated), `get_analytics` (token/cost aggregates), and `get_memory`
+(instruction files + distilled agent memory). Output is plain text sized for an
+agent's context window; pass `redact: true` to mask home paths and likely
+secrets. Everything stays read-only and on localhost.
+
 ---
 
 ## Configuration
