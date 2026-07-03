@@ -11,6 +11,10 @@
  *   claudescope status     # is it running? is an update available?
  *   claudescope logs -f    # follow the server log
  *   claudescope update     # upgrade to the latest published version
+ *
+ * Read-only query subcommands (search/sessions/session/projects/analytics)
+ * proxy the daemon's HTTP API for terminals and scripts (`--json`); see
+ * agent/query.ts.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -33,6 +37,15 @@ import {
   waitForHealth,
 } from './daemon.js';
 import { runMcpServer } from './agent/mcp.js';
+import { ApiClient } from './agent/api-client.js';
+import {
+  queryAnalytics,
+  queryProjects,
+  querySearch,
+  querySession,
+  querySessions,
+} from './agent/query.js';
+import { ensureDaemon } from './daemon.js';
 import { refreshPricing } from './data/pricing-refresh.js';
 import { openBrowser } from './util/open-browser.js';
 
@@ -306,6 +319,43 @@ async function pricingUpdate(): Promise<void> {
   }
 }
 
+/** A bad flag value or missing argument on a query subcommand. */
+class UsageError extends Error {}
+
+/** Parse a non-negative integer flag; undefined when absent, UsageError when bogus. */
+function intFlag(name: string, v: string | undefined): number | undefined {
+  if (v === undefined) return undefined;
+  const n = Number.parseInt(v, 10);
+  if (!Number.isInteger(n) || n < 0) throw new UsageError(`--${name} expects a non-negative integer, got '${v}'`);
+  return n;
+}
+
+/** Validate an enum-valued flag; undefined when absent, UsageError when bogus. */
+function enumFlag<T extends string>(name: string, v: string | undefined, allowed: readonly T[]): T | undefined {
+  if (v === undefined) return undefined;
+  if (!(allowed as readonly string[]).includes(v)) {
+    throw new UsageError(`--${name} must be one of: ${allowed.join(', ')} (got '${v}')`);
+  }
+  return v as T;
+}
+
+/** Run one read-only query subcommand against the (auto-started) daemon and
+ *  print its output. `prepare` validates flags and returns the command — it runs
+ *  BEFORE the daemon is (maybe) spawned, so a bad flag never starts anything.
+ *  Failures go to stderr with a non-zero exit; empty results are normal output
+ *  ("No matches.") with exit 0. */
+async function runQuery(prepare: () => (client: ApiClient) => Promise<string>): Promise<void> {
+  try {
+    const fn = prepare();
+    const d = await ensureDaemon();
+    const client = new ApiClient(`http://127.0.0.1:${d.port}`);
+    console.log(await fn(client));
+  } catch (err) {
+    console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+  }
+}
+
 /** Print brief usage for the pricing subcommand. */
 function pricingHelp(): void {
   console.log(`Usage: claudescope pricing <subcommand>
@@ -333,6 +383,18 @@ Commands:
   help             Show this help
   version          Print the installed version
 
+Query commands (read-only; start the background server on first use):
+  search "<query>" Full-text search across transcripts and agent memory
+                   [--project id] [--role user|assistant] [--scope sessions|memory|all] [--limit N]
+  sessions         List sessions [--project id] [--agent id]
+                   [--sort recent|oldest|tokens|cost|messages] [--q substr] [--limit N]
+  session <id>     One session as Markdown — a window of turns, pageable
+                   [--offset N] [--limit N] [--around uuid] [--radius N]
+                   [--max-tool-chars N] [--redact]
+  projects         List projects
+  analytics        Token/cost aggregates [--group-by project|model|day|agent] [--from date] [--to date]
+  All query commands accept --json for the raw API response (ignores --redact).
+
 Options:
   --port <n>       Port to listen on (default ${DEFAULT_PORT}, or $PORT)
   --no-open        Don't open the browser on start
@@ -354,6 +416,23 @@ async function main(): Promise<void> {
       yes: { type: 'boolean', short: 'y' },
       // parseArgs has no built-in negation, so the flag is literally `no-open`.
       'no-open': { type: 'boolean' },
+      // Query subcommand flags (search/sessions/session/projects/analytics).
+      project: { type: 'string' },
+      agent: { type: 'string' },
+      role: { type: 'string' },
+      scope: { type: 'string' },
+      sort: { type: 'string' },
+      q: { type: 'string' },
+      limit: { type: 'string' },
+      offset: { type: 'string' },
+      around: { type: 'string' },
+      radius: { type: 'string' },
+      'max-tool-chars': { type: 'string' },
+      redact: { type: 'boolean' },
+      json: { type: 'boolean' },
+      'group-by': { type: 'string' },
+      from: { type: 'string' },
+      to: { type: 'string' },
     },
   });
 
@@ -387,6 +466,64 @@ async function main(): Promise<void> {
       // Stdio MCP server: stdout is the protocol channel — nothing else may
       // print to it. The server ensures the daemon on first tool use.
       await runMcpServer();
+      break;
+    case 'search':
+      await runQuery(() => {
+        const query = positionals[1];
+        if (!query) throw new UsageError('usage: claudescope search "<query>" [--project id] [--role user|assistant] [--scope sessions|memory|all] [--limit N] [--json]');
+        const args = {
+          query,
+          project: values.project,
+          role: enumFlag('role', values.role, ['user', 'assistant', 'all'] as const),
+          scope: enumFlag('scope', values.scope, ['sessions', 'memory', 'all'] as const),
+          limit: intFlag('limit', values.limit),
+          json: values.json,
+        };
+        return (client) => querySearch(client, args);
+      });
+      break;
+    case 'sessions':
+      await runQuery(() => {
+        const args = {
+          project: values.project,
+          agent: values.agent,
+          sort: enumFlag('sort', values.sort, ['recent', 'oldest', 'tokens', 'cost', 'messages'] as const),
+          q: values.q,
+          limit: intFlag('limit', values.limit),
+          json: values.json,
+        };
+        return (client) => querySessions(client, args);
+      });
+      break;
+    case 'session':
+      await runQuery(() => {
+        const id = positionals[1];
+        if (!id) throw new UsageError('usage: claudescope session <id> [--offset N] [--limit N] [--around uuid] [--radius N] [--max-tool-chars N] [--redact] [--json]');
+        const args = {
+          offset: intFlag('offset', values.offset),
+          limit: intFlag('limit', values.limit),
+          around: values.around,
+          radius: intFlag('radius', values.radius),
+          maxToolChars: intFlag('max-tool-chars', values['max-tool-chars']),
+          redact: values.redact,
+          json: values.json,
+        };
+        return (client) => querySession(client, id, args);
+      });
+      break;
+    case 'projects':
+      await runQuery(() => (client) => queryProjects(client, { json: values.json }));
+      break;
+    case 'analytics':
+      await runQuery(() => {
+        const args = {
+          groupBy: enumFlag('group-by', values['group-by'], ['project', 'model', 'day', 'agent'] as const),
+          from: values.from,
+          to: values.to,
+          json: values.json,
+        };
+        return (client) => queryAnalytics(client, args);
+      });
       break;
     case 'update':
       await update(Boolean(values.yes));
