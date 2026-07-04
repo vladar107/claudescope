@@ -1,6 +1,6 @@
 # 0035 — Roadmap: agent-facing access (MCP + CLI) & analytics depth
 
-- **Status:** proposed
+- **Status:** done <!-- slices 1-7 shipped (plans 0036-0042 + 0043); row-8 follow-ups (HTTP /mcp, MCP digest tool, contribution calendar) remain open ideas -->
 - **Date:** 2026-07-03
 - **PR:** [#47](https://github.com/vladar107/claudescope/pull/47)
 

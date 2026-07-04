@@ -63,7 +63,9 @@ npm run typecheck   # tsc -b across all packages
 npm run bundle      # assemble the single publishable package into dist/
 ```
 
-The shipped CLI (after install) is `claudescope {start|stop|status|restart|logs|open|update|pricing update}`.
+The shipped CLI (after install) is `claudescope {start|stop|status|restart|logs|open|update|pricing update}`,
+plus read-only query subcommands (`search|sessions|session|projects|analytics|digest`, `--json` for scripts)
+and `claudescope mcp` — a stdio MCP server that proxies the daemon (agents query their own history).
 
 ## Distribution model
 

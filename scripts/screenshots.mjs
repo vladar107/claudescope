@@ -52,14 +52,20 @@ const VIEWS = [
     name: 'analytics',
     path: '/analytics',
     ready: '.recharts-surface',
-    // Default group-by is "By project"; switch to the new per-agent breakdown.
+    // Default group-by is "By project"; switch to the per-agent breakdown.
     prepare: async (page) => {
-      await page
-        .getByRole('group', { name: 'Group by' })
-        .getByRole('button', { name: 'By agent' })
-        .click({ timeout: 5_000 })
-        .catch(() => {});
+      await page.selectOption('#tv-group-by', 'agent').catch(() => {});
       await page.waitForSelector('.recharts-surface', { timeout: 5_000 }).catch(() => {});
+    },
+  },
+  {
+    name: 'efficiency',
+    path: '/analytics',
+    ready: '.tv-eff__table',
+    // The Efficiency tab lands on the Agents grain — the comparison scorecard.
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Efficiency' }).click({ timeout: 5_000 });
+      await page.waitForSelector('.tv-eff__table', { timeout: 10_000 });
     },
   },
   { name: 'memory', path: '/memory', ready: '.tv-project-grid' },
