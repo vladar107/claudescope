@@ -96,6 +96,18 @@ agent**, with a cache-read breakdown. Click a chart legend to toggle a series.
   <img alt="Token and cost analytics dashboard" src="docs/screenshots/analytics-light.png">
 </picture>
 
+**Compare** — the Efficiency tab puts every agent head-to-head on one scorecard:
+cost, tokens per response, cache hit ratio, subagent usage, **tool-error rate**,
+and interrupts — honestly. A metric an agent's format can't report shows as
+*n/a* with the reason, never a fake 0. Flip the grain to hunt outlier
+**sessions** instead, and a **Digest** view sums up your week (copy it as
+Markdown, or run `claudescope digest` in a terminal).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/efficiency-dark.png">
+  <img alt="Efficiency: cross-agent comparison scorecard with n/a-aware metrics" src="docs/screenshots/efficiency-light.png">
+</picture>
+
 **Remember** — every agent's memory in one place: global instruction files
 (`CLAUDE.md`, `AGENTS.md`, Copilot instructions) and Claude Code's
 **agent-distilled per-project facts**, each with provenance and category. Read

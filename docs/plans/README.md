@@ -59,7 +59,7 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0032 | [Subagent embedding for Codex, pi, opencode, Copilot](./0032-subagent-embedding-connectors.md) | done |
 | 0033 | [Symlink-safe image resolution](./0033-symlink-safe-image-resolution.md) | done |
 | 0034 | [Restore reader's place after a full reload (Safari ⌘R)](./0034-safari-reload-scroll-restore.md) | done |
-| 0035 | [Roadmap: agent-facing access (MCP + CLI) & analytics depth](./0035-agent-access-and-analytics-roadmap.md) | proposed |
+| 0035 | [Roadmap: agent-facing access (MCP + CLI) & analytics depth](./0035-agent-access-and-analytics-roadmap.md) | done |
 | 0036 | [API seams for agent consumers (windowing, limits, plain snippets, shared redact/markdown)](./0036-agent-api-seams.md) | done |
 | 0037 | [Cross-agent comparison analytics](./0037-cross-agent-comparison.md) | done |
 | 0038 | [`claudescope mcp`: agent-facing MCP server](./0038-mcp-server.md) | done |
