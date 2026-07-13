@@ -24,6 +24,7 @@ import { registerHostGuard, registerSecurityHeaders } from './security.js';
 import { reindex } from './data/index.js';
 import { refreshPricing } from './data/pricing-refresh.js';
 import { maybeSelfRestart } from './self-restart.js';
+import { refreshLatestVersion } from './update-check.js';
 import { openBrowser } from './util/open-browser.js';
 
 /** How old a fetched-pricing snapshot may be before a boot refresh fires. */
@@ -115,6 +116,18 @@ async function main(): Promise<void> {
     const pricingTimer = setInterval(runPricingRefresh, PRICING_REFRESH_INTERVAL_MS);
     pricingTimer.unref();
     app.addHook('onClose', async () => clearInterval(pricingTimer));
+  }
+
+  // Update-availability check: refresh the daemon-side "latest published
+  // version" cache so /api/health can carry `updateAvailable` for the web UI's
+  // sidebar nudge. Cheap — getLatestVersion caches on disk for 24h, so the
+  // hourly tick mostly re-reads the file and the network is hit ≤ once a day.
+  // Dev builds skip it (nothing meaningful to compare against).
+  if (APP_VERSION !== '0.0.0-dev') {
+    void refreshLatestVersion();
+    const updateTimer = setInterval(() => void refreshLatestVersion(), 60 * 60 * 1000);
+    updateTimer.unref();
+    app.addHook('onClose', async () => clearInterval(updateTimer));
   }
 
   // Post-update self-heal: periodically check whether the installed

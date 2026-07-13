@@ -422,6 +422,8 @@ export interface HealthResponse {
   ready: boolean;
   /** Present while a reindex pass is loading changed files. */
   indexing?: IndexingProgress;
+  /** Latest published version, when the daemon knows it is newer than itself. */
+  updateAvailable?: string;
 }
 
 // ---------------------------------------------------------------------------

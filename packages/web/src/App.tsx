@@ -5,6 +5,7 @@ import type { SourceInfo } from '@claudescope/shared';
 import { ErrorBoundary } from './components';
 import { api } from './api/client.js';
 import { useTheme, type ThemeChoice } from './theme/ThemeProvider.js';
+import { useServerStatus } from './status/StatusProvider.js';
 import { BrowsePage } from './pages/browse/BrowsePage.js';
 import { ProjectLayout } from './pages/browse/ProjectLayout.js';
 import { SessionListPage } from './pages/browse/SessionList.js';
@@ -63,6 +64,7 @@ function ThemeToggle() {
 
 /** Left navigation sidebar. */
 function Sidebar() {
+  const { updateAvailable } = useServerStatus();
   const [sources, setSources] = useState<SourceInfo[]>([]);
   useEffect(() => {
     const controller = new AbortController();
@@ -102,6 +104,11 @@ function Sidebar() {
       <div className="tv-nav__spacer" />
       <ThemeToggle />
       <div className="tv-nav__footer">
+        {updateAvailable ? (
+          <span className="tv-nav__update" title={`Update available: v${updateAvailable}`}>
+            v{updateAvailable} available — <code className="tv-mono">claudescope update</code>
+          </span>
+        ) : null}
         <span className="tv-nav__footer-label">Read-only sources</span>
         {sources.map((s) => (
           <span key={s.id} className="tv-nav__source tv-mono" title={`${s.label} · ${s.path}`}>

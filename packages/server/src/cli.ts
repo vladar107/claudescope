@@ -18,8 +18,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +54,7 @@ import {
   querySessions,
 } from './agent/query.js';
 import { ensureDaemon } from './daemon.js';
+import { PKG, getLatestVersion, isNewer } from './update-check.js';
 import { refreshPricing } from './data/pricing-refresh.js';
 import { openBrowser } from './util/open-browser.js';
 
@@ -70,10 +70,6 @@ export {
   type DaemonRecord,
   type ExistingState,
 } from './daemon.js';
-
-const UPDATE_CHECK_FILE = join(CLAUDESCOPE_HOME, 'update-check.json');
-const PKG = '@vladar107/claudescope';
-const UPDATE_CHECK_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** Start the server in the background, idempotently. */
 async function start(port: number, open: boolean): Promise<void> {
@@ -281,41 +277,6 @@ async function update(skipConfirm: boolean): Promise<void> {
     stdio: 'inherit',
     shell: process.platform === 'win32',
   });
-}
-
-/** Compare two `x.y.z` versions; true if `a` is strictly newer than `b`. */
-function isNewer(a: string, b: string): boolean {
-  const pa = a.split('.').map((n) => Number.parseInt(n, 10) || 0);
-  const pb = b.split('.').map((n) => Number.parseInt(n, 10) || 0);
-  for (let i = 0; i < 3; i++) {
-    if ((pa[i] ?? 0) > (pb[i] ?? 0)) return true;
-    if ((pa[i] ?? 0) < (pb[i] ?? 0)) return false;
-  }
-  return false;
-}
-
-/** Latest published version, cached for 24h. Null on any failure (offline). */
-async function getLatestVersion(force: boolean): Promise<string | null> {
-  const now = Date.now();
-  if (!force && existsSync(UPDATE_CHECK_FILE)) {
-    try {
-      const cached = JSON.parse(readFileSync(UPDATE_CHECK_FILE, 'utf8')) as {
-        lastCheck: number;
-        latest: string;
-      };
-      if (now - cached.lastCheck < UPDATE_CHECK_TTL_MS) return cached.latest;
-    } catch {
-      /* fall through to a fresh fetch */
-    }
-  }
-  const url = `https://registry.npmjs.org/${PKG.replaceAll('/', '%2f')}/latest`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(2500) });
-  if (!res.ok) return null;
-  const json = (await res.json()) as { version?: string };
-  if (!json.version) return null;
-  mkdirSync(CLAUDESCOPE_HOME, { recursive: true });
-  writeFileSync(UPDATE_CHECK_FILE, JSON.stringify({ lastCheck: now, latest: json.version }));
-  return json.version;
 }
 
 /** Print an update notice if a newer version exists. Never throws. */

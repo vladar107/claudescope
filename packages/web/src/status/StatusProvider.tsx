@@ -22,9 +22,17 @@ export interface ServerStatus {
   building: boolean;
   /** Increments on every poll observed while building — key refetches off it. */
   indexingTick: number;
+  /** Newer published version the daemon reported, for the sidebar nudge. */
+  updateAvailable: string | null;
 }
 
-const idleStatus: ServerStatus = { ready: null, indexing: null, building: false, indexingTick: 0 };
+const idleStatus: ServerStatus = {
+  ready: null,
+  indexing: null,
+  building: false,
+  indexingTick: 0,
+  updateAvailable: null,
+};
 
 const StatusContext = createContext<ServerStatus>(idleStatus);
 
@@ -49,6 +57,7 @@ export function StatusProvider({ children }: { children: ReactNode }) {
           indexing: h.indexing ?? null,
           building,
           indexingTick: building ? s.indexingTick + 1 : s.indexingTick,
+          updateAvailable: h.updateAvailable ?? null,
         }));
         // Ready and idle: stop polling entirely.
         if (building) timer = window.setTimeout(() => void tick(), BUILDING_POLL_MS);
