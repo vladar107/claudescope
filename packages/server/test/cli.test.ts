@@ -224,6 +224,21 @@ describe('ensureDaemon version healing', () => {
     expect(d.port).toBe(4317);
   });
 
+  it('a skew heal respawns on the daemon’s original port, not the default', async () => {
+    // A user-chosen --port must survive an MCP/query heal — relocating the
+    // daemon to 4317 would strand the record and the user's bookmarks.
+    writeFileSync(
+      DAEMON_FILE,
+      JSON.stringify(record({ port: 5000, url: 'http://localhost:5000' })),
+    );
+    const p = probes({
+      health: async () => ({ status: 'ok' as const, version: '9.9.9' }),
+    });
+    const d = await daemon.ensureDaemon(() => {}, p);
+    expect(p.spawn).toHaveBeenCalledWith(5000);
+    expect(d).toMatchObject({ port: 5000, url: 'http://localhost:5000' });
+  });
+
   it('CLAUDESCOPE_AUTO_RESTART=0 warns and adopts the skewed daemon', async () => {
     process.env.CLAUDESCOPE_AUTO_RESTART = '0';
     writeFileSync(DAEMON_FILE, JSON.stringify(record()));

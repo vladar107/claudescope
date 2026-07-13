@@ -259,7 +259,9 @@ export async function ensureDaemon(
     await p.terminate(existing);
   }
 
-  const port = DEFAULT_PORT;
+  // Respawn a healed (healthy-but-skewed) daemon on its original port — a
+  // user-chosen --port must survive an MCP/query heal. Fresh spawns default.
+  const port = state === 'healthy' && existing ? existing.port : DEFAULT_PORT;
   log(`starting claudescope daemon on port ${port}…`);
   p.spawn(port);
   if (!(await p.waitHealthy(port, 30_000))) {

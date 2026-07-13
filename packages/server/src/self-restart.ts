@@ -34,8 +34,10 @@ export interface RestartMarker {
 /** At most one restart attempt per target version per window. */
 const RETRY_WINDOW_MS = 60 * 60 * 1000;
 
-/** What `claudescope version` prints when it worked — not an error banner. */
-const VERSION_RE = /^\d+\.\d+\.\d+/;
+/** What `claudescope version` prints when it worked — a bare x.y.z release.
+ *  Anchored: `0.0.0-dev` (an npm-linked dev build on PATH) must never become a
+ *  restart target, since the resulting dev daemon would never self-heal back. */
+const VERSION_RE = /^\d+\.\d+\.\d+$/;
 
 /** Set once a hand-off has been spawned so a slow CLI is never spawned twice. */
 let restartInitiated = false;
@@ -121,6 +123,10 @@ export async function maybeSelfRestart(log: (msg: string) => void): Promise<void
   const installed = await readInstalledVersion(bin);
   if (!installed) return;
   if (!shouldSelfRestart(installed, APP_VERSION, readMarker(), Date.now())) return;
+
+  // A reindex pass may have started while we probed the installed version
+  // (up to 5s) — never SIGTERM the daemon mid-pass; the next tick retries.
+  if (isReindexInFlight() || !isIndexReady()) return;
 
   // Write the marker BEFORE spawning: if the hand-off wedges or crashes, the
   // guard still rate-limits retries to one per target per hour.
