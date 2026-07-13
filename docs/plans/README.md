@@ -70,4 +70,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0043 | [Retire the Activity tab: redistribute its pieces](./0043-activity-tab-redistribution.md) | done |
 | 0044 | [Provider-aware cost: local vs remote model sessions](./0044-provider-aware-cost.md) | done |
 | 0045 | [Indexing UX + post-update self-healing](./0045-indexing-ux-and-self-healing-updates.md) | done |
-| 0046 | [Live session updates (fingerprint polling + stick-to-bottom)](./0046-live-session-updates.md) | in-progress |
+| 0046 | [Live session updates (fingerprint polling + stick-to-bottom)](./0046-live-session-updates.md) | done |

@@ -1,8 +1,8 @@
 # 0046 — Live session updates (fingerprint polling + stick-to-bottom)
 
-- **Status:** in-progress
+- **Status:** done
 - **Date:** 2026-07-13
-- **PR:** <link, once opened>
+- **PR:** [#60](https://github.com/vladar107/claudescope/pull/60)
 
 ## Context
 
