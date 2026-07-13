@@ -234,6 +234,16 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Update nudge above the sources — a hint, not an alert, so muted colors. */
+.tv-nav__update {
+  font-size: 11px;
+  color: var(--tv-fg-muted);
+  margin-bottom: var(--tv-space-2);
+}
+.tv-nav__update code {
+  font-size: 10px;
+  color: var(--tv-fg);
+}
 
 /* Theme toggle — segmented System / Light / Dark control in the nav footer. */
 .tv-theme-toggle {
