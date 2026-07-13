@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { SessionMeta, SessionSort } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { AgentBadge, agentLabel, ErrorBox, formatCost, formatCount, ModelChips, SearchField, Spinner } from '../../components';
+import { AgentBadge, agentLabel, ErrorBox, formatCost, formatCount, LocalBadge, ModelChips, SearchField, Spinner } from '../../components';
 import { formatBytes, formatDateTime, timeAgo } from './format.js';
 import { useProjectContext } from './ProjectLayout.js';
 
@@ -180,6 +180,7 @@ function SessionRow({ session }: { session: SessionMeta }) {
         <div className="tv-session-row__meta-line">
           <AgentBadge connectorId={session.connectorId} />
           <ModelChips models={session.models} />
+          {session.hasLocalProvider ? <LocalBadge /> : null}
           <span className="tv-session-row__sep" aria-hidden="true">
             │
           </span>

@@ -46,11 +46,12 @@ export interface McpDeps {
 
 function sessionLine(s: SessionMeta): string {
   const branch = s.gitBranch ? ` · ${s.gitBranch}` : '';
+  const local = s.hasLocalProvider ? ' (local)' : '';
   return (
     `- ${s.id} [${s.connectorId}] ${s.title}\n` +
     `  ${s.projectDisplayName} · ${day(s.startedAt)} → ${day(s.endedAt)} · ` +
     `${s.messageCount} msgs · ${s.toolCallCount} tools · ${fmtTokens(s.totalTokens)} tok · ` +
-    `${fmtCost(s.totalCostUsd)}${branch}`
+    `${fmtCost(s.totalCostUsd)}${local}${branch}`
   );
 }
 

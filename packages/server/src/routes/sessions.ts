@@ -12,12 +12,14 @@ import type {
   SessionMeta,
   SessionSort,
 } from '@claudescope/shared';
+import { isZeroRated } from '@claudescope/shared';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { displayNameFromCwd, projectIdFromCwd } from '../data/project-id.js';
 import { toIso } from './projects.js';
 import { assembleThread, buildSubagentRuns } from '../data/parser.js';
 import { loadSessionData } from '../data/session-loader.js';
+import { loadPricing } from '../data/pricing.js';
 import { connectorById } from '../connectors/registry.js';
 import { buildResumeInfo } from '../connectors/resume.js';
 import { resolveWindow, subagentsInWindow, truncateToolChars } from '../data/window.js';
@@ -41,6 +43,13 @@ function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
   const rd = readRow(r, 'sessions');
   const cwd = rd.str('project_cwd');
   const modelsStr = rd.str('models');
+  const providersStr = rd.str('providers');
+  const providers = providersStr ? providersStr.split(',').filter(Boolean) : [];
+  const pricing = loadPricing();
+  const hasLocalProvider = providers.some((p) => {
+    const rates = pricing.providers?.[p.toLowerCase()];
+    return rates !== undefined && isZeroRated(rates);
+  });
   const meta: SessionMeta = {
     id: rd.str('id'),
     projectId: cwd ? projectIdFromCwd(cwd) : '',
@@ -53,10 +62,12 @@ function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
     totalTokens: rd.num('total_tokens'),
     totalCostUsd: rd.num('total_cost_usd'),
     models: modelsStr ? modelsStr.split(',').filter(Boolean) : [],
+    providers,
     sizeBytes: rd.num('size_bytes'),
     hasSidechain: rd.bool('has_sidechain'),
     connectorId: rd.str('connector_id') || 'claude-code',
   };
+  if (hasLocalProvider) meta.hasLocalProvider = true;
   if (rd.bool('title_derived')) meta.titleDerived = true;
   const gitBranch = rd.str('git_branch');
   if (gitBranch) meta.gitBranch = gitBranch;

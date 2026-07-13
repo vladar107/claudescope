@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowUpRight, GitBranch, GitPullRequest, MessageSquare, RefreshCw, Wrench } from 'lucide-react';
 import type { SessionDetailResponse, SubagentRun } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { AgentBadge, ErrorBox, formatCost, formatCount, ModelChips, Spinner } from '../../components';
+import { AgentBadge, ErrorBox, formatCost, formatCount, LocalBadge, ModelChips, Spinner } from '../../components';
 import { formatBytes, formatDateTime, formatDuration } from '../browse/format.js';
 import { hasRenderableContent } from './blocks.js';
 import { SubagentBlock, SubagentJumpMenu, ThreadList, useHashTarget } from './ThreadView.js';
@@ -457,6 +457,7 @@ function SessionView({
         <div className="tv-session__primary">
           <AgentBadge connectorId={meta.connectorId} />
           <ModelChips models={meta.models} />
+          {meta.hasLocalProvider ? <LocalBadge /> : null}
           <span className="tv-session__sep" aria-hidden="true">
             │
           </span>

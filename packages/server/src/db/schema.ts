@@ -30,7 +30,9 @@
 // v10: code-impact analytics — per-tool-call `file_edits` rows (extracted at
 //      index time from the assembled thread) + nullable `events.tool_error_count`
 //      (NULL = the source format carries no error signal, distinct from 0).
-export const SCHEMA_VERSION = 10;
+// v11: provider-aware cost — events.provider + sessions.providers; providers
+//      listed in pricing 'providers' zero-rate at index time.
+export const SCHEMA_VERSION = 11;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -59,6 +61,9 @@ export const SCHEMA_DDL: readonly string[] = [
      cwd          VARCHAR,
      git_branch   VARCHAR,
      model        VARCHAR,
+     -- Model provider recorded by the agent (pi/codex/opencode); NULL when the
+     -- format has no provider signal.
+     provider     VARCHAR,
      input_tokens        BIGINT DEFAULT 0,
      output_tokens       BIGINT DEFAULT 0,
      cache_read_tokens   BIGINT DEFAULT 0,
@@ -95,6 +100,7 @@ export const SCHEMA_DDL: readonly string[] = [
      cache_read_tokens  BIGINT DEFAULT 0,
      cache_write_tokens BIGINT DEFAULT 0,
      models        VARCHAR,
+     providers     VARCHAR,
      git_branch    VARCHAR,
      pr_url        VARCHAR,
      size_bytes    BIGINT DEFAULT 0,

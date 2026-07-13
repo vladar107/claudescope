@@ -1,5 +1,16 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
+  "providers": {
+    "ollama": { "input": 0, "output": 0, "cacheWrite": 0, "cacheRead": 0 },
+    "lmstudio": { "input": 0, "output": 0, "cacheWrite": 0, "cacheRead": 0 },
+    "lm-studio": { "input": 0, "output": 0, "cacheWrite": 0, "cacheRead": 0 },
+    "llama.cpp": { "input": 0, "output": 0, "cacheWrite": 0, "cacheRead": 0 },
+    "llamacpp": { "input": 0, "output": 0, "cacheWrite": 0, "cacheRead": 0 },
+    "vllm": { "input": 0, "output": 0, "cacheWrite": 0, "cacheRead": 0 },
+    "oss": { "input": 0, "output": 0, "cacheWrite": 0, "cacheRead": 0 },
+    "local": { "input": 0, "output": 0, "cacheWrite": 0, "cacheRead": 0 },
+    "mlx": { "input": 0, "output": 0, "cacheWrite": 0, "cacheRead": 0 }
+  },
   "models": {
     "claude-opus-4-1": { "input": 15, "output": 75, "cacheWrite": 18.75, "cacheRead": 1.5 },
     "claude-opus-4": { "input": 15, "output": 75, "cacheWrite": 18.75, "cacheRead": 1.5 },

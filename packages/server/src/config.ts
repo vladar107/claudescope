@@ -231,15 +231,15 @@ export const APP_VERSION =
  * shadowing it. A monotonic integer (not a content hash): the user copy is meant
  * to be edited, so only a real shipped change should trigger a reconcile.
  */
-export const PRICING_SCHEMA_VERSION = 2;
+export const PRICING_SCHEMA_VERSION = 3;
 
 /**
  * Reconcile the user-editable pricing file with the shipped default.
  *
  * Non-destructive and self-healing: on first run it seeds the user copy; when the
  * shipped schema version is newer than the user's, it backs up the old file to
- * `<path>.bak`, then merges so NEW shipped keys (models/families) appear while
- * every value the user customized wins. A corrupt user file is left untouched
+ * `<path>.bak`, then merges so NEW shipped keys (models/families/providers) appear
+ * while every value the user customized wins. A corrupt user file is left untouched
  * (never discard user data). Paths are injectable for tests.
  */
 export function reconcilePricingConfig(
@@ -279,6 +279,7 @@ export function reconcilePricingConfig(
     schemaVersion: shippedV,
     models: { ...shipped.models, ...user.models },
     families: { ...(shipped.families ?? {}), ...(user.families ?? {}) },
+    providers: { ...(shipped.providers ?? {}), ...(user.providers ?? {}) },
     default: user.default ?? shipped.default,
   };
   // Atomic write: stage to a temp file then rename, so a reader never sees a torn

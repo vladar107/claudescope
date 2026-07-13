@@ -103,7 +103,18 @@ function buildCostExpr(pricing: PricingConfig): string {
     const familyExpr =
       cases.length > 0 ? `CASE ${cases.join(' ')} ELSE ${pricing.default[field]} END` : `${pricing.default[field]}`;
     // Exact-id rate (join) wins; then family; then default.
-    return `COALESCE(${RATES_ALIAS}.${column}, ${familyExpr})`;
+    const modelExpr = `COALESCE(${RATES_ALIAS}.${column}, ${familyExpr})`;
+    // A listed provider OVERRIDES the whole model chain (this is how local
+    // runtimes are zero-rated). `lower(NULL) = 'x'` is NULL in DuckDB, so
+    // NULL/unlisted providers fall through to the model chain via ELSE.
+    const providerCases: string[] = [];
+    for (const [id, rates] of Object.entries(pricing.providers ?? {})) {
+      const pat = sqlString(id.toLowerCase());
+      providerCases.push(`WHEN lower(${EVENTS_ALIAS}.provider) = ${pat} THEN ${rates[field]}`);
+    }
+    return providerCases.length > 0
+      ? `CASE ${providerCases.join(' ')} ELSE ${modelExpr} END`
+      : modelExpr;
   };
 
   // Cost is only attributable to assistant events (the ones carrying usage).
@@ -148,7 +159,7 @@ async function loadFile(
     INSERT INTO events
     SELECT
       ev.file_path, ev.session_id, ev.uuid, ev.parent_uuid, ev.role, ev.type, ev.ts, ev.cwd, ev.git_branch,
-      ev.model, ev.input_tokens, ev.output_tokens, ev.cache_read_tokens, ev.cache_write_tokens,
+      ev.model, ev.provider, ev.input_tokens, ev.output_tokens, ev.cache_read_tokens, ev.cache_write_tokens,
       ev.service_tier, ev.is_sidechain, ev.tool_use_count, ev.tool_names,
       ${costExpr} AS cost_usd,
       ev.text_content,
@@ -258,7 +269,8 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
         COALESCE(sum(cache_write_tokens) FILTER (WHERE usage_canonical), 0) AS cache_write_tokens,
         COALESCE(sum(cost_usd) FILTER (WHERE usage_canonical), 0) AS total_cost_usd,
         bool_or(is_sidechain) AS has_sidechain,
-        list_distinct(list(model) FILTER (WHERE model IS NOT NULL)) AS model_list
+        list_distinct(list(model) FILTER (WHERE model IS NOT NULL)) AS model_list,
+        list_distinct(list(provider) FILTER (WHERE provider IS NOT NULL)) AS provider_list
       FROM events GROUP BY session_id
     )
     SELECT
@@ -279,6 +291,7 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
       a.cache_read_tokens,
       a.cache_write_tokens,
       array_to_string(a.model_list, ',') AS models,
+      array_to_string(a.provider_list, ',') AS providers,
       NULL AS git_branch,
       p.pr_url,
       COALESCE(fs.size_bytes, 0) AS size_bytes,

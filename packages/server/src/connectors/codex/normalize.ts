@@ -51,6 +51,9 @@ export interface CodexSession {
   agentRole?: string;
   cwd: string;
   gitBranch?: string;
+  /** `model_provider` from session_meta — session-level, applied to every
+   *  assistant row (e.g. 'openai'). */
+  modelProvider?: string;
   events: (UserEvent | AssistantEvent)[];
   /** Spawned child thread id → Task correlation meta, from this rollout's
    *  `spawn_agent` calls (description must equal the Task block's). */
@@ -473,6 +476,7 @@ export function parseRollout(path: string): CodexSession | null {
   const cwd = str(meta.cwd);
   const git = meta.git as Record<string, unknown> | undefined;
   const gitBranch = git ? str(git.branch) || str(git.ref) || undefined : undefined;
+  const modelProvider = str(meta.model_provider) || undefined;
 
   // A `thread_source: "subagent"` rollout is re-parented under its ROOT thread
   // (multi-level: walk the cross-file parent map), so it folds into the parent
@@ -691,7 +695,7 @@ export function parseRollout(path: string): CodexSession | null {
   }
   flush();
 
-  return { sessionId, indexSessionId, isSidechain, agentRole, cwd, gitBranch, events, spawnedAgents };
+  return { sessionId, indexSessionId, isSidechain, agentRole, cwd, gitBranch, modelProvider, events, spawnedAgents };
 }
 
 /** A canonical index row (matches the events NDJSON the projection reads). */
@@ -706,6 +710,7 @@ export interface CanonicalRow {
   cwd: string;
   git_branch: string | null;
   model: string | null;
+  provider: string | null;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -743,6 +748,7 @@ export function toCanonicalRows(session: CodexSession, filePath: string): Canoni
       cwd: session.cwd,
       git_branch: session.gitBranch ?? null,
       model: (msg as { model?: string }).model ?? null,
+      provider: e.type === 'assistant' ? (session.modelProvider ?? null) : null,
       input_tokens: num(usage?.input_tokens),
       output_tokens: num(usage?.output_tokens),
       cache_read_tokens: num(usage?.cache_read_input_tokens),

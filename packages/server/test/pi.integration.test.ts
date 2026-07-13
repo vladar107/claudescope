@@ -40,6 +40,7 @@ process.env.REINDEX_INTERVAL_MS = '0';
 const jsonl = (events: unknown[]): string => events.map((e) => JSON.stringify(e)).join('\n') + '\n';
 const ts = (s: number) => `2026-06-15T10:00:${String(s).padStart(2, '0')}.000Z`;
 const ts2 = (s: number) => `2026-06-15T11:00:${String(s).padStart(2, '0')}.000Z`;
+const ts3 = (s: number) => `2026-06-15T13:00:${String(s).padStart(2, '0')}.000Z`;
 
 // Composite tool ids as pi writes them (`call_…|fc_…`) — must survive verbatim
 // on both the tool_use and its tool_result, or the pairing breaks.
@@ -196,6 +197,36 @@ function writeEmptyParentSession(): void {
   );
 }
 
+/**
+ * A session mixing two providers within ONE session: a `lmstudio` (local, shipped
+ * zero-rated) turn and an `openai-codex` (unlisted → priced by model) turn, both on
+ * `gpt-5.4-mini`. Proves the per-turn provider CASE: only the openai-codex turn
+ * costs anything, both providers surface on the session, and the local one flips
+ * `hasLocalProvider`. Prices off the shipped pricing.json (no PRICING_PATH set).
+ */
+function writeMixedProviderSession(): void {
+  const dir = join(piDir, '--tmp-piproj--');
+  writeFileSync(
+    join(dir, '2026-06-15T13-00-00-000Z_04cccccc-1111-7222-8333-444455556666.jsonl'),
+    jsonl([
+      { type: 'session', version: 3, id: 'pi-sess-3', timestamp: ts3(0), cwd: '/tmp/piproj' },
+      { type: 'message', id: 'u1', parentId: null, timestamp: ts3(1), message: { role: 'user', content: [{ type: 'text', text: 'mix a local model with a cloud one' }] } },
+      // Local provider turn: nonzero usage, but zero-rated by the provider override.
+      { type: 'message', id: 'a1', parentId: 'u1', timestamp: ts3(2), message: {
+        role: 'assistant', model: 'gpt-5.4-mini', provider: 'lmstudio',
+        content: [{ type: 'text', text: 'answered on the local runtime' }],
+        usage: { input: 1000, output: 500, cacheRead: 0, cacheWrite: 0, totalTokens: 1500 },
+      } },
+      // Cloud provider turn: unlisted provider → priced by gpt-5.4-mini.
+      { type: 'message', id: 'a2', parentId: 'a1', timestamp: ts3(3), message: {
+        role: 'assistant', model: 'gpt-5.4-mini', provider: 'openai-codex',
+        content: [{ type: 'text', text: 'answered on the cloud model' }],
+        usage: { input: 200, output: 100, cacheRead: 0, cacheWrite: 0, totalTokens: 300 },
+      } },
+    ]),
+  );
+}
+
 let app: FastifyInstance;
 let closeConnection: () => Promise<void>;
 
@@ -204,6 +235,7 @@ beforeAll(async () => {
   writeSession();
   writeSubagentSession();
   writeEmptyParentSession();
+  writeMixedProviderSession();
 
   const Fastify = (await import('fastify')).default;
   const { registerRoutes } = await import('../src/routes/index.js');
@@ -235,6 +267,7 @@ describe('pi session indexing', () => {
       'pi-orphan-1',
       'pi-sess-1',
       'pi-sess-2',
+      'pi-sess-3',
     ]);
     const s1 = sessions.find((s: { id: string }) => s.id === 'pi-sess-1');
     expect(s1.models).toContain('gpt-5.4-mini');
@@ -397,5 +430,19 @@ describe('pi subagent embedding', () => {
     const detail = (await get('/api/sessions/pi-orphan-1')).json();
     expect(JSON.stringify(detail.thread)).toContain('orphan child with no parent');
     expect(detail.subagents).toEqual([]);
+  });
+});
+
+describe('pi provider-aware cost', () => {
+  it('records both providers, prices only the cloud turn, and flags the local one', async () => {
+    const s = (await get('/api/sessions')).json().find((x: { id: string }) => x.id === 'pi-sess-3');
+    // Both per-turn providers surface on the session (CSV order isn't guaranteed).
+    expect([...s.providers].sort()).toEqual(['lmstudio', 'openai-codex']);
+    // Only the openai-codex turn costs anything: gpt-5.4-mini @ 0.75/4.50,
+    // 200 in + 100 out = (200*0.75 + 100*4.5)/1e6 = 0.0006. The lmstudio turn is
+    // zero-rated by the shipped provider override despite its 1000+500 usage.
+    expect(s.totalCostUsd).toBeCloseTo(0.0006, 6);
+    // A zero-rated provider on the session sets the local marker.
+    expect(s.hasLocalProvider).toBe(true);
   });
 });

@@ -157,6 +157,11 @@ describe('reconcilePricingConfig — versioned migration', () => {
       opus: { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
       newfam: { input: 7, output: 7, cacheWrite: 7, cacheRead: 7 },
     },
+    // The v3 shipped default carries a `providers` layer (local runtimes zero-rated).
+    providers: {
+      lmstudio: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+      ollama: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+    },
     default: { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
   };
 
@@ -209,6 +214,46 @@ describe('reconcilePricingConfig — versioned migration', () => {
     expect(merged.families.newfam).toEqual(SHIPPED.families.newfam);
   });
 
+  it('adds the shipped providers set when migrating a v2 copy that predates providers', () => {
+    // A v2 user copy from before the `providers` layer existed → the migration
+    // must fold in the shipped providers (the local-runtime zero-rate table).
+    const v2User = {
+      schemaVersion: 2,
+      models: { 'shared-model': { input: 99, output: 99, cacheWrite: 99, cacheRead: 99 } },
+      families: { opus: { input: 100, output: 100, cacheWrite: 100, cacheRead: 100 } },
+      default: { input: 42, output: 42, cacheWrite: 42, cacheRead: 42 },
+    };
+    writeJson(userPath, v2User);
+
+    reconcilePricingConfig(userPath, defaultPath);
+
+    const merged = JSON.parse(readFileSync(userPath, 'utf8'));
+    expect(merged.schemaVersion).toBe(PRICING_SCHEMA_VERSION);
+    // User edits still win where they overlap…
+    expect(merged.models['shared-model']).toEqual(v2User.models['shared-model']);
+    // …and the shipped providers layer is now present and zero-rated.
+    expect(merged.providers.lmstudio).toEqual({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0 });
+  });
+
+  it('keeps a user-defined provider entry through the merge and still gains shipped ids', () => {
+    const withProxy = {
+      schemaVersion: 2,
+      models: {},
+      // A custom provider the user added — must survive the merge verbatim.
+      providers: { 'my-proxy': { input: 4, output: 8, cacheWrite: 0, cacheRead: 1 } },
+      default: { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
+    };
+    writeJson(userPath, withProxy);
+
+    reconcilePricingConfig(userPath, defaultPath);
+
+    const merged = JSON.parse(readFileSync(userPath, 'utf8'));
+    // The user's custom provider survives untouched…
+    expect(merged.providers['my-proxy']).toEqual({ input: 4, output: 8, cacheWrite: 0, cacheRead: 1 });
+    // …alongside the shipped ids the migration adds.
+    expect(merged.providers.lmstudio).toEqual({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0 });
+  });
+
   it('is a no-op when the user copy is already current (no rewrite, no backup)', () => {
     writeJson(userPath, SHIPPED);
     const before = statSync(userPath).mtimeMs;
@@ -235,14 +280,36 @@ describe('cost via the pricing join table', () => {
     events.map((e) => JSON.stringify(e)).join('\n') + '\n';
 
   beforeAll(async () => {
-    // Base pricing for the cost test: an exact id, a family substring, a default.
-    writeJson(pricingPath, BASE);
+    // Base pricing for the cost test: an exact id, a family substring, a default,
+    // plus a `providers` layer zero-rating a local runtime. A provider match must
+    // OVERRIDE the whole model chain (exact id / family / default).
+    writeJson(pricingPath, {
+      ...BASE,
+      providers: { lmstudio: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 } },
+    });
+    bumpMtime(pricingPath);
     // Fetched layer overrides the exact-id rate to prove the join uses it.
     writeJson(fetchedPath, {
       fetchedAt: new Date().toISOString(),
       models: { 'claude-opus-4-8': { input: 30, output: 150, cacheWrite: 0, cacheRead: 0 } },
     });
     bumpMtime(fetchedPath);
+
+    // A pi session exercising provider precedence in the cost CASE: one turn on a
+    // local provider (`lmstudio`) and one on an unknown provider (`custom-gateway`),
+    // both on `claude-opus-4-8` — a model with a real exact-id rate (fetched 30).
+    const piDir = process.env.PI_SESSIONS_DIR as string;
+    const piSess = join(piDir, '--tmp-piproj--');
+    mkdirSync(piSess, { recursive: true });
+    writeFileSync(
+      join(piSess, '2026-01-01T10-00-00-000Z_pricing-pi.jsonl'),
+      jsonl([
+        { type: 'session', version: 3, id: 'pricing-pi-1', timestamp: '2026-01-01T10:00:00.000Z', cwd: '/tmp/piproj' },
+        { type: 'message', id: 'pu1', parentId: null, timestamp: '2026-01-01T10:00:01.000Z', message: { role: 'user', content: [{ type: 'text', text: 'local vs gateway' }] } },
+        { type: 'message', id: 'pa1', parentId: 'pu1', timestamp: '2026-01-01T10:00:02.000Z', message: { role: 'assistant', model: 'claude-opus-4-8', provider: 'lmstudio', content: [{ type: 'text', text: 'served locally' }], usage: { input: 100, output: 0, cacheRead: 0, cacheWrite: 0 } } },
+        { type: 'message', id: 'pa2', parentId: 'pa1', timestamp: '2026-01-01T10:00:03.000Z', message: { role: 'assistant', model: 'claude-opus-4-8', provider: 'custom-gateway', content: [{ type: 'text', text: 'served via gateway' }], usage: { input: 100, output: 0, cacheRead: 0, cacheWrite: 0 } } },
+      ]),
+    );
 
     const proj = join(projectsDir, 'enc-projX');
     mkdirSync(proj, { recursive: true });
@@ -290,6 +357,28 @@ describe('cost via the pricing join table', () => {
 
   it('falls back to the default rate when neither id nor family matches', async () => {
     expect(await costOf('x3')).toBeCloseTo((100 * 1) / 1e6, 12);
+  });
+
+  const costWhere = async (where: string): Promise<number> => {
+    const conn = await getConnection();
+    const rows = await queryRows(conn, `SELECT cost_usd FROM events WHERE ${where}`);
+    expect(rows).toHaveLength(1);
+    return Number(rows[0]?.cost_usd);
+  };
+
+  it('lets a local provider override the exact-id model rate (cost 0)', async () => {
+    // `lmstudio` is zero-rated in `providers`; the turn is on `claude-opus-4-8`,
+    // which has a real exact-id rate (fetched 30) — the provider match must win.
+    expect(await costWhere("session_id = 'pricing-pi-1' AND provider = 'lmstudio'")).toBe(0);
+  });
+
+  it('falls through to the model chain for an unknown provider', async () => {
+    // `custom-gateway` isn't listed → the CASE falls through to the model chain,
+    // pricing by the exact-id rate exactly like the NULL-provider Claude turn x1
+    // (same model + 100 input tokens).
+    const gateway = await costWhere("session_id = 'pricing-pi-1' AND provider = 'custom-gateway'");
+    expect(gateway).toBeCloseTo((100 * 30) / 1e6, 12);
+    expect(gateway).toBeCloseTo(await costOf('x1'), 12);
   });
 });
 

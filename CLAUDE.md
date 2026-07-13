@@ -206,6 +206,11 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   layer for families and the default rate. Usage is deduplicated by billed API
   call (`message.id`): multi-block splits and fork/resume copies repeat usage
   across rows, and only the canonical row (elected at index time) is counted.
+  pi/Codex/opencode also record the serving *provider*, and pricing's
+  `providers` section overrides model rates for it entirely (shipped defaults
+  zero-rate local runtimes like LM Studio/Ollama). Pricing changes apply
+  **prospectively** — cost is stamped per event at index time, so only an index
+  rebuild re-prices already-indexed history.
 - **Release is maintainer-only** and tag-triggered (npm Trusted Publishing /
   OIDC). See `CONTRIBUTING.md`.
 

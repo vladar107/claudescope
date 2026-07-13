@@ -221,6 +221,7 @@ interface PiLine {
     role?: string;
     content?: unknown;
     model?: string;
+    provider?: string;
     usage?: unknown;
     toolCallId?: string;
     /** Set on `toolResult` records — the tool the result belongs to. */
@@ -367,6 +368,7 @@ export function parsePiSession(path: string): PiSession | null {
         message: {
           role: 'assistant',
           model: str(msg.model),
+          provider: str(msg.provider) || undefined,
           content: assistantBlocks(msg.content),
           usage: toUsage(msg.usage),
         },
@@ -467,6 +469,7 @@ export interface CanonicalRow {
   cwd: string;
   git_branch: string | null;
   model: string | null;
+  provider: string | null;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -500,6 +503,7 @@ export function toCanonicalRows(session: PiSession, filePath: string): Canonical
       cwd: session.cwd,
       git_branch: null,
       model: (msg as { model?: string }).model ?? null,
+      provider: (msg as { provider?: string }).provider ?? null,
       input_tokens: num(usage?.input_tokens),
       output_tokens: num(usage?.output_tokens),
       cache_read_tokens: num(usage?.cache_read_input_tokens),

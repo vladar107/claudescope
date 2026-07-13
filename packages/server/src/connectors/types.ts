@@ -38,6 +38,9 @@ export const CANONICAL_EVENT_COLUMNS = [
   'cwd',
   'git_branch',
   'model',
+  // Model provider that served the turn (e.g. 'lmstudio', 'anthropic', 'openai').
+  // Nullable — NULL when the source format records no provider signal (pi/codex/opencode do).
+  'provider',
   'input_tokens',
   'output_tokens',
   'cache_read_tokens',

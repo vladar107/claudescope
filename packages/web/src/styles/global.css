@@ -335,6 +335,16 @@ button {
 .tv-chip--cache {
   border-color: #3fb95055;
 }
+/* Local-provider badge — muted green, echoing the Junie hue used for
+   agent-run-locally cues elsewhere; flags a session with no API cost. */
+.tv-chip--local {
+  border-color: #3fb95066;
+  background: #3fb9501a;
+  color: #56d964;
+}
+:root[data-theme='light'] .tv-chip--local {
+  color: #1a7f37;
+}
 /* Overflow chip ("+N") for capped lists like <ModelChips> — a button that opens
    a popover listing the remaining items. */
 .tv-chip--more {
