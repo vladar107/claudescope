@@ -33,6 +33,11 @@ export function isIndexReady(): boolean {
   return ready;
 }
 
+/** Whether a reindex pass is currently running (self-restart defers on it). */
+export function isReindexInFlight(): boolean {
+  return inFlight !== null;
+}
+
 /** The four rate fields, in canonical → SQL-column order. */
 const RATE_FIELDS = [
   ['input', 'input', 'input_tokens'],
