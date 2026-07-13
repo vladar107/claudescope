@@ -23,16 +23,24 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { APP_VERSION, CLAUDE_PROJECTS_DIR, CLAUDESCOPE_HOME, PORT as DEFAULT_PORT } from './config.js';
+import {
+  APP_VERSION,
+  CLAUDE_PROJECTS_DIR,
+  CLAUDESCOPE_HOME,
+  PORT as DEFAULT_PORT,
+  autoRestartEnabled,
+} from './config.js';
 import {
   DAEMON_FILE,
   EXIT_WAIT_MS,
   LOG_FILE,
   classifyExisting,
+  fetchDaemonHealth,
   isAlive,
   isHealthy,
   readDaemon,
   spawnDaemon,
+  terminateDaemon,
   waitForExit,
   waitForHealth,
 } from './daemon.js';
@@ -74,9 +82,31 @@ async function start(port: number, open: boolean): Promise<void> {
   const existing = readDaemon();
   const state = await classifyExisting(existing, isAlive, isHealthy);
   if (state === 'healthy' && existing) {
-    console.log(`✓ claudescope is already running → ${existing.url}`);
-    if (open) openBrowser(existing.url);
-    return;
+    // A healthy daemon left over from a previous install still runs old code
+    // (and an old index schema). Restart it into this CLI's version instead of
+    // adopting it — CLAUDESCOPE_AUTO_RESTART=0 keeps the old warn-and-adopt.
+    const runningVersion = (await fetchDaemonHealth(existing.port))?.version;
+    const skewed = runningVersion !== undefined && runningVersion !== APP_VERSION;
+    if (!skewed || !autoRestartEnabled()) {
+      if (skewed) {
+        console.log(
+          `⚠ running daemon is v${runningVersion}, this CLI is v${APP_VERSION} ` +
+            '(auto-restart disabled — run `claudescope restart` to align them)',
+        );
+      }
+      console.log(`✓ claudescope is already running → ${existing.url}`);
+      if (open) openBrowser(existing.url);
+      return;
+    }
+    console.log(`› Running daemon is v${runningVersion}, this CLI is v${APP_VERSION} — restarting it…`);
+    try {
+      await terminateDaemon(existing);
+    } catch (err) {
+      console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
+      process.exitCode = 1;
+      return;
+    }
+    // Fall through to spawn the current version below.
   }
   // Clear a stale record left by a crashed/killed process.
   if (state === 'stale') rmSync(DAEMON_FILE, { force: true });
@@ -86,19 +116,12 @@ async function start(port: number, open: boolean): Promise<void> {
   if (state === 'wedged' && existing) {
     console.log(`claudescope (pid ${existing.pid}) is unresponsive; restarting it…`);
     try {
-      process.kill(existing.pid, 'SIGTERM');
-    } catch {
-      /* already gone */
-    }
-    if (!(await waitForExit(existing.pid, EXIT_WAIT_MS))) {
-      console.error(
-        `✗ Could not stop the unresponsive process (pid ${existing.pid}). ` +
-          `Kill it manually and retry: kill -9 ${existing.pid}`,
-      );
+      await terminateDaemon(existing);
+    } catch (err) {
+      console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
       process.exitCode = 1;
       return;
     }
-    rmSync(DAEMON_FILE, { force: true });
   }
 
   const url = `http://localhost:${port}`;
@@ -404,7 +427,8 @@ Options:
 
 State (index, pricing, logs, PID) lives in ${CLAUDESCOPE_HOME}
 (override with $CLAUDESCOPE_HOME). Sessions are read from
-${CLAUDE_PROJECTS_DIR} (override with $CLAUDE_PROJECTS_DIR).`);
+${CLAUDE_PROJECTS_DIR} (override with $CLAUDE_PROJECTS_DIR).
+CLAUDESCOPE_AUTO_RESTART=0 disables automatic daemon restarts on version skew.`);
 }
 
 async function main(): Promise<void> {

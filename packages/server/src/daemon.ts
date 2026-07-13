@@ -21,7 +21,8 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { APP_VERSION, CLAUDESCOPE_HOME, PORT as DEFAULT_PORT } from './config.js';
+import type { HealthResponse } from '@claudescope/shared';
+import { APP_VERSION, CLAUDESCOPE_HOME, PORT as DEFAULT_PORT, autoRestartEnabled } from './config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** The server bundle, a sibling of the CLI in the published package. */
@@ -100,6 +101,39 @@ export async function waitForExit(pid: number, timeoutMs: number): Promise<boole
   return !isAlive(pid);
 }
 
+/** Fetch and parse the daemon's /api/health (short timeout). Null on any
+ *  failure — unreachable, non-ok, or unparsable — so callers treat "no info"
+ *  and "no daemon" the same way. */
+export async function fetchDaemonHealth(port: number): Promise<HealthResponse | null> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as HealthResponse;
+  } catch {
+    return null;
+  }
+}
+
+/** SIGTERM the recorded daemon, wait for it to actually exit, and clear
+ *  daemon.json (so a follow-up spawn can rebind the port). Throws with a
+ *  kill -9 hint when the process refuses to die within {@link EXIT_WAIT_MS}. */
+export async function terminateDaemon(record: DaemonRecord): Promise<void> {
+  try {
+    process.kill(record.pid, 'SIGTERM');
+  } catch {
+    /* already gone */
+  }
+  if (!(await waitForExit(record.pid, EXIT_WAIT_MS))) {
+    throw new Error(
+      `could not stop the claudescope daemon (pid ${record.pid}); ` +
+        `kill it manually and retry: kill -9 ${record.pid}`,
+    );
+  }
+  rmSync(DAEMON_FILE, { force: true });
+}
+
 /** What the recorded daemon (if any) currently is, so callers can decide whether
  *  to reuse it, clear a stale record, or replace a wedged (alive-but-unhealthy)
  *  process. Injectable probes keep this pure and unit-testable. */
@@ -163,64 +197,72 @@ export interface EnsuredDaemon {
   url: string;
 }
 
-/** Warn (stderr) when the running daemon was started by a different version of
- *  the package than this process — a restart aligns them. Best-effort. */
-async function warnOnVersionSkew(port: number, log: (msg: string) => void): Promise<void> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
-      signal: AbortSignal.timeout(1500),
-    });
-    const json = (await res.json()) as { version?: string };
-    if (json.version && json.version !== APP_VERSION) {
-      log(
-        `⚠ running claudescope daemon is v${json.version}, this CLI is v${APP_VERSION} — ` +
-          'run `claudescope restart` to align them',
-      );
-    }
-  } catch {
-    /* health was just probed; a race here is not worth surfacing */
-  }
+/** Injectable process/network probes for {@link ensureDaemon}, following the
+ *  {@link classifyExisting} pattern — tests never spawn or kill anything. */
+export interface DaemonProbes {
+  alive: (pid: number) => boolean;
+  healthy: (port: number) => Promise<boolean>;
+  health: (port: number) => Promise<HealthResponse | null>;
+  terminate: (record: DaemonRecord) => Promise<void>;
+  spawn: (port: number) => void;
+  waitHealthy: (port: number, timeoutMs: number) => Promise<boolean>;
 }
 
+const realProbes: DaemonProbes = {
+  alive: isAlive,
+  healthy: isHealthy,
+  health: fetchDaemonHealth,
+  terminate: terminateDaemon,
+  spawn: spawnDaemon,
+  waitHealthy: waitForHealth,
+};
+
 /**
- * Make sure a daemon is running and return its address — the MCP server (and
- * the query subcommands) call this before proxying. Adopts a healthy daemon
- * (warning on version skew), clears a stale record, replaces a wedged process,
- * and spawns a fresh server otherwise. All progress goes to `log` (stderr by
- * default); throws with a user-actionable message when a daemon can't be had.
+ * Make sure a daemon of THIS package version is running and return its address
+ * — the MCP server (and the query subcommands) call this before proxying.
+ * Adopts a healthy daemon; when its version differs from this CLI's, restarts
+ * it into the current install (unless CLAUDESCOPE_AUTO_RESTART=0, which keeps
+ * the old warn-and-adopt behavior). Clears a stale record, replaces a wedged
+ * process, and spawns a fresh server otherwise. All progress goes to `log`
+ * (stderr by default); throws with a user-actionable message when a daemon
+ * can't be had.
  */
 export async function ensureDaemon(
   log: (msg: string) => void = (m) => process.stderr.write(`${m}\n`),
+  probes: Partial<DaemonProbes> = {},
 ): Promise<EnsuredDaemon> {
+  const p = { ...realProbes, ...probes };
   const existing = readDaemon();
-  const state = await classifyExisting(existing, isAlive, isHealthy);
+  const state = await classifyExisting(existing, p.alive, p.healthy);
   if (state === 'healthy' && existing) {
-    await warnOnVersionSkew(existing.port, log);
-    return { port: existing.port, url: existing.url };
+    const runningVersion = (await p.health(existing.port))?.version;
+    const skewed = runningVersion !== undefined && runningVersion !== APP_VERSION;
+    if (!skewed) return { port: existing.port, url: existing.url };
+    if (!autoRestartEnabled()) {
+      log(
+        `⚠ running claudescope daemon is v${runningVersion}, this CLI is v${APP_VERSION} — ` +
+          'run `claudescope restart` to align them',
+      );
+      return { port: existing.port, url: existing.url };
+    }
+    log(
+      `claudescope daemon is v${runningVersion}, this CLI is v${APP_VERSION} — restarting it…`,
+    );
+    await p.terminate(existing);
+    // Fall through to the spawn below, which starts the current version.
   }
   if (state === 'stale') rmSync(DAEMON_FILE, { force: true });
   if (state === 'wedged' && existing) {
     // Same replace semantics as `claudescope start`: SIGTERM and wait, rather
     // than spawning a second server that would fail to bind.
     log(`claudescope daemon (pid ${existing.pid}) is unresponsive; replacing it…`);
-    try {
-      process.kill(existing.pid, 'SIGTERM');
-    } catch {
-      /* already gone */
-    }
-    if (!(await waitForExit(existing.pid, EXIT_WAIT_MS))) {
-      throw new Error(
-        `could not stop the unresponsive claudescope daemon (pid ${existing.pid}); ` +
-          `kill it manually and retry: kill -9 ${existing.pid}`,
-      );
-    }
-    rmSync(DAEMON_FILE, { force: true });
+    await p.terminate(existing);
   }
 
   const port = DEFAULT_PORT;
   log(`starting claudescope daemon on port ${port}…`);
-  spawnDaemon(port);
-  if (!(await waitForHealth(port, 30_000))) {
+  p.spawn(port);
+  if (!(await p.waitHealthy(port, 30_000))) {
     throw new Error('claudescope daemon did not become healthy in time; inspect: claudescope logs');
   }
   return { port, url: `http://localhost:${port}` };

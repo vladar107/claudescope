@@ -22,6 +22,7 @@ process.env.CLAUDESCOPE_HOME = home;
 const DAEMON_FILE = join(home, 'daemon.json');
 
 const cli = await import('../src/cli.js');
+const daemon = await import('../src/daemon.js');
 
 const record = (over: Partial<import('../src/cli.js').DaemonRecord> = {}) => ({
   pid: 4242,
@@ -144,5 +145,107 @@ describe('waitForExit', () => {
   it('resolves false if the process never exits within the budget', async () => {
     vi.spyOn(process, 'kill').mockReturnValue(true);
     expect(await cli.waitForExit(4242, 300)).toBe(false);
+  });
+});
+
+describe('fetchDaemonHealth', () => {
+  it('parses the health payload', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ status: 'ok', version: '1.2.3', ready: true }),
+      })),
+    );
+    expect(await daemon.fetchDaemonHealth(4317)).toMatchObject({ version: '1.2.3' });
+  });
+
+  it('is null on a non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false })));
+    expect(await daemon.fetchDaemonHealth(4317)).toBeNull();
+  });
+
+  it('is null when fetch rejects (server down)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    }));
+    expect(await daemon.fetchDaemonHealth(4317)).toBeNull();
+  });
+
+  it('is null on an unparsable body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => {
+          throw new Error('invalid json');
+        },
+      })),
+    );
+    expect(await daemon.fetchDaemonHealth(4317)).toBeNull();
+  });
+});
+
+describe('ensureDaemon version healing', () => {
+  // Probes replace every process/network touch (classifyExisting precedent):
+  // these tests never spawn or kill anything.
+  const probes = (over: Partial<import('../src/daemon.js').DaemonProbes> = {}) => ({
+    alive: () => true,
+    healthy: async () => true,
+    terminate: vi.fn(async () => {}),
+    spawn: vi.fn(),
+    waitHealthy: async () => true,
+    ...over,
+  });
+
+  afterEach(() => {
+    delete process.env.CLAUDESCOPE_AUTO_RESTART;
+  });
+
+  it('adopts a healthy daemon of the same version without touching it', async () => {
+    writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    const p = probes({
+      health: async () => ({ status: 'ok' as const, version: '0.0.0-dev' }),
+    });
+    const d = await daemon.ensureDaemon(() => {}, p);
+    expect(d).toMatchObject({ port: 4317, url: 'http://localhost:4317' });
+    expect(p.terminate).not.toHaveBeenCalled();
+    expect(p.spawn).not.toHaveBeenCalled();
+  });
+
+  it('restarts a healthy daemon whose version differs from this CLI', async () => {
+    writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    const p = probes({
+      health: async () => ({ status: 'ok' as const, version: '9.9.9' }),
+    });
+    const d = await daemon.ensureDaemon(() => {}, p);
+    expect(p.terminate).toHaveBeenCalledOnce();
+    expect(p.spawn).toHaveBeenCalledOnce();
+    expect(d.port).toBe(4317);
+  });
+
+  it('CLAUDESCOPE_AUTO_RESTART=0 warns and adopts the skewed daemon', async () => {
+    process.env.CLAUDESCOPE_AUTO_RESTART = '0';
+    writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    const logs: string[] = [];
+    const p = probes({
+      health: async () => ({ status: 'ok' as const, version: '9.9.9' }),
+    });
+    const d = await daemon.ensureDaemon((m) => logs.push(m), p);
+    expect(d).toMatchObject({ port: 4317, url: 'http://localhost:4317' });
+    expect(p.terminate).not.toHaveBeenCalled();
+    expect(p.spawn).not.toHaveBeenCalled();
+    expect(logs.join('\n')).toContain('v9.9.9');
+    expect(logs.join('\n')).toContain('claudescope restart');
+  });
+
+  it('a health probe failure (null) is treated as no-skew and adopts', async () => {
+    // The daemon was healthy a moment ago; a race on the second fetch must not
+    // trigger a restart of a perfectly good process.
+    writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    const p = probes({ health: async () => null });
+    const d = await daemon.ensureDaemon(() => {}, p);
+    expect(d.port).toBe(4317);
+    expect(p.terminate).not.toHaveBeenCalled();
   });
 });
