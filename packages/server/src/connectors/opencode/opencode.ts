@@ -20,7 +20,7 @@ import { CLAUDESCOPE_HOME, OPENCODE_DATA_DIR, OPENCODE_DB_PATH } from '../../con
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
-import { listSessions, readSession } from './db.js';
+import { listSessions, readSession, statSession } from './db.js';
 import { buildEvents, taskSpawns, toCanonicalRows } from './normalize.js';
 
 const CACHE_DIR = join(CLAUDESCOPE_HOME, 'cache', 'opencode');
@@ -145,6 +145,11 @@ export const opencodeConnector: AgentConnector = {
   eventsProjectionSql,
   auxProjections,
   loadSession,
+  // Synthetic `<dbPath>#<id>` paths can't be fs.stat'ed — probe the DB instead.
+  statFile: (filePath) => {
+    const { dbPath, sessionId } = parseKey(filePath);
+    return sessionId ? statSession(dbPath, sessionId) : null;
+  },
   resumeSpec: (id) => ({
     resumeArgv: ['opencode', '--session', id],
     forkArgv: ['opencode', '--session', id, '--fork'],

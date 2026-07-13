@@ -80,6 +80,38 @@ export function listSessions(dbPath: string): OpencodeSessionMeta[] {
 }
 
 /**
+ * One session's change signal — the {@link listSessions} expression targeted at
+ * a single id, for the fingerprint route's live probe. Returns `null` when the
+ * DB file is absent or the session row is gone; an open/query failure on a
+ * present DB propagates (the fingerprint caller skips a throwing file — unlike
+ * the indexer's prune loop, a skipped probe can't wipe anything).
+ */
+export function statSession(dbPath: string, sessionId: string): { mtimeMs: number; size: number } | null {
+  if (!existsSync(dbPath)) return null;
+  const db = open(dbPath);
+  try {
+    const row = db
+      .prepare(
+        `SELECT max(
+             s.time_updated,
+             COALESCE((SELECT max(time_updated) FROM message m WHERE m.session_id = s.id), 0),
+             COALESCE((SELECT max(time_updated) FROM part    p WHERE p.session_id = s.id), 0)
+           ) AS mtime,
+           (
+             (SELECT count(*) FROM message m WHERE m.session_id = s.id) +
+             (SELECT count(*) FROM part    p WHERE p.session_id = s.id)
+           ) AS size
+         FROM session s WHERE s.id = ?`,
+      )
+      .get(sessionId) as { mtime: number; size: number } | undefined;
+    if (!row) return null;
+    return { mtimeMs: Math.floor(Number(row.mtime)), size: Number(row.size) };
+  } finally {
+    db.close();
+  }
+}
+
+/**
  * Follow `parent_id` up to the top-level ancestor. Stops at a dangling link (the
  * parent row is gone — the walked-to session is then the root) and degrades to
  * the session's own id on a cycle (corrupt data must not re-key anything).

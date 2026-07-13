@@ -104,6 +104,17 @@ export interface AgentConnector {
   loadSession(sessionId: string, paths: string[]): Promise<SessionData>;
 
   /**
+   * Optional: live-stat ONE of this connector's discovered files — the same
+   * change signal as {@link discover}, but targeted. Used by the session
+   * fingerprint route to detect growth between reindex passes. Absent → the
+   * caller `fs.stat`s the path directly, which is correct for every file-backed
+   * connector; opencode overrides it because its paths are synthetic
+   * `<dbPath>#<sessionId>` keys. Return `null` when the file/session is gone;
+   * throwing is treated the same (the file is skipped).
+   */
+  statFile?(path: string): Pick<DiscoveredFile, 'mtimeMs' | 'size'> | null;
+
+  /**
    * Optional: the agent's global, cross-project memory — user-authored
    * instruction file(s) and/or agent-distilled global memory. Read live (NOT
    * indexed). Returns `[]` when the agent has none.

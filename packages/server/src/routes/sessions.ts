@@ -4,11 +4,15 @@
  *
  * GET /api/sessions/:id — full session detail: derived meta + the assembled
  * thread (parsed directly from the session's JSONL on disk).
+ *
+ * GET /api/sessions/:id/fingerprint — live change probe for the session page's
+ * auto-refresh poller (stats the session's files; never triggers a reindex).
  */
 
 import type { FastifyInstance } from 'fastify';
 import type {
   SessionDetailResponse,
+  SessionFingerprintResponse,
   SessionMeta,
   SessionSort,
 } from '@claudescope/shared';
@@ -19,6 +23,7 @@ import { displayNameFromCwd, projectIdFromCwd } from '../data/project-id.js';
 import { toIso } from './projects.js';
 import { assembleThread, buildSubagentRuns } from '../data/parser.js';
 import { loadSessionData } from '../data/session-loader.js';
+import { computeSessionFingerprint } from '../data/fingerprint.js';
 import { loadPricing } from '../data/pricing.js';
 import { connectorById } from '../connectors/registry.js';
 import { buildResumeInfo } from '../connectors/resume.js';
@@ -114,6 +119,20 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
     );
     return rows.map(rowToSessionMeta);
   });
+
+  // Lightweight live-change probe for the session page's auto-refresh poller.
+  // Stats the session's files per request (read-only; never triggers a reindex).
+  app.get<{ Params: { id: string } }>(
+    '/api/sessions/:id/fingerprint',
+    async (req, reply): Promise<SessionFingerprintResponse | void> => {
+      const fp = await computeSessionFingerprint(req.params.id);
+      if (!fp) {
+        reply.code(404).send({ error: 'Session not found' });
+        return;
+      }
+      return fp;
+    },
+  );
 
   app.get<{
     Params: { id: string };

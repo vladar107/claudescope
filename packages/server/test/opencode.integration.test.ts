@@ -314,3 +314,28 @@ describe('opencode session detail', () => {
     expect(JSON.stringify(detail.thread)).toContain('orphaned child prompt');
   });
 });
+
+// Runs last: it writes to the fixture DB (never a real source), and mutating
+// `time_updated` rows would perturb the earlier assertions if it ran first.
+describe('opencode session fingerprint', () => {
+  it('probes synthetic <dbPath>#<id> paths via SQLite and flips on new rows without a reindex', async () => {
+    const before = (await get('/api/sessions/ses_test1/fingerprint')).json();
+    // A working fingerprint proves the probe never fs.stat'ed the synthetic
+    // path (which does not exist on disk) — it asked the DB instead.
+    expect(before.fingerprint).toMatch(/^[0-9a-f]{40}$/);
+    // max time_updated across the session's synthetic files (parent + folded child).
+    expect(before.lastModifiedMs).toBe(3000);
+
+    // A new part row with a later time_updated — the live change signal.
+    const db = new DatabaseSync(join(ocDataDir, 'opencode.db'));
+    db.prepare('INSERT INTO part VALUES (?,?,?,?,?,?)').run(
+      'p_live', 'a1', 'ses_test1', 9999, 9999,
+      JSON.stringify({ type: 'text', text: 'streamed in later' }),
+    );
+    db.close();
+
+    const after = (await get('/api/sessions/ses_test1/fingerprint')).json();
+    expect(after.fingerprint).not.toBe(before.fingerprint);
+    expect(after.lastModifiedMs).toBe(9999);
+  });
+});
