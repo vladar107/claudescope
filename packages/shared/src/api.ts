@@ -325,6 +325,17 @@ export interface SessionDetailResponse {
   window?: SessionWindow;
 }
 
+/** GET /api/sessions/:id/fingerprint */
+export interface SessionFingerprintResponse {
+  /**
+   * Opaque change token over the session's files (live-statted per request).
+   * Compare-only — clients must not parse it.
+   */
+  fingerprint: string;
+  /** Max mtime (ms epoch) across the session's files; 0 when none could be statted. */
+  lastModifiedMs: number;
+}
+
 /** A full-text search hit in agent memory (instruction file or distilled fact). */
 export interface MemorySearchHit {
   connectorId: string;
