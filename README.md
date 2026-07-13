@@ -280,20 +280,34 @@ just a `SUM` over events; a project/session total is the sum of its events.
 
 Rates are resolved in a layered lookup:
 
-1. **Fetched exact id** — `~/.claudescope/pricing.fetched.json` (auto-refreshed
+1. **Provider override** — if the agent recorded which model *provider* served
+   the response (pi, Codex, and opencode do) and it matches an entry in
+   `pricing.json`'s `providers` map (matched case-insensitively), that entry's
+   rates apply outright and the steps below are skipped — this is how local
+   runtimes are zero-rated regardless of what model id they report. The
+   shipped default zero-rates nine known local-runtime ids: `ollama`,
+   `lmstudio`, `lm-studio`, `llama.cpp`, `llamacpp`, `vllm`, `oss`, `local`,
+   `mlx`. Add your own id to `providers` (e.g. a custom Ollama gateway key) to
+   zero-rate it too.
+2. **Fetched exact id** — `~/.claudescope/pricing.fetched.json` (auto-refreshed
    daily from [LiteLLM's community price table](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json),
    covering Anthropic, OpenAI, Gemini, xAI, Mistral, and DeepSeek models).
-2. **Local exact id** — `~/.claudescope/pricing.json` (seeded on first run from
+3. **Local exact id** — `~/.claudescope/pricing.json` (seeded on first run from
    the shipped default; user-editable; takes precedence over the fetched snapshot
    for any id it defines explicitly).
-3. **Family match** — `opus` / `sonnet` / `haiku` / `gemini` / `gpt` substring in
+4. **Family match** — `opus` / `sonnet` / `haiku` / `gemini` / `gpt` substring in
    the model id → the matching family rate from `pricing.json`.
-4. **Default** — the `default` entry in `pricing.json`.
+5. **Default** — the `default` entry in `pricing.json`.
 
 The family step means version- or date-suffixed ids (e.g. `claude-haiku-4-5-20251001`,
 `gpt-5.x-codex`, `gemini-2.5-flash`) still price correctly. `pricing.json` is the
 user-editable fallback and override layer for families and the default rate; the
 fetched snapshot provides exact per-model rates for all known models.
+
+Claude Code, Junie, Copilot CLI, and Antigravity record no model provider in
+their transcripts, so a local run there can't be auto-detected via step 1 — the
+escape hatch is pinning the exact model id to a zero rate in `pricing.json`'s
+`models` section.
 
 Shipped fallback rates (USD per 1M tokens):
 
@@ -312,9 +326,16 @@ Shipped fallback rates (USD per 1M tokens):
 - Rates **auto-refresh daily** in the background while the server runs. Run
   `claudescope pricing update` to force a refresh at any time. New rates apply
   to newly indexed events; existing indexed costs are unchanged.
-- Edit `~/.claudescope/pricing.json` to override families, the default rate, or
-  pin specific model prices. Re-index (`POST /api/reindex` or `claudescope
-  restart`) to recompute stored costs at the new rates.
+- Edit `~/.claudescope/pricing.json` to override families, the default rate,
+  specific model prices, or the `providers` map. Pricing changes apply
+  **prospectively**: cost is stamped per event at index time, so an edit only
+  affects events indexed *after* the change — re-indexing (`POST /api/reindex`
+  or `claudescope restart`) picks up new/changed files at the new rates but
+  does not recompute costs already stored for unchanged files. A full re-price
+  of your whole history happens only when the index itself is rebuilt from
+  scratch — an app upgrade that bumps the schema, corruption recovery, or
+  manually deleting `~/.claudescope/index.duckdb*` (it's a derived cache, safe
+  to delete; it rebuilds from your transcripts).
 - `pricing.json` carries a `schemaVersion`. When an upgrade ships a newer default
   (new families/models or a changed default rate), the app **reconciles your copy
   on startup**: it backs the old file up to `pricing.json.bak`, adds the new

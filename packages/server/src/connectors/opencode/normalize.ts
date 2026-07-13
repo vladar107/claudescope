@@ -292,6 +292,8 @@ export function buildEvents(session: OpencodeRawSession): (UserEvent | Assistant
       }
       const model =
         str(data.modelID) || str((data.model as Record<string, unknown> | undefined)?.modelID);
+      const provider =
+        str(data.providerID) || str((data.model as Record<string, unknown> | undefined)?.providerID);
       const uuid = nextUuid();
       const parentUuid = prevUuid;
       prevUuid = uuid;
@@ -303,7 +305,7 @@ export function buildEvents(session: OpencodeRawSession): (UserEvent | Assistant
         cwd,
         isSidechain,
         type: 'assistant',
-        message: { role: 'assistant', model, content: blocks, usage: toUsage(data.tokens) },
+        message: { role: 'assistant', model, provider: provider || undefined, content: blocks, usage: toUsage(data.tokens) },
       } as AssistantEvent);
       // Tool results ride a following synthetic user turn (assembler pairs by id).
       if (toolResults.length > 0) {
@@ -393,6 +395,7 @@ export interface CanonicalRow {
   cwd: string;
   git_branch: string | null;
   model: string | null;
+  provider: string | null;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -429,6 +432,7 @@ export function toCanonicalRows(session: OpencodeRawSession, filePath: string): 
       cwd: session.directory,
       git_branch: null,
       model: (msg as { model?: string }).model ?? null,
+      provider: (msg as { provider?: string }).provider ?? null,
       input_tokens: num(usage?.input_tokens),
       output_tokens: num(usage?.output_tokens),
       cache_read_tokens: num(usage?.cache_read_input_tokens),

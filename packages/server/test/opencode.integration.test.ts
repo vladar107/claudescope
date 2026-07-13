@@ -226,6 +226,14 @@ describe('opencode session indexing', () => {
     expect(s.totalCostUsd).toBeCloseTo(0.0020175, 6);
   });
 
+  it('exposes the per-message provider without flagging a non-local one', async () => {
+    const s = (await get('/api/sessions')).json().find((x: { id: string }) => x.id === 'ses_test1');
+    // Every assistant message carries providerID 'openai' (incl. the folded child).
+    expect(s.providers).toEqual(['openai']);
+    // 'openai' isn't in the pricing `providers` table → not a local/zero-rated one.
+    expect(s.hasLocalProvider).toBeFalsy();
+  });
+
   it('finds the session via full-text search, including subagent text under the parent', async () => {
     const { sessions: results } = (await get('/api/search?q=patched')).json();
     expect(results.some((r: { sessionId: string }) => r.sessionId === 'ses_test1')).toBe(true);

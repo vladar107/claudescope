@@ -158,6 +158,7 @@ function eventsProjectionSql(filePath: string): string {
       cwd,
       gitBranch AS git_branch,
       json_extract_string(message, '$.model') AS model,
+      CAST(NULL AS VARCHAR) AS provider,
       COALESCE(try_cast(json_extract(message, '$.usage.input_tokens') AS BIGINT), 0) AS input_tokens,
       COALESCE(try_cast(json_extract(message, '$.usage.output_tokens') AS BIGINT), 0) AS output_tokens,
       COALESCE(try_cast(json_extract(message, '$.usage.cache_read_input_tokens') AS BIGINT), 0) AS cache_read_tokens,

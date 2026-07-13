@@ -13,6 +13,7 @@ export { Spinner, type SpinnerProps } from './Spinner.js';
 export { ErrorBox, type ErrorBoxProps } from './ErrorBox.js';
 export { ErrorBoundary, type ErrorBoundaryProps } from './ErrorBoundary.js';
 export { AgentBadge, agentLabel, type AgentBadgeProps } from './AgentBadge.js';
+export { LocalBadge } from './LocalBadge.js';
 export { ModelChips, shortModel, type ModelChipsProps } from './ModelChips.js';
 export { SummaryStrip, type SummaryItem } from './SummaryStrip.js';
 export { SearchField, type SearchFieldProps } from './SearchField.js';

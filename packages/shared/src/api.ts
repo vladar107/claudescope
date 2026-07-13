@@ -57,6 +57,10 @@ export interface SessionMeta {
   totalTokens: number;
   totalCostUsd: number;
   models: ModelId[];
+  /** Distinct model providers recorded on the session's assistant events (may be empty). */
+  providers: string[];
+  /** True when any recorded provider is zero-rated in pricing (a local runtime) — drives the "local" badge. */
+  hasLocalProvider?: boolean;
   gitBranch?: string;
   prUrl?: string;
   sizeBytes: number;

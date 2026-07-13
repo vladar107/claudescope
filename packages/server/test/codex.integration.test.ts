@@ -137,6 +137,31 @@ function writeOrphanRollout(): string {
   return file;
 }
 
+/**
+ * A rollout whose `session_meta.model_provider` is a local runtime (`lmstudio`).
+ * The provider is session-level, so it stamps every assistant row and zero-rates
+ * the whole session via the provider override — even though the model (`gpt-5.4`)
+ * has a real rate and both turns carry usage. Prices off the shipped pricing.json.
+ */
+function writeLocalRollout(): string {
+  const dir = join(codexDir, '2026', '01', '03');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'rollout-2026-01-03T09-00-00-019f4444-aaaa-7bbb-8ccc-000000000003.jsonl');
+  writeFileSync(
+    file,
+    jsonl([
+      { type: 'session_meta', timestamp: ts(50), payload: { id: 'codex-local-1', cwd: '/tmp/codexproj', cli_version: '0.122.0', model_provider: 'lmstudio', git: { branch: 'main' } } },
+      { type: 'turn_context', timestamp: ts(51), payload: { model: 'gpt-5.4', cwd: '/tmp/codexproj' } },
+      { type: 'response_item', timestamp: ts(52), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'run this offline on my machine' }] } },
+      { type: 'response_item', timestamp: ts(53), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'first local turn' }] } },
+      { type: 'event_msg', timestamp: ts(54), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 1000, cached_input_tokens: 0, output_tokens: 300 } }, rate_limits: {} } },
+      { type: 'response_item', timestamp: ts(55), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'second local turn' }] } },
+      { type: 'event_msg', timestamp: ts(56), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 500, cached_input_tokens: 0, output_tokens: 100 } }, rate_limits: {} } },
+    ]),
+  );
+  return file;
+}
+
 let app: FastifyInstance;
 let closeConnection: () => Promise<void>;
 
@@ -145,6 +170,7 @@ beforeAll(async () => {
   writeRollout();
   writeChildRollout();
   writeOrphanRollout();
+  writeLocalRollout();
 
   const Fastify = (await import('fastify')).default;
   const { registerRoutes } = await import('../src/routes/index.js');
@@ -170,7 +196,7 @@ describe('Codex session indexing', () => {
     const sessions = (await get('/api/sessions')).json();
     // The child rollout folds into its parent (never its own session); the orphan
     // child indexes under its absent root id `codex-gone`.
-    expect(sessions.map((s: { id: string }) => s.id).sort()).toEqual(['codex-gone', 'codex-sess-1']);
+    expect(sessions.map((s: { id: string }) => s.id).sort()).toEqual(['codex-gone', 'codex-local-1', 'codex-sess-1']);
     const main = sessions.find((s: { id: string }) => s.id === 'codex-sess-1');
     expect(main.models).toContain('gpt-5.4');
     expect(main.connectorId).toBe('codex');
@@ -209,6 +235,16 @@ describe('Codex session indexing', () => {
   it('groups analytics by the OpenAI model', async () => {
     const { rows } = (await get('/api/analytics?groupBy=model')).json();
     expect(rows.map((r: { key: string }) => r.key)).toContain('gpt-5.4');
+  });
+
+  it('zero-rates a session via a local model_provider propagated session-wide', async () => {
+    const sessions = (await get('/api/sessions')).json();
+    const s = sessions.find((x: { id: string }) => x.id === 'codex-local-1');
+    // model_provider is session-level → stamped on every assistant row, so the
+    // provider override zero-rates the session even though gpt-5.4 has a real rate.
+    expect(s.totalCostUsd).toBe(0);
+    expect(s.providers).toEqual(['lmstudio']);
+    expect(s.hasLocalProvider).toBe(true);
   });
 
   it('finds the Codex session via full-text search', async () => {
