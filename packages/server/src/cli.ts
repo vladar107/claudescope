@@ -19,6 +19,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -70,6 +71,10 @@ export {
   type DaemonRecord,
   type ExistingState,
 } from './daemon.js';
+
+// The bundle is ESM, so the CJS `__dirname` global doesn't exist — derive it
+// from import.meta.url like config.ts/daemon.ts do (the bundler injects none).
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** Start the server in the background, idempotently. */
 async function start(port: number, open: boolean): Promise<void> {
