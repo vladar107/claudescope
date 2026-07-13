@@ -1,8 +1,8 @@
 # 0044 — Provider-aware cost: local vs remote model sessions
 
-- **Status:** in-progress
+- **Status:** done
 - **Date:** 2026-07-13
-- **PR:** <link, once opened>
+- **PR:** https://github.com/vladar107/claudescope/pull/56
 
 ## Context
 

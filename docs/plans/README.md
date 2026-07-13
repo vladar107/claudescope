@@ -68,4 +68,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0041 | [Error & interrupt analytics](./0041-error-interrupt-analytics.md) | done |
 | 0042 | [Week-in-review digest (page + copy-md + CLI)](./0042-digest.md) | done |
 | 0043 | [Retire the Activity tab: redistribute its pieces](./0043-activity-tab-redistribution.md) | done |
-| 0044 | [Provider-aware cost: local vs remote model sessions](./0044-provider-aware-cost.md) | in-progress |
+| 0044 | [Provider-aware cost: local vs remote model sessions](./0044-provider-aware-cost.md) | done |
