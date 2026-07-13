@@ -103,7 +103,7 @@ retroactively re-pricing history that's already indexed.
 - `packages/server/src/routes/sessions.ts` `rowToSessionMeta`: splits the
   `providers` CSV like `models`; computes `hasLocalProvider` from a cached
   `loadPricing()` call + `isZeroRated` per provider.
-- `packages/server/src/agent/mcp.ts` `sessionLine`: appends ` (local)` after
+- `packages/server/src/agent/mcp.ts` `sessionLine`: appends `(local)` after
   the cost segment when `hasLocalProvider`; JSON outputs (CLI `--json`, the
   API) pick up the new fields automatically since they serialize `SessionMeta`
   directly — no separate CLI-side change needed.
