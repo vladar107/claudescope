@@ -82,6 +82,11 @@ describe.skipIf(process.platform === 'win32')('readInstalledVersion', () => {
     expect(await sr.readInstalledVersion(bin)).toBeNull();
   });
 
+  it('rejects a dev build on PATH (npm link) — never a valid restart target', async () => {
+    const bin = fakeBin('ver-dev', 'echo 0.0.0-dev');
+    expect(await sr.readInstalledVersion(bin)).toBeNull();
+  });
+
   it('returns null when the bin exits non-zero', async () => {
     const bin = fakeBin('ver-fail', 'exit 1');
     expect(await sr.readInstalledVersion(bin)).toBeNull();
