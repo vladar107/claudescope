@@ -9,6 +9,7 @@ import { hasRenderableContent } from './blocks.js';
 import { SubagentBlock, SubagentJumpMenu, ThreadList, useHashTarget } from './ThreadView.js';
 import { useProgressiveMount } from './useProgressiveMount.js';
 import { useScrollRestore } from './useScrollRestore.js';
+import { holdBottom, isNearBottom, useLiveSession } from './useLiveSession.js';
 import { ChangesetPanel } from './ChangesetPanel.js';
 import { buildChangeset } from './changeset.js';
 import { ExportMenu } from './ExportMenu.js';
@@ -64,29 +65,54 @@ export function SessionPage() {
   // Cancel any in-flight refresh when the session changes or the page unmounts.
   useEffect(() => () => refreshController.current?.abort(), [id]);
 
+  // Cancels a stick-to-bottom hold when the reader leaves the session mid-hold,
+  // so navigating away never keeps pinning the shared app scroller.
+  const stickCancelled = useRef(false);
+  useEffect(() => {
+    stickCancelled.current = false;
+    return () => {
+      stickCancelled.current = true;
+    };
+  }, [id]);
+
   // Soft refresh: re-fetch the thread and swap it in place without unmounting
   // the view, so the scroll position is preserved (turns are keyed by uuid and
   // new turns append at the end). Header `meta` stats may lag until a reindex.
-  const refresh = useCallback(() => {
-    if (!id || loading || refreshing) return;
-    refreshController.current?.abort();
-    const controller = new AbortController();
-    refreshController.current = controller;
-    setRefreshing(true);
-    api
-      .getSession(id, controller.signal)
-      .then((res) => {
+  // `silent` (the live poller) skips the `refreshing` spinner — auto-updates
+  // must not flash UI. Resolves true only when new data was swapped in.
+  const refresh = useCallback(
+    async (opts?: { silent?: boolean }): Promise<boolean> => {
+      if (!id || loading || refreshing) return false;
+      refreshController.current?.abort();
+      const controller = new AbortController();
+      refreshController.current = controller;
+      if (!opts?.silent) setRefreshing(true);
+      try {
+        const res = await api.getSession(id, controller.signal);
+        // Stick-to-bottom: a reader already at the bottom follows new turns; one
+        // scrolled up to read is left untouched (implicit scroll preservation).
+        const scroller = document.querySelector('main.tv-main');
+        const pin = scroller instanceof HTMLElement && isNearBottom(scroller);
         setData(res);
-        setRefreshing(false);
-      })
-      .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === 'AbortError') return;
-        if (err instanceof ApiError && err.status === 0) return;
-        // Keep the current content on a failed refresh; just stop the spinner.
-        console.error('Session refresh failed', err);
-        setRefreshing(false);
-      });
-  }, [id, loading, refreshing]);
+        if (pin && scroller instanceof HTMLElement) {
+          holdBottom(scroller, () => stickCancelled.current);
+        }
+        return true;
+      } catch (err: unknown) {
+        if (
+          !(err instanceof DOMException && err.name === 'AbortError') &&
+          !(err instanceof ApiError && err.status === 0)
+        ) {
+          // Keep the current content on a failed refresh; just stop the spinner.
+          console.error('Session refresh failed', err);
+        }
+        return false;
+      } finally {
+        if (!opts?.silent) setRefreshing(false);
+      }
+    },
+    [id, loading, refreshing],
+  );
 
   // ⌘R / Ctrl+R does an in-place soft refresh instead of a full browser reload
   // (which would lose scroll position). ⌘⇧R still falls through to the browser's
@@ -95,19 +121,24 @@ export function SessionPage() {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'r') {
         e.preventDefault();
-        refresh();
+        void refresh();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [refresh]);
 
+  // Auto-refresh while the transcript is still being written: poll the cheap
+  // fingerprint probe and silently swap new turns in as they land.
+  const refreshSilently = useCallback(() => refresh({ silent: true }), [refresh]);
+  useLiveSession({ sessionId: id, active: data !== null && !loading, refreshSilently });
+
   if (!id) return <ErrorBox error="Missing session id" />;
   if (loading) return <Spinner size="lg" label="Loading session…" />;
   if (error) return <ErrorBox error={error} onRetry={() => setReloadKey((k) => k + 1)} />;
   if (!data) return null;
 
-  return <SessionView data={data} onRefresh={refresh} refreshing={refreshing} />;
+  return <SessionView data={data} onRefresh={() => void refresh()} refreshing={refreshing} />;
 }
 
 function SessionView({

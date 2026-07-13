@@ -19,6 +19,7 @@ import type {
   SearchType,
   SessionDetailResponse,
   SessionEfficiencyResponse,
+  SessionFingerprintResponse,
   SessionEfficiencySort,
   SortDir,
   SessionSort,
@@ -137,6 +138,14 @@ export const api = {
   /** GET /api/sessions/:id */
   getSession(id: string, signal?: AbortSignal): Promise<SessionDetailResponse> {
     return request<SessionDetailResponse>(`/sessions/${encodeURIComponent(id)}`, { signal });
+  },
+
+  /** GET /api/sessions/:id/fingerprint */
+  sessionFingerprint(id: string, signal?: AbortSignal): Promise<SessionFingerprintResponse> {
+    return request<SessionFingerprintResponse>(
+      `/sessions/${encodeURIComponent(id)}/fingerprint`,
+      { signal },
+    );
   },
 
   /** GET /api/search?q=&project=&type= */
