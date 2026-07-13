@@ -408,10 +408,20 @@ export interface ReindexResponse {
   durationMs: number;
 }
 
+/** Live per-pass indexing progress: changed files loaded vs. total to load. */
+export interface IndexingProgress {
+  processed: number;
+  total: number;
+}
+
 /** GET /api/health */
 export interface HealthResponse {
   status: 'ok';
   version: string;
+  /** True once the initial index build (or a post-rebuild pass) has finished. */
+  ready: boolean;
+  /** Present while a reindex pass is loading changed files. */
+  indexing?: IndexingProgress;
 }
 
 // ---------------------------------------------------------------------------

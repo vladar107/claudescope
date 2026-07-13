@@ -39,7 +39,7 @@ export class ApiClient {
     return (await res.json()) as T;
   }
 
-  health(): Promise<HealthResponse & { ready: boolean }> {
+  health(): Promise<HealthResponse> {
     return this.get('/api/health');
   }
 

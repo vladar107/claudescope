@@ -16,7 +16,7 @@
  */
 
 import type { DuckDBConnection } from '@duckdb/node-api';
-import type { PricingConfig, ReindexResponse } from '@claudescope/shared';
+import type { IndexingProgress, PricingConfig, ReindexResponse } from '@claudescope/shared';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { connectors } from '../connectors/registry.js';
 import type { AgentConnector, DiscoveredFile } from '../connectors/types.js';
@@ -28,6 +28,13 @@ import { electCanonicalEdits, refreshFileEdits } from './file-edits.js';
 let ready = false;
 /** Serializes concurrent reindex calls so they never run simultaneously. */
 let inFlight: Promise<ReindexResponse> | null = null;
+/** Live progress of the current pass (changed files loaded vs. total). Non-null
+ *  only while a pass with work is running; surfaced on /api/health. */
+let progress: IndexingProgress | null = null;
+
+/** Min interval between mid-first-build partial `sessions` rebuilds (ms).
+ *  Env-overridable so tests can force a rebuild after every file. */
+const PARTIAL_REBUILD_MS = Number(process.env.PARTIAL_REBUILD_MS ?? 3000);
 
 export function isIndexReady(): boolean {
   return ready;
@@ -36,6 +43,10 @@ export function isIndexReady(): boolean {
 /** Whether a reindex pass is currently running (self-restart defers on it). */
 export function isReindexInFlight(): boolean {
   return inFlight !== null;
+}
+
+export function getIndexProgress(): IndexingProgress | null {
+  return progress;
 }
 
 /** The four rate fields, in canonical → SQL-column order. */
@@ -465,65 +476,88 @@ async function doReindex(): Promise<ReindexResponse> {
     }
   }
 
-  let reindexed = 0;
-  for (const { file, connector } of discovered) {
+  // Precompute the changed set so progress reports a stable total up front.
+  const changed = discovered.filter(({ file }) => {
     const prev = existing.get(file.path);
-    if (prev && prev.mtime === file.mtimeMs && prev.size === file.size) {
-      continue; // unchanged
+    return !(prev && prev.mtime === file.mtimeMs && prev.size === file.size);
+  });
+
+  let reindexed = 0;
+  if (changed.length > 0) progress = { processed: 0, total: changed.length };
+  // Timestamp of the last mid-pass partial `sessions` rebuild (first build only).
+  let lastPartialRebuild = start;
+  try {
+    for (const { file, connector } of changed) {
+      // Isolate per-file failures: a file DuckDB can't read at all (beyond the
+      // per-line `ignore_errors` tolerance) must not abort the whole reindex and
+      // wedge every other session. Skip it (its `files` row keeps the old mtime,
+      // so a later edit retries it) and carry on.
+      try {
+        await ensurePricingTable();
+        await loadFile(conn, connector, file, costExpr);
+
+        // Determine the session id from loaded events (filename usually matches,
+        // but the event sessionId is authoritative).
+        const sidRows = await queryRows(
+          conn,
+          `SELECT session_id FROM events WHERE file_path = ${sqlString(file.path)} LIMIT 1`,
+        );
+        const sessionId = sidRows.length > 0 ? String(sidRows[0]?.session_id ?? '') : null;
+        if (sessionId) editSessions.add(sessionId);
+        const cwdRows = await queryRows(
+          conn,
+          `SELECT cwd FROM events WHERE file_path = ${sqlString(file.path)} AND cwd IS NOT NULL LIMIT 1`,
+        );
+        const cwd = cwdRows.length > 0 ? String(cwdRows[0]?.cwd ?? '') : null;
+
+        await conn.run(`
+          INSERT OR REPLACE INTO files (path, mtime_ms, size_bytes, session_id, project_cwd, connector_id, indexed_at)
+          VALUES (${sqlString(file.path)}, ${file.mtimeMs}, ${file.size},
+                  ${sessionId ? sqlString(sessionId) : 'NULL'},
+                  ${cwd ? sqlString(cwd) : 'NULL'}, ${sqlString(connector.id)}, now())
+        `);
+        reindexed += 1;
+
+        // During the first build (server not yet ready), periodically rebuild
+        // the derived `sessions` so /api/projects grows while indexing instead
+        // of staying empty until the pass finalizes. Deliberately excludes the
+        // file-edits refresh (analytics-only) and the FTS rebuild + CHECKPOINT
+        // (the expensive, WAL-hazardous part). Steady-state passes skip this.
+        if (!ready && Date.now() - lastPartialRebuild >= PARTIAL_REBUILD_MS) {
+          await electCanonicalUsage(conn);
+          await rebuildSessions(conn);
+          lastPartialRebuild = Date.now();
+        }
+      } catch (err) {
+        console.warn(`claudescope: skipping unreadable transcript ${file.path}:`, err);
+      } finally {
+        // Skipped files still advance the counter so processed reaches total.
+        if (progress) progress.processed += 1;
+      }
     }
 
-    // Isolate per-file failures: a file DuckDB can't read at all (beyond the
-    // per-line `ignore_errors` tolerance) must not abort the whole reindex and
-    // wedge every other session. Skip it (its `files` row keeps the old mtime,
-    // so a later edit retries it) and carry on.
-    try {
-      await ensurePricingTable();
-      await loadFile(conn, connector, file, costExpr);
-
-      // Determine the session id from loaded events (filename usually matches,
-      // but the event sessionId is authoritative).
-      const sidRows = await queryRows(
-        conn,
-        `SELECT session_id FROM events WHERE file_path = ${sqlString(file.path)} LIMIT 1`,
-      );
-      const sessionId = sidRows.length > 0 ? String(sidRows[0]?.session_id ?? '') : null;
-      if (sessionId) editSessions.add(sessionId);
-      const cwdRows = await queryRows(
-        conn,
-        `SELECT cwd FROM events WHERE file_path = ${sqlString(file.path)} AND cwd IS NOT NULL LIMIT 1`,
-      );
-      const cwd = cwdRows.length > 0 ? String(cwdRows[0]?.cwd ?? '') : null;
-
-      await conn.run(`
-        INSERT OR REPLACE INTO files (path, mtime_ms, size_bytes, session_id, project_cwd, connector_id, indexed_at)
-        VALUES (${sqlString(file.path)}, ${file.mtimeMs}, ${file.size},
-                ${sessionId ? sqlString(sessionId) : 'NULL'},
-                ${cwd ? sqlString(cwd) : 'NULL'}, ${sqlString(connector.id)}, now())
-      `);
-      reindexed += 1;
-    } catch (err) {
-      console.warn(`claudescope: skipping unreadable transcript ${file.path}:`, err);
+    // Nothing changed on disk: skip the (relatively expensive) derived-table and
+    // FTS rebuild + CHECKPOINT entirely. This keeps periodic auto-reindex polls
+    // cheap — they only stat files and bail when there's no new data.
+    if (reindexed === 0 && removed === 0) {
+      ready = true;
+      return { reindexed, durationMs: Date.now() - start };
     }
-  }
 
-  // Nothing changed on disk: skip the (relatively expensive) derived-table and
-  // FTS rebuild + CHECKPOINT entirely. This keeps periodic auto-reindex polls
-  // cheap — they only stat files and bail when there's no new data.
-  if (reindexed === 0 && removed === 0) {
+    // Something changed: re-elect the usage-canonical rows globally, then rebuild
+    // derived tables + FTS so additions, edits, and removals are all reflected.
+    await electCanonicalUsage(conn);
+    // Refresh code-impact rows for the touched sessions, then re-elect the
+    // canonical edit per (uuid, tool_use_id) globally (fork copies dedup).
+    await refreshFileEdits(conn, editSessions);
+    await electCanonicalEdits(conn);
+    await rebuildSessions(conn);
+    await rebuildFtsIndex(conn);
+
     ready = true;
     return { reindexed, durationMs: Date.now() - start };
+  } finally {
+    // Progress stays visible through finalization ("finishing up"), then clears.
+    progress = null;
   }
-
-  // Something changed: re-elect the usage-canonical rows globally, then rebuild
-  // derived tables + FTS so additions, edits, and removals are all reflected.
-  await electCanonicalUsage(conn);
-  // Refresh code-impact rows for the touched sessions, then re-elect the
-  // canonical edit per (uuid, tool_use_id) globally (fork copies dedup).
-  await refreshFileEdits(conn, editSessions);
-  await electCanonicalEdits(conn);
-  await rebuildSessions(conn);
-  await rebuildFtsIndex(conn);
-
-  ready = true;
-  return { reindexed, durationMs: Date.now() - start };
 }
