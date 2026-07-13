@@ -1,8 +1,8 @@
 # 0045 — Indexing UX + post-update self-healing
 
-- **Status:** in-progress
+- **Status:** done
 - **Date:** 2026-07-13
-- **PR:** PR 1 (indexing visibility): [#58](https://github.com/vladar107/claudescope/pull/58) · PR 2 (update nudge): TBD · PR 3 (self-healing): [#57](https://github.com/vladar107/claudescope/pull/57)
+- **PR:** PR 1 (indexing visibility): [#58](https://github.com/vladar107/claudescope/pull/58) · PR 2 (update nudge): [#59](https://github.com/vladar107/claudescope/pull/59) · PR 3 (self-healing): [#57](https://github.com/vladar107/claudescope/pull/57)
 
 ## Context
 
