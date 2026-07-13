@@ -7,7 +7,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { HealthResponse, ReindexResponse } from '@claudescope/shared';
 import { APP_VERSION } from '../config.js';
-import { isIndexReady, reindex } from '../data/index.js';
+import { getIndexProgress, isIndexReady, reindex } from '../data/index.js';
 import { registerProjectsRoute } from './projects.js';
 import { registerSessionsRoutes } from './sessions.js';
 import { registerSearchRoute } from './search.js';
@@ -23,8 +23,14 @@ import { registerSourcesRoute } from './sources.js';
 import { registerMemoryRoute } from './memory.js';
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/health', async (): Promise<HealthResponse & { ready: boolean }> => {
-    return { status: 'ok', version: APP_VERSION, ready: isIndexReady() };
+  app.get('/api/health', async (): Promise<HealthResponse> => {
+    const indexing = getIndexProgress();
+    return {
+      status: 'ok',
+      version: APP_VERSION,
+      ready: isIndexReady(),
+      ...(indexing ? { indexing } : {}),
+    };
   });
 
   await registerProjectsRoute(app);

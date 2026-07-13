@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { ProjectMeta } from '@claudescope/shared';
+import type { ProjectMeta, SourceInfo } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
 import { AgentBadge, ErrorBox, formatCost, formatCount, SearchField, Spinner, SummaryStrip } from '../../components';
+import { useServerStatus } from '../../status/StatusProvider.js';
 import { timeAgo } from './format.js';
 import './browse.css';
 
@@ -37,6 +38,9 @@ function sortProjects(projects: ProjectMeta[], sort: ProjectSort): ProjectMeta[]
  * Browse view. Lists all projects; each card links to `/projects/:id` (the
  * routed session list), so drill-down is URL-driven and deep-linkable.
  */
+/** Min interval between silent project refetches while the index builds. */
+const REFETCH_THROTTLE_MS = 2000;
+
 export function BrowsePage() {
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,6 +48,8 @@ export function BrowsePage() {
   const [sort, setSort] = useState<ProjectSort>('recent');
   const [filter, setFilter] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [sources, setSources] = useState<SourceInfo[] | null>(null);
+  const { ready, indexing, building, indexingTick } = useServerStatus();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -63,6 +69,46 @@ export function BrowsePage() {
       });
     return () => controller.abort();
   }, [reloadKey]);
+
+  // While the index builds, silently refetch projects so cards appear as
+  // sessions get indexed (no setLoading — no spinner flash), plus one final
+  // refetch when building flips off to catch the last finalization.
+  const wasBuilding = useRef(false);
+  const lastRefetch = useRef(0);
+  useEffect(() => {
+    const buildEnded = wasBuilding.current && !building;
+    wasBuilding.current = building;
+    if (!building && !buildEnded) return;
+    if (building && Date.now() - lastRefetch.current < REFETCH_THROTTLE_MS) return;
+    lastRefetch.current = Date.now();
+    const controller = new AbortController();
+    api
+      .listProjects(controller.signal)
+      .then((data) => {
+        setProjects(data);
+        setLoading(false);
+      })
+      .catch(() => {
+        /* transient — the next tick retries */
+      });
+    return () => controller.abort();
+  }, [building, indexingTick]);
+
+  // The genuinely-empty state (ready, idle, zero projects) explains itself with
+  // the watched source directories; fetch them lazily only when it shows.
+  const genuinelyEmpty =
+    !building && ready === true && !loading && !error && projects.length === 0;
+  useEffect(() => {
+    if (!genuinelyEmpty || sources !== null) return;
+    const controller = new AbortController();
+    api
+      .sources(controller.signal)
+      .then(setSources)
+      .catch(() => {
+        /* best-effort — the fallback copy still renders */
+      });
+    return () => controller.abort();
+  }, [genuinelyEmpty, sources]);
 
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -87,6 +133,12 @@ export function BrowsePage() {
     }
     return { projects: projects.length, sessions, cost, agents: agents.size };
   }, [projects]);
+
+  const indexingLabel = indexing
+    ? indexing.processed < indexing.total
+      ? `Indexing ${indexing.processed} of ${indexing.total} transcripts…`
+      : 'Finishing up the index…'
+    : 'Building the transcript index…';
 
   return (
     <section>
@@ -132,17 +184,52 @@ export function BrowsePage() {
       ) : error ? (
         <ErrorBox error={error} onRetry={() => setReloadKey((k) => k + 1)} />
       ) : visible.length === 0 ? (
-        <p className="tv-muted">
-          {projects.length === 0 ? 'No projects indexed yet.' : 'No projects match the filter.'}
-        </p>
+        projects.length > 0 ? (
+          <p className="tv-muted">No projects match the filter.</p>
+        ) : building ? (
+          // First build (or a post-update rebuild) in progress and nothing
+          // indexed yet — show live progress instead of a misleading empty state.
+          <Spinner size="lg" label={indexingLabel} />
+        ) : ready === true ? (
+          <EmptyIndexNotice sources={sources} />
+        ) : (
+          <p className="tv-muted">No projects indexed yet.</p>
+        )
       ) : (
-        <div className="tv-project-grid">
-          {visible.map((p) => (
-            <ProjectCard key={p.id} project={p} />
-          ))}
-        </div>
+        <>
+          {building ? (
+            <div className="tv-browse__indexing tv-muted">
+              <Spinner label={indexingLabel} />
+            </div>
+          ) : null}
+          <div className="tv-project-grid">
+            {visible.map((p) => (
+              <ProjectCard key={p.id} project={p} />
+            ))}
+          </div>
+        </>
       )}
     </section>
+  );
+}
+
+/** Ready + idle + zero projects: explain whether any source dirs exist at all. */
+function EmptyIndexNotice({ sources }: { sources: SourceInfo[] | null }) {
+  if (sources === null) return <p className="tv-muted">No projects indexed yet.</p>;
+  if (sources.length === 0) {
+    return <p className="tv-muted">No agent transcript directories were found on this machine.</p>;
+  }
+  return (
+    <div className="tv-muted tv-browse__empty">
+      <p>No transcripts found yet. Watching:</p>
+      <ul className="tv-browse__sources">
+        {sources.map((s) => (
+          <li key={s.id}>
+            <span className="tv-mono">{s.path}</span> — {s.label}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

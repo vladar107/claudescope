@@ -24,6 +24,21 @@
   font-size: var(--tv-fs-md);
 }
 
+/* Inline "index still building" line above the grid while cards stream in. */
+.tv-browse__indexing {
+  margin-bottom: var(--tv-space-3);
+  font-size: var(--tv-fs-sm);
+}
+
+/* Genuinely-empty state: the watched source directories, one per line. */
+.tv-browse__sources {
+  margin: var(--tv-space-2) 0 0;
+  padding-left: var(--tv-space-4);
+}
+.tv-browse__sources li {
+  margin-bottom: var(--tv-space-1);
+}
+
 /* Shared form controls (input + select) */
 .tv-input,
 .tv-select {
