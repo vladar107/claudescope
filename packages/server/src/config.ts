@@ -204,6 +204,25 @@ export const PRICING_REFRESH_INTERVAL_MS = Number(
 );
 
 /**
+ * How often (ms) the daemon checks whether the installed `claudescope` on PATH
+ * is a different version than the running process and, if so, restarts itself
+ * into the new code (post-update self-heal — see self-restart.ts). Set
+ * SELF_RESTART_INTERVAL_MS=0 to disable. Default 5 min.
+ */
+export const SELF_RESTART_INTERVAL_MS = Number(
+  process.env.SELF_RESTART_INTERVAL_MS ?? 5 * 60 * 1000,
+);
+
+/**
+ * Whether the daemon/CLI may automatically restart a version-skewed daemon.
+ * Read per call — not frozen at import — so CLAUDESCOPE_AUTO_RESTART=0 applies
+ * to a long-lived process and tests can flip it.
+ */
+export function autoRestartEnabled(): boolean {
+  return process.env.CLAUDESCOPE_AUTO_RESTART !== '0';
+}
+
+/**
  * Built web assets served in production. Resolved for both the bundled layout
  * (`<pkg>/web` next to the server bundle) and the dev layout
  * (`packages/web/dist`). Override with WEB_DIST_DIR.

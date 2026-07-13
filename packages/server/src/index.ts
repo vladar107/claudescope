@@ -15,6 +15,7 @@ import {
   PORT,
   PRICING_REFRESH_INTERVAL_MS,
   REINDEX_INTERVAL_MS,
+  SELF_RESTART_INTERVAL_MS,
   WEB_DIST_DIR,
   ensureStateDir,
 } from './config.js';
@@ -22,6 +23,7 @@ import { registerRoutes } from './routes/index.js';
 import { registerHostGuard, registerSecurityHeaders } from './security.js';
 import { reindex } from './data/index.js';
 import { refreshPricing } from './data/pricing-refresh.js';
+import { maybeSelfRestart } from './self-restart.js';
 import { openBrowser } from './util/open-browser.js';
 
 /** How old a fetched-pricing snapshot may be before a boot refresh fires. */
@@ -113,6 +115,20 @@ async function main(): Promise<void> {
     const pricingTimer = setInterval(runPricingRefresh, PRICING_REFRESH_INTERVAL_MS);
     pricingTimer.unref();
     app.addHook('onClose', async () => clearInterval(pricingTimer));
+  }
+
+  // Post-update self-heal: periodically check whether the installed
+  // `claudescope` on PATH is a newer/different version than this process and,
+  // if so, hand off to `claudescope restart` so brew/nix/out-of-band npm
+  // upgrades take effect without a manual restart. Dev builds never restart.
+  if (SELF_RESTART_INTERVAL_MS > 0 && APP_VERSION !== '0.0.0-dev') {
+    const selfRestartTimer = setInterval(() => {
+      maybeSelfRestart((m) => app.log.info(m)).catch((err) =>
+        app.log.warn({ err }, 'self-restart check failed'),
+      );
+    }, SELF_RESTART_INTERVAL_MS);
+    selfRestartTimer.unref();
+    app.addHook('onClose', async () => clearInterval(selfRestartTimer));
   }
 
   // In production, serve the built SPA. In dev, Vite serves it and proxies /api.
