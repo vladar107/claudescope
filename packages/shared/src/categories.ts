@@ -10,11 +10,11 @@ export type ToolCategory =
   | 'Other';
 
 const EDIT = new Set(['edit', 'write', 'multiedit', 'notebookedit', 'apply_patch', 'str_replace', 'str_replace_editor', 'create_file']);
-const READ = new Set(['read', 'view', 'read_file']);
-const SEARCH = new Set(['grep', 'glob', 'search', 'codebase_search', 'file_search', 'find', 'list_dir', 'ls']);
-const SHELL = new Set(['bash', 'shell', 'exec_command', 'run_terminal_cmd', 'terminal', 'execute_command']);
+const READ = new Set(['read', 'view', 'read_file', 'view_image']);
+const SEARCH = new Set(['grep', 'glob', 'search', 'codebase_search', 'file_search', 'find', 'list_dir', 'ls', 'toolsearch', 'tool_search']);
+const SHELL = new Set(['bash', 'shell', 'exec_command', 'run_terminal_cmd', 'terminal', 'execute_command', 'write_stdin', 'background-start', 'background-stop']);
 const WEB = new Set(['webfetch', 'websearch', 'web_search', 'fetch', 'browser']);
-const SUBAGENT = new Set(['task', 'agent', 'subagent', 'dispatch_agent']);
+const SUBAGENT = new Set(['task', 'agent', 'subagent', 'dispatch_agent', 'sendmessage', 'workflow', 'wait_agent', 'close_agent']);
 
 /** Map a raw (already connector-canonicalized) tool name to a category. */
 export function toolCategory(name: string): ToolCategory {
