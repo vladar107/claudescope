@@ -17,7 +17,7 @@ import type {
   SessionSort,
 } from '@claudescope/shared';
 import { isZeroRated } from '@claudescope/shared';
-import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import { getConnection, queryRows, sqlLikeEscape, sqlString } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { displayNameFromCwd, projectIdFromCwd } from '../data/project-id.js';
 import { toIso } from './projects.js';
@@ -106,7 +106,9 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
       where.push(`project_cwd = ${match ? sqlString(match) : "'\\0'"}`);
     }
     if (q && q.trim()) {
-      where.push(`(lower(title) LIKE ${sqlString('%' + q.toLowerCase() + '%')})`);
+      where.push(
+        `(lower(title) LIKE ${sqlString('%' + sqlLikeEscape(q.toLowerCase()) + '%')} ESCAPE '\\')`,
+      );
     }
 
     const sortKey: SessionSort = (sort as SessionSort) in SORT_SQL ? (sort as SessionSort) : 'recent';
