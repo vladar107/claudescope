@@ -360,12 +360,23 @@ async function applyFallbackTitles(conn: DuckDBConnection): Promise<void> {
     `,
   );
 
+  const updates: string[] = [];
   for (const r of rows) {
     const title = cleanFallbackTitle(r.raw != null ? String(r.raw) : null);
     if (title.length === 0) continue;
-    await conn.run(
-      `UPDATE sessions SET title = ${sqlString(title)}, title_derived = TRUE WHERE id = ${sqlString(String(r.session_id))}`,
-    );
+    updates.push(`(${sqlString(String(r.session_id))}, ${sqlString(title)})`);
+  }
+  if (updates.length === 0) return;
+
+  // One UPDATE per chunk instead of one per session — this reruns on every
+  // rebuild, so a per-row loop is N round-trips for what is a single join.
+  const CHUNK = 1000;
+  for (let i = 0; i < updates.length; i += CHUNK) {
+    await conn.run(`
+      UPDATE sessions SET title = v.title, title_derived = TRUE
+      FROM (VALUES ${updates.slice(i, i + CHUNK).join(', ')}) AS v(id, title)
+      WHERE sessions.id = v.id
+    `);
   }
 }
 
