@@ -72,3 +72,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0045 | [Indexing UX + post-update self-healing](./0045-indexing-ux-and-self-healing-updates.md) | done |
 | 0046 | [Live session updates (fingerprint polling + stick-to-bottom)](./0046-live-session-updates.md) | done |
 | 0047 | [List freshness: dataVersion idle polling](./0047-list-freshness-dataversion.md) | done |
+| 0048 | [xAI Grok CLI connector](./0048-grok-connector.md) | done |

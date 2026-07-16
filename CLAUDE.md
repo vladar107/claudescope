@@ -12,7 +12,8 @@ analyze AI coding-agent transcripts in one place — [Claude Code](https://claud
 (`~/.copilot/session-state/**/events.jsonl`), and
 [Google Antigravity](https://antigravity.google)
 (`~/.gemini/antigravity-cli/**/transcript_full.jsonl`, plus the desktop app dir
-`~/.gemini/antigravity/`). Sessions are merged by working
+`~/.gemini/antigravity/`), and [xAI Grok CLI](https://x.ai)
+(`~/.grok/sessions/**/chat_history.jsonl`). Sessions are merged by working
 directory into one project per `cwd`, each session tagged with its agent.
 Distributed as a single npm CLI (`@vladar107/claudescope`). This file is the
 source of truth for both humans and agents working in this repo; `AGENTS.md`
@@ -41,7 +42,7 @@ npm-workspaces monorepo (`packages/*`):
 ## Runtime state — critical
 
 - **NEVER write to any agent source** (`~/.claude`, `~/.codex`, `~/.junie`,
-  `~/.pi`, `~/.copilot`, `~/.gemini`, opencode's `opencode.db`). They are read-only data sources — and that
+  `~/.pi`, `~/.copilot`, `~/.gemini`, `~/.grok`, opencode's `opencode.db`). They are read-only data sources — and that
   includes reading agent memory live from those home dirs.
 - All app-owned state lives in **`~/.claudescope/`** (override: `CLAUDESCOPE_HOME`):
   the DuckDB index, a user-editable `pricing.json` (seeded from a shipped
@@ -123,8 +124,10 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
 
 - **Thinking blocks render empty** — Claude Code stores only a signature (and
   Codex only encrypted reasoning), not the plaintext. Expected, not a bug.
-  **pi and Antigravity are the exceptions**: both store plaintext thinking (pi
-  also keeps an opaque `thinkingSignature`), so their reasoning renders in full.
+  **pi, Antigravity, and Grok are the exceptions**: pi and Antigravity store
+  plaintext thinking (pi also keeps an opaque `thinkingSignature`), and Grok
+  stores plaintext reasoning *summaries* next to its encrypted content, so
+  their reasoning renders in full.
 - **Codex sessions have no stored title** — the session title falls back to the
   first user message (see `first_user` in `data/index.ts`). Same for **pi**.
 - **Codex subagents & apply_patch** — subagent rollouts are separate files whose
@@ -190,6 +193,26 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   session (`is_sidechain`) and nested via a canonical `Task` tool_use. **No token
   counts** in the transcripts (the per-conversation SQLite is opaque protobuf,
   ignored) → cost 0, tokens unavailable by design.
+- **xAI Grok CLI connector** (`connectors/grok/`) — a session is a DIRECTORY
+  (`~/.grok/sessions/<encoded-cwd>/<uuid>/`) spreading facts across three files:
+  `chat_history.jsonl` is the message spine (OpenAI-Responses style; no
+  timestamps/usage), `updates.jsonl` is a best-effort overlay carrying
+  timestamps and the ONLY token usage (`turn_completed`, once per user turn —
+  a missing/truncated updates file → summary-time timestamps and zero usage),
+  and `summary.json` carries `cwd`/`generated_title`. `prepare()` normalizes to
+  canonical NDJSON (pi pattern); discovery stats fold all three files so
+  late-written usage/titles trigger re-index. Grok's `cachedReadTokens` is a
+  SUBSET of `inputTokens` → split out at normalize time (`input − cachedRead`).
+  Real user prompts carry `prompt_index` (text wrapped in `<user_query>`,
+  stripped); user rows WITHOUT it are injected context (user_info/agents-md)
+  and are skipped. `write`/`search_replace` map to canonical `Write`/`Edit` so
+  the Files-changed tab works; images are inline data-URLs → `ImageBlock`.
+  Subagents are SIBLING session dirs (child `summary.json` has
+  `session_kind:"subagent"`, no parent pointer); the linkage lives only in the
+  parent's `subagents/<child-id>/meta.json` — children re-key to the parent
+  (`is_sidechain`) and nest via `spawn_subagent` → canonical `Task` (its
+  `subagent_type` comes from meta, matched by the shared `description`).
+  Experimental memory (`~/.grok/memory/`) is not surfaced (off by default).
 - **Junie transcripts read differently** — Junie stores an event-sourced UI
   stream (`events.jsonl`), not a chat log: no assistant prose and no thinking, so
   a session renders as tool/terminal/file blocks plus a final result. Expected,

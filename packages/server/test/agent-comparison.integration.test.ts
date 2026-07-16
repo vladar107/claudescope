@@ -33,6 +33,7 @@ process.env.OPENCODE_DATA_DIR = join(work, 'opencode-empty');
 process.env.COPILOT_SESSIONS_DIR = copilotDir;
 process.env.ANTIGRAVITY_CLI_DIR = antigravityDir;
 process.env.ANTIGRAVITY_DIR = join(work, 'antigravity-desktop-empty');
+process.env.GROK_SESSIONS_DIR = join(work, 'grok-empty');
 process.env.DUCKDB_PATH = join(work, 'index.duckdb');
 process.env.CLAUDESCOPE_HOME = join(work, 'home');
 process.env.REINDEX_INTERVAL_MS = '0';

@@ -48,6 +48,7 @@ const USAGE_GRANULARITY: Record<string, AgentUsageGranularity> = {
   junie: 'per-response',
   copilot: 'session-level',
   antigravity: 'none',
+  grok: 'per-response',
 };
 
 /** Human notes behind the n/a markers, keyed by connector id. */
@@ -57,6 +58,7 @@ const AVAILABILITY_NOTES: Record<string, string> = {
   antigravity:
     'Antigravity transcripts carry no token counts — tokens and cost are unavailable by design.',
   junie: 'Junie delegates via plain terminal commands, so subagent usage is invisible.',
+  grok: 'Grok records usage once per user turn (in updates.jsonl); a session whose updates file is missing or truncated reports zero tokens.',
 };
 
 /** Shared cache-hit denominator (see /api/analytics). */
