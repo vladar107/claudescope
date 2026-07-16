@@ -5,6 +5,7 @@ import { api, ApiError } from '../../api/client.js';
 import { AgentBadge, agentLabel, ErrorBox, formatCost, formatCount, LocalBadge, ModelChips, SearchField, Spinner } from '../../components';
 import { formatBytes, formatDateTime, timeAgo } from './format.js';
 import { useProjectContext } from './ProjectLayout.js';
+import { useDataVersionRefetch } from '../../status/useDataVersionRefetch.js';
 
 const SORT_OPTIONS: { value: SessionSort; label: string }[] = [
   { value: 'recent', label: 'Most recent' },
@@ -56,6 +57,18 @@ export function SessionListPage() {
       });
     return () => controller.abort();
   }, [projectId, sort, agent, reloadKey]);
+
+  // Steady-state freshness: silently refetch (no spinner, keep scroll) when a
+  // reindex pass lands new data — a live session's row updates and new
+  // sessions appear without a manual reload.
+  useDataVersionRefetch((signal) => {
+    api
+      .listSessions({ project: projectId, sort, agent }, signal)
+      .then(setSessions)
+      .catch(() => {
+        /* transient — the next change retries */
+      });
+  });
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();

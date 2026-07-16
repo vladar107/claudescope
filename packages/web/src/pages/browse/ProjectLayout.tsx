@@ -14,6 +14,7 @@ import { Link, NavLink, Outlet, useOutletContext, useParams } from 'react-router
 import type { ProjectMeta } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
 import { formatCost, formatCount, SummaryStrip } from '../../components';
+import { useDataVersionRefetch } from '../../status/useDataVersionRefetch.js';
 import '../memory/memory.css';
 
 export interface ProjectOutletContext {
@@ -52,6 +53,17 @@ export function ProjectLayout() {
       });
     return () => controller.abort();
   }, [projectId]);
+
+  // Keep the header stats (sessions/tokens/cost) in step with the session list
+  // below, which silently refetches when a reindex pass lands new data.
+  useDataVersionRefetch((signal) => {
+    api
+      .listProjects(signal)
+      .then((projects) => setProject(projects.find((p) => p.id === projectId) ?? null))
+      .catch(() => {
+        /* transient — the next change retries */
+      });
+  });
 
   const displayName = project?.displayName ?? projectId;
 
