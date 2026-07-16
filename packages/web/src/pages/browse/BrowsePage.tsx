@@ -4,6 +4,7 @@ import type { ProjectMeta, SourceInfo } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
 import { AgentBadge, ErrorBox, formatCost, formatCount, SearchField, Spinner, SummaryStrip } from '../../components';
 import { useServerStatus } from '../../status/StatusProvider.js';
+import { useDataVersionRefetch } from '../../status/useDataVersionRefetch.js';
 import { timeAgo } from './format.js';
 import './browse.css';
 
@@ -93,6 +94,17 @@ export function BrowsePage() {
       });
     return () => controller.abort();
   }, [building, indexingTick]);
+
+  // Steady-state freshness: silently refetch when a reindex pass lands new
+  // data, so project cards update without a manual reload.
+  useDataVersionRefetch((signal) => {
+    api
+      .listProjects(signal)
+      .then(setProjects)
+      .catch(() => {
+        /* transient — the next change retries */
+      });
+  });
 
   // The genuinely-empty state (ready, idle, zero projects) explains itself with
   // the watched source directories; fetch them lazily only when it shows.

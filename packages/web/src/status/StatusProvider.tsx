@@ -3,10 +3,13 @@
  *
  * Polls fast (1s) while the index is building — first start or a post-update
  * schema rebuild — so pages can show live progress and refetch growing data,
- * then stops entirely once the server is ready and idle: steady state costs a
- * single health call per page load. Any fetch failure means "server
- * unreachable" (startup or restart window; network errors throw TypeError, not
- * ApiError) and is retried slowly until the server comes back.
+ * then drops to a slow idle poll (10s) once the server is ready. The idle poll
+ * watches `dataVersion`: an incremental reindex pass is transient (sub-second),
+ * so it's the only signal an idle client can observe that new data landed —
+ * list pages refetch when it changes. It also keeps the update nudge live in
+ * long-lived tabs. Any fetch failure means "server unreachable" (startup or
+ * restart window; network errors throw TypeError, not ApiError) and is retried
+ * slowly until the server comes back.
  */
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
@@ -22,6 +25,12 @@ export interface ServerStatus {
   building: boolean;
   /** Increments on every poll observed while building — key refetches off it. */
   indexingTick: number;
+  /**
+   * The server's data-change counter (null until the first health response).
+   * Changes whenever a reindex pass landed new data — list pages key silent
+   * refetches off it. Compare by inequality: it resets on daemon restart.
+   */
+  dataVersion: number | null;
   /** Newer published version the daemon reported, for the sidebar nudge. */
   updateAvailable: string | null;
 }
@@ -31,14 +40,16 @@ const idleStatus: ServerStatus = {
   indexing: null,
   building: false,
   indexingTick: 0,
+  dataVersion: null,
   updateAvailable: null,
 };
 
 const StatusContext = createContext<ServerStatus>(idleStatus);
 
-/** Poll intervals: fast while the index builds, slow while unreachable. */
+/** Poll intervals: fast while the index builds, slow when idle or unreachable. */
 const BUILDING_POLL_MS = 1000;
 const UNREACHABLE_POLL_MS = 5000;
+const IDLE_POLL_MS = 10_000;
 
 export function StatusProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<ServerStatus>(idleStatus);
@@ -57,10 +68,10 @@ export function StatusProvider({ children }: { children: ReactNode }) {
           indexing: h.indexing ?? null,
           building,
           indexingTick: building ? s.indexingTick + 1 : s.indexingTick,
+          dataVersion: h.dataVersion,
           updateAvailable: h.updateAvailable ?? null,
         }));
-        // Ready and idle: stop polling entirely.
-        if (building) timer = window.setTimeout(() => void tick(), BUILDING_POLL_MS);
+        timer = window.setTimeout(() => void tick(), building ? BUILDING_POLL_MS : IDLE_POLL_MS);
       } catch {
         if (cancelled) return;
         timer = window.setTimeout(() => void tick(), UNREACHABLE_POLL_MS);

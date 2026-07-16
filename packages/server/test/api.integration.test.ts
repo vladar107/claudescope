@@ -9,7 +9,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -378,6 +378,23 @@ describe('POST /api/reindex', () => {
     const res = await app.inject({ method: 'POST', url: '/api/reindex' });
     expect(res.statusCode).toBe(200);
     expect(res.json().reindexed).toBe(0);
+  });
+
+  // dataVersion is the only signal an idle client can observe (an incremental
+  // pass is transient), so its semantics matter: a no-op pass must NOT bump it
+  // (or clients would refetch every 15s for nothing), a changed pass must.
+  it('bumps health dataVersion only when a pass changed data', async () => {
+    const v0 = (await get('/api/health')).json().dataVersion;
+    expect(typeof v0).toBe('number');
+
+    await app.inject({ method: 'POST', url: '/api/reindex' });
+    expect((await get('/api/health')).json().dataVersion).toBe(v0);
+
+    // Touch a fixture so the (mtime,size) check reloads it (a trailing blank
+    // line is skipped by the parser but changes the size).
+    appendFileSync(fixtureFiles[0]!, '\n');
+    await app.inject({ method: 'POST', url: '/api/reindex' });
+    expect((await get('/api/health')).json().dataVersion).not.toBe(v0);
   });
 });
 
