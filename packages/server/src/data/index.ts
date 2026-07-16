@@ -31,6 +31,11 @@ let inFlight: Promise<ReindexResponse> | null = null;
 /** Live progress of the current pass (changed files loaded vs. total). Non-null
  *  only while a pass with work is running; surfaced on /api/health. */
 let progress: IndexingProgress | null = null;
+/** Monotonic counter bumped whenever a pass changed the derived tables. An
+ *  incremental pass is transient (sub-second), so idle clients can't observe
+ *  `progress` — they watch this on /api/health instead and refetch when it
+ *  moves. Resets on daemon restart, so clients compare by inequality. */
+let dataVersion = 0;
 
 /** Min interval between mid-first-build partial `sessions` rebuilds (ms).
  *  Env-overridable so tests can force a rebuild after every file. */
@@ -47,6 +52,10 @@ export function isReindexInFlight(): boolean {
 
 export function getIndexProgress(): IndexingProgress | null {
   return progress;
+}
+
+export function getDataVersion(): number {
+  return dataVersion;
 }
 
 /** The four rate fields, in canonical → SQL-column order. */
@@ -538,6 +547,7 @@ async function doReindex(): Promise<ReindexResponse> {
           await electCanonicalUsage(conn);
           await rebuildSessions(conn);
           lastPartialRebuild = Date.now();
+          dataVersion += 1;
         }
       } catch (err) {
         console.warn(`claudescope: skipping unreadable transcript ${file.path}:`, err);
@@ -566,6 +576,7 @@ async function doReindex(): Promise<ReindexResponse> {
     await rebuildFtsIndex(conn);
 
     ready = true;
+    dataVersion += 1;
     return { reindexed, durationMs: Date.now() - start };
   } finally {
     // Progress stays visible through finalization ("finishing up"), then clears.

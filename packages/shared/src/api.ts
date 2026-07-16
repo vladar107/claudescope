@@ -431,6 +431,12 @@ export interface HealthResponse {
   version: string;
   /** True once the initial index build (or a post-rebuild pass) has finished. */
   ready: boolean;
+  /**
+   * Monotonic counter bumped whenever a reindex pass changed indexed data.
+   * Clients refetch when it differs from the last value they saw (inequality,
+   * not greater-than — the counter resets on daemon restart).
+   */
+  dataVersion: number;
   /** Present while a reindex pass is loading changed files. */
   indexing?: IndexingProgress;
   /** Latest published version, when the daemon knows it is newer than itself. */
