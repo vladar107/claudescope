@@ -168,3 +168,12 @@ function normalizeRow(row: Record<string, unknown>): Record<string, unknown> {
 export function sqlString(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
+
+/**
+ * Backslash-escape LIKE wildcards (`%`, `_`) and `\` itself so a user-supplied
+ * string matches literally inside a LIKE pattern. The LIKE must carry
+ * `ESCAPE '\'` for the escapes to take effect.
+ */
+export function sqlLikeEscape(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
