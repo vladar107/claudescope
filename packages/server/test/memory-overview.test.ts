@@ -117,12 +117,12 @@ describe('buildConnectorOverviews', () => {
       // claude-code has content (a fact) → rank 0.
       fact({ connectorId: 'claude-code', title: 'f', updatedAt: '2026-01-01T00:00:00.000Z' }),
       // codex/junie/copilot are supported but empty here → rank 1.
-      // pi/opencode are unsupported → rank 2.
+      // pi/opencode/grok are unsupported → rank 2.
     ];
     const overviews = buildConnectorOverviews(items);
-    // Every registered agent appears (claude-code, codex, junie, pi, opencode, copilot, antigravity).
+    // Every registered agent appears (claude-code, codex, junie, pi, opencode, copilot, antigravity, grok).
     expect(overviews.map((o) => o.connectorId).sort()).toEqual(
-      ['claude-code', 'codex', 'copilot', 'junie', 'opencode', 'pi', 'antigravity'].sort(),
+      ['claude-code', 'codex', 'copilot', 'junie', 'opencode', 'pi', 'antigravity', 'grok'].sort(),
     );
     const rank = (o: { supported: boolean; preview?: unknown }) =>
       o.supported && o.preview ? 0 : o.supported ? 1 : 2;

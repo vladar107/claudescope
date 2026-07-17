@@ -92,6 +92,16 @@ export const COPILOT_SESSIONS_DIR = expandHome(
 );
 
 /**
+ * READ-ONLY source of xAI Grok CLI sessions. The app MUST NEVER write here.
+ * Defaults to `~/.grok/sessions` (one `<session-uuid>/` dir per session under a
+ * per-cwd url-encoded directory, holding `chat_history.jsonl` + `updates.jsonl`
+ * + `summary.json`). Override with GROK_SESSIONS_DIR. A leading `~` is expanded.
+ */
+export const GROK_SESSIONS_DIR = expandHome(
+  process.env.GROK_SESSIONS_DIR ?? join(homedir(), '.grok', 'sessions'),
+);
+
+/**
  * READ-ONLY source of Google Antigravity sessions. The app MUST NEVER write here.
  * Antigravity 2.0 has two surfaces that share the same on-disk shape — the CLI
  * (`agy`) and the desktop app — each with its own appDataDir under `~/.gemini`.
@@ -250,7 +260,7 @@ export const APP_VERSION =
  * shadowing it. A monotonic integer (not a content hash): the user copy is meant
  * to be edited, so only a real shipped change should trigger a reconcile.
  */
-export const PRICING_SCHEMA_VERSION = 3;
+export const PRICING_SCHEMA_VERSION = 4;
 
 /**
  * Reconcile the user-editable pricing file with the shipped default.

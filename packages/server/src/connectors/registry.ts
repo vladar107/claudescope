@@ -11,6 +11,7 @@ import { piConnector } from './pi/pi.js';
 import { opencodeConnector } from './opencode/opencode.js';
 import { copilotConnector } from './copilot/copilot.js';
 import { antigravityConnector } from './antigravity/antigravity.js';
+import { grokConnector } from './grok/grok.js';
 
 export const connectors: AgentConnector[] = [
   claudeCodeConnector,
@@ -20,6 +21,7 @@ export const connectors: AgentConnector[] = [
   opencodeConnector,
   copilotConnector,
   antigravityConnector,
+  grokConnector,
 ];
 
 /** The connector with the given id, falling back to Claude Code if unknown. */

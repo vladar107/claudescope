@@ -325,6 +325,12 @@
   background: #8ab4f81a;
   color: #8ab4f8;
 }
+/* Grok's brand is monochrome — a neutral slate keeps it distinct from the hues. */
+.tv-chip--agent.tv-agent--grok {
+  border-color: #9da7b366;
+  background: #9da7b31a;
+  color: #c4cdd6;
+}
 /* Light theme: keep the brand tints but darken the text so it stays legible on
    a light surface. */
 :root[data-theme='light'] .tv-chip--agent.tv-agent--claude-code {
@@ -347,4 +353,7 @@
 }
 :root[data-theme='light'] .tv-chip--agent.tv-agent--antigravity {
   color: #1a73e8;
+}
+:root[data-theme='light'] .tv-chip--agent.tv-agent--grok {
+  color: #40484f;
 }

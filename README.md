@@ -24,14 +24,15 @@ machine and only ever reads your transcripts.
 | [opencode](https://opencode.ai)                   | `~/.local/share/opencode/opencode.db` (SQLite) |
 | [GitHub Copilot CLI](https://github.com/features/copilot) | `~/.copilot/session-state/**/events.jsonl` |
 | [Google Antigravity](https://antigravity.google) | `~/.gemini/antigravity-cli/brain/**/transcript_full.jsonl` |
+| [xAI Grok CLI](https://x.ai) | `~/.grok/sessions/**/chat_history.jsonl` |
 
 Each source is optional — a directory that doesn't exist is simply skipped, so
-Claudescope works whether you use one agent or all seven. Adding another is just
+Claudescope works whether you use one agent or all eight. Adding another is just
 [adding another connector](./CONTRIBUTING.md#adding-an-agent-connector).
 
 ## What it can do
 
-- **Multi-agent** — Claude Code, Codex, Junie, pi, opencode, GitHub Copilot CLI, and Google Antigravity sessions side by side, each labeled with an **agent badge**. A project that several agents touched shows one card with all its agent tags; drill in and **filter the session list by agent**.
+- **Multi-agent** — Claude Code, Codex, Junie, pi, opencode, GitHub Copilot CLI, Google Antigravity, and xAI Grok CLI sessions side by side, each labeled with an **agent badge**. A project that several agents touched shows one card with all its agent tags; drill in and **filter the session list by agent**.
 - **Browse** every session grouped by project — titles, dates, message/tool counts, token totals, cost, git branch, PR links.
 - **Read** a session as a clean threaded conversation: markdown, syntax-highlighted code, collapsible thinking, paired tool calls + results, **syntax-highlighted red/green diffs** for edits, attachments, and sidechain/subagent turns. A built-in **find-in-session** bar (⌘/Ctrl+F) searches the whole transcript — including collapsed thinking, tool, and subagent content — auto-expanding and highlighting matches, with a user/assistant filter.
 - **Review changes** via a **Files changed** tab that aggregates every edit/write in the session by file, with per-file diffs and +/− counts (diffs load lazily per file).
@@ -43,7 +44,7 @@ Claudescope works whether you use one agent or all seven. Adding another is just
 
 > **Privacy:** Everything runs locally on `127.0.0.1`. The app **never** writes to
 > any agent's data — every source (`~/.claude`, `~/.codex`, `~/.junie`, `~/.pi`,
-> `~/.copilot`, `~/.gemini`, and opencode's database) is treated as strictly read-only. Its only persistent
+> `~/.copilot`, `~/.gemini`, `~/.grok`, and opencode's database) is treated as strictly read-only. Its only persistent
 > state lives in `~/.claudescope/` — a DuckDB index, a copy of the pricing file, and
 > a cached pricing snapshot (`pricing.fetched.json`), all safe to delete anytime. The
 > sole outbound requests are an optional daily check for a newer published version
@@ -239,11 +240,12 @@ All optional — set via environment variables.
 | `COPILOT_SESSIONS_DIR`| `~/.copilot/session-state` | Where to read GitHub Copilot CLI transcripts from. A leading `~` is expanded. |
 | `ANTIGRAVITY_CLI_DIR` | `~/.gemini/antigravity-cli` | Where to read Google Antigravity transcripts from. A leading `~` is expanded. |
 | `ANTIGRAVITY_DIR`     | `~/.gemini/antigravity` | Where to read Google Antigravity desktop-app transcripts from. A leading `~` is expanded. |
+| `GROK_SESSIONS_DIR`   | `~/.grok/sessions`     | Where to read xAI Grok CLI transcripts from. A leading `~` is expanded. |
 | `CLAUDESCOPE_HOME`    | `~/.claudescope`       | Where the app keeps its own state (index, pricing copy, logs, PID).    |
 | `REINDEX_INTERVAL_MS` | `15000`                | How often to auto-pick-up new/updated sessions. Set `0` to disable.    |
 
 Each agent source is optional — if a directory doesn't exist it's simply skipped,
-so the app works whether you use one agent or all seven.
+so the app works whether you use one agent or all eight.
 
 Examples:
 
@@ -256,6 +258,7 @@ PI_SESSIONS_DIR=/path/to/pi/sessions claudescope         # point at pi sessions 
 OPENCODE_DATA_DIR=/path/to/opencode claudescope          # point at an opencode data dir elsewhere
 COPILOT_SESSIONS_DIR=/path/to/copilot/session-state claudescope  # point at Copilot CLI sessions elsewhere
 ANTIGRAVITY_CLI_DIR=/path/to/antigravity-cli claudescope # point at Google Antigravity sessions elsewhere
+GROK_SESSIONS_DIR=/path/to/grok/sessions claudescope     # point at Grok CLI sessions elsewhere
 claudescope --no-open                                    # don't pop a browser tab
 ```
 
@@ -304,7 +307,7 @@ The family step means version- or date-suffixed ids (e.g. `claude-haiku-4-5-2025
 user-editable fallback and override layer for families and the default rate; the
 fetched snapshot provides exact per-model rates for all known models.
 
-Claude Code, Junie, Copilot CLI, and Antigravity record no model provider in
+Claude Code, Junie, Copilot CLI, Antigravity, and Grok CLI record no model provider in
 their transcripts, so a local run there can't be auto-detected via step 1 — the
 escape hatch is pinning the exact model id to a zero rate in `pricing.json`'s
 `models` section.
@@ -318,6 +321,7 @@ Shipped fallback rates (USD per 1M tokens):
 | Sonnet 4.x          | $3    | $15    | $3.75            | $0.30      |
 | Haiku 4.5           | $1    | $5     | $1.25            | $0.10      |
 | Gemini 2.5 Pro-class| $1.25 | $10    | —                | $0.31      |
+| Grok 4.5-class      | $2    | $6     | —                | $0.50      |
 | GPT-5               | $0.63 | $5     | —                | $0.13      |
 | GPT-5.4             | $2.50 | $15    | —                | $0.50      |
 | GPT-5.5             | $5    | $30    | —                | $0.50      |
@@ -399,6 +403,14 @@ served from cache (legitimately high for Claude Code, which re-reads cached cont
   cost are unavailable by design and show as zero / —. Reasoning renders in full —
   like pi, it stores the plaintext of its thinking blocks. Subagents run as
   separate conversations and are shown nested under the call that spawned them.
+- **xAI Grok CLI spreads a session across three files** (`chat_history.jsonl` +
+  `updates.jsonl` + `summary.json`). Timestamps and token usage come from
+  `updates.jsonl` (recorded once per user turn), so a session whose updates file
+  is missing or truncated still renders but reports zero tokens. Reasoning
+  **summaries** render in full (plaintext, like pi). File edits show in the
+  **Files changed** tab, pasted screenshots embed, and subagents run as sibling
+  sessions shown nested under the call that spawned them. Grok's experimental
+  memory is not surfaced.
 
 ---
 
@@ -416,7 +428,7 @@ local copy, see [Run from source](#run-from-source) above.
 ## Security & privacy
 
 Claudescope runs entirely on your machine. It treats every agent source
-(`~/.claude`, `~/.codex`, `~/.junie`, `~/.pi`, `~/.copilot`, `~/.gemini`, and opencode's database) as
+(`~/.claude`, `~/.codex`, `~/.junie`, `~/.pi`, `~/.copilot`, `~/.gemini`, `~/.grok`, and opencode's database) as
 **read-only**, **binds to `127.0.0.1` only**, and sends **no telemetry**. Its only
 outbound requests are a cached npm-registry version check for the update notice
 and a daily fetch of public model pricing rates from LiteLLM (disable with
@@ -429,7 +441,7 @@ shell, and self-update behavior — and how to report a vulnerability.
 ## Troubleshooting
 
 - **App is empty / "sessions directory not found"** — none of `CLAUDE_PROJECTS_DIR`,
-  `CODEX_SESSIONS_DIR`, `JUNIE_SESSIONS_DIR`, `PI_SESSIONS_DIR`, `OPENCODE_DATA_DIR`, `COPILOT_SESSIONS_DIR`, or `ANTIGRAVITY_CLI_DIR` points at real transcripts. Check
+  `CODEX_SESSIONS_DIR`, `JUNIE_SESSIONS_DIR`, `PI_SESSIONS_DIR`, `OPENCODE_DATA_DIR`, `COPILOT_SESSIONS_DIR`, `ANTIGRAVITY_CLI_DIR`, or `GROK_SESSIONS_DIR` points at real transcripts. Check
   the banner and set them correctly. Any source can be absent; only the present
   ones are indexed.
 - **`Error: listen EADDRINUSE :4317`** — the port is taken; run `claudescope --port <n>`.
