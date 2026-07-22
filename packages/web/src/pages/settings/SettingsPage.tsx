@@ -1,12 +1,24 @@
 /**
- * Settings page. Lifecycle controls target the INDEXER (the background
- * reindex engine) — the HTTP server is never stopped from here (terminal
- * only). Edits persist to ~/.claudescope/settings.json; env vars always win
- * and shadowed fields get a warning badge.
+ * Settings page, laid out after the design mockup: header with Save Changes,
+ * a Service Lifecycle tile row (controls the INDEXER — the HTTP server stays
+ * terminal-only), Global Configuration | Appearance side by side, a full-width
+ * Path Configuration card, and Advanced Runtime with the danger zone.
+ *
+ * Edits persist to ~/.claudescope/settings.json; env vars always win and
+ * shadowed fields get a warning.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Moon, Monitor, Sun, type LucideIcon } from 'lucide-react';
+import {
+  DollarSign,
+  Moon,
+  Monitor,
+  Play,
+  RotateCcw,
+  Square,
+  Sun,
+  type LucideIcon,
+} from 'lucide-react';
 import type {
   EditableSetting,
   IndexerStatus,
@@ -23,41 +35,16 @@ import { SettingRow } from './SettingRow.js';
 import './settings.css';
 
 const THEME_OPTIONS: { value: ThemeChoice; label: string; icon: LucideIcon }[] = [
-  { value: 'system', label: 'System', icon: Monitor },
-  { value: 'light', label: 'Light', icon: Sun },
   { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'system', label: 'System', icon: Monitor },
 ];
 
-/** Segmented System / Light / Dark theme control (client-side, per browser). */
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  return (
-    <div className="tv-theme-toggle" role="group" aria-label="Theme">
-      {THEME_OPTIONS.map((o) => {
-        const Icon = o.icon;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            className={theme === o.value ? 'tv-theme-toggle__btn is-active' : 'tv-theme-toggle__btn'}
-            onClick={() => setTheme(o.value)}
-            title={`${o.label} theme`}
-            aria-pressed={theme === o.value}
-          >
-            <Icon size={15} aria-hidden="true" />
-            <span className="tv-settings__theme-label">{o.label}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 const STATE_LABELS: Record<string, string> = {
-  building: 'Building index…',
-  indexing: 'Indexing now…',
-  watching: 'Watching for changes',
-  paused: 'Paused',
+  building: 'Building index',
+  indexing: 'Indexing',
+  watching: 'Indexer running',
+  paused: 'Indexer paused',
 };
 
 /** Baseline a draft compares against: the saved value, else what's in effect. */
@@ -73,6 +60,33 @@ function formatUptime(startedAt: string): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ${m % 60}m`;
   return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+/** One big square action tile (mockup's lifecycle buttons). */
+function ActionTile({
+  icon: Icon,
+  label,
+  disabled,
+  busy,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  disabled?: boolean;
+  busy?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={busy ? 'tv-settings__tile is-busy' : 'tv-settings__tile'}
+      disabled={disabled || busy}
+      onClick={onClick}
+    >
+      <Icon size={20} aria-hidden="true" />
+      <span>{label}</span>
+    </button>
+  );
 }
 
 export function SettingsPage() {
@@ -99,6 +113,8 @@ export function SettingsPage() {
 
   const [rebuildOpen, setRebuildOpen] = useState(false);
   const [rebuildBusy, setRebuildBusy] = useState(false);
+
+  const { theme, setTheme } = useTheme();
 
   const seedDraft = useCallback((res: SettingsResponse) => {
     const next: Record<string, SettingValue> = {};
@@ -130,6 +146,10 @@ export function SettingsPage() {
       ),
     [editable, draft],
   );
+
+  const setDraftValue = useCallback((key: string, v: SettingValue) => {
+    setDraft((d) => ({ ...d, [key]: v }));
+  }, []);
 
   const discard = useCallback(() => {
     if (settings) seedDraft(settings);
@@ -170,20 +190,18 @@ export function SettingsPage() {
       seedDraft(res.settings);
       setWarnings(res.warnings);
       setFieldErrors({});
-      const liveCount = res.applied.filter((a) => a.live).length;
-      const deferred = res.applied.length - liveCount;
+      const deferred = res.applied.filter((a) => !a.live).length;
       setNotice(
-        deferred > 0
-          ? `Saved. ${liveCount} setting${liveCount === 1 ? '' : 's'} applied live; ${deferred} take${deferred === 1 ? 's' : ''} effect on the next start.`
-          : 'Saved — changes applied live.',
+        deferred > 0 ? 'Saved — some changes take effect on the next start.' : 'Saved — applied live.',
       );
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
         try {
           const body = JSON.parse(err.body) as { fields?: Record<string, string> };
           setFieldErrors(body.fields ?? {});
+          setNotice('Some fields are invalid.');
         } catch {
-          setLoadError(String(err));
+          setNotice(`Save failed: ${String(err)}`);
         }
       } else {
         setNotice(`Save failed: ${String(err)}`);
@@ -193,36 +211,31 @@ export function SettingsPage() {
     }
   }, [settings, dirtyKeys, draft, seedDraft]);
 
-  const runIndexerAction = useCallback(
-    async (action: 'stop' | 'start' | 'restart') => {
-      setActionBusy(action);
-      try {
-        const fn =
-          action === 'stop'
-            ? api.indexerStop
-            : action === 'start'
-              ? api.indexerStart
-              : api.indexerRestart;
-        setLocalIndexer(await fn());
-      } catch (err) {
-        setNotice(`Indexer ${action} failed: ${String(err)}`);
-      } finally {
-        setActionBusy(null);
-      }
-    },
-    [],
-  );
+  const runIndexerAction = useCallback(async (action: 'stop' | 'start' | 'restart') => {
+    setActionBusy(action);
+    try {
+      const fn =
+        action === 'stop'
+          ? api.indexerStop
+          : action === 'start'
+            ? api.indexerStart
+            : api.indexerRestart;
+      setLocalIndexer(await fn());
+    } catch (err) {
+      setNotice(`Indexer ${action} failed: ${String(err)}`);
+    } finally {
+      setActionBusy(null);
+    }
+  }, []);
 
   const syncPricing = useCallback(async () => {
     setPricingBusy(true);
     setPricingResult(null);
     try {
       const res = await api.refreshPricing();
-      setPricingResult(
-        `${res.modelCount} models fetched, ${res.changed} changed. New rates apply to newly indexed events.`,
-      );
+      setPricingResult(`Price sync: ${res.modelCount} models, ${res.changed} changed.`);
     } catch (err) {
-      setPricingResult(`Refresh failed: ${String(err)}`);
+      setPricingResult(`Price sync failed: ${String(err)}`);
     } finally {
       setPricingBusy(false);
     }
@@ -233,7 +246,7 @@ export function SettingsPage() {
     try {
       await api.rebuildIndex();
       setRebuildOpen(false);
-      setNotice('Rebuilding the index — progress shows in the status card.');
+      setNotice('Rebuilding the index — the status chip shows progress.');
     } catch (err) {
       setNotice(`Rebuild failed to start: ${String(err)}`);
     } finally {
@@ -247,226 +260,31 @@ export function SettingsPage() {
   const indexer = localIndexer ?? health.indexer;
   const state = indexer?.state ?? 'building';
   const paused = indexer?.paused ?? false;
-  const groups = {
-    sources: editable.filter((s) => s.group === 'sources'),
-    indexing: editable.filter((s) => s.group === 'indexing'),
-    startup: editable.filter((s) => s.group === 'startup'),
-  };
+  const building = state === 'building';
+
+  const sources = editable.filter((s) => s.group === 'sources');
+  const openBrowser = editable.find((s) => s.key === 'openBrowser');
+  const interval = editable.find((s) => s.key === 'reindexIntervalMs');
+  const port = settings.readOnly.find((r) => r.key === 'port');
+  const home = settings.readOnly.find((r) => r.key === 'claudescopeHome');
+
+  const intervalDraft = interval ? String(draft[interval.key] ?? baselineOf(interval)) : '15000';
+  const intervalNum = Number(intervalDraft) || 0;
 
   return (
     <div className="tv-settings">
-      <h1 className="tv-page-title">Settings</h1>
-
-      {/* ---- Status & indexing lifecycle -------------------------------- */}
-      <section className="tv-card tv-settings__card">
-        <div className="tv-settings__card-head">
-          <h2 className="tv-settings__card-title">Indexing</h2>
-          <span className={`tv-settings__state tv-settings__state--${state}`}>
-            {STATE_LABELS[state] ?? state}
-            {indexer?.intervalMs === 0 && state === 'watching' ? ' (auto-reindex off)' : ''}
-          </span>
-        </div>
-        <p className="tv-settings__desc">
-          Start, stop, or restart the background indexer. While paused, Claudescope stays fully
-          browsable on the existing index — it just stops picking up new sessions until resumed or
-          the app is restarted. The server itself is stopped from the terminal
-          (<code className="tv-mono">claudescope stop</code>).
-        </p>
-        <div className="tv-settings__actions">
-          {paused ? (
-            <button
-              type="button"
-              className="tv-btn tv-btn--primary"
-              disabled={actionBusy !== null}
-              onClick={() => void runIndexerAction('start')}
-            >
-              {actionBusy === 'start' ? 'Starting…' : 'Start indexing'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="tv-btn tv-btn--secondary"
-              disabled={actionBusy !== null || state === 'building'}
-              onClick={() => void runIndexerAction('stop')}
-            >
-              {actionBusy === 'stop' ? 'Stopping…' : 'Stop indexing'}
-            </button>
-          )}
-          <button
-            type="button"
-            className="tv-btn tv-btn--secondary"
-            disabled={actionBusy !== null || state === 'building'}
-            onClick={() => void runIndexerAction('restart')}
-          >
-            {actionBusy === 'restart' ? 'Restarting…' : 'Restart indexing'}
-          </button>
-          {system ? (
-            <span className="tv-settings__meta">
-              v{system.version} · up {formatUptime(system.startedAt)}
-              {localIndexer?.lastPassAt
-                ? ` · last pass ${new Date(localIndexer.lastPassAt).toLocaleTimeString()}`
-                : ''}
-            </span>
+      {/* ---- Header: title + Save Changes (mockup top bar) ---------------- */}
+      <header className="tv-settings__header">
+        <h1 className="tv-page-title">Settings</h1>
+        <div className="tv-settings__header-actions">
+          {notice && dirtyKeys.length === 0 ? (
+            <span className="tv-settings__meta">{notice}</span>
           ) : null}
-        </div>
-        {paused ? (
-          <p className="tv-settings__hint tv-settings__hint--warn">
-            Paused until resumed here or the process restarts — the pause is not persisted.
-          </p>
-        ) : null}
-      </section>
-
-      {/* ---- Appearance -------------------------------------------------- */}
-      <section className="tv-card tv-settings__card">
-        <h2 className="tv-settings__card-title">Appearance</h2>
-        <p className="tv-settings__desc">Theme is stored per browser, not on the server.</p>
-        <ThemeToggle />
-      </section>
-
-      {/* ---- Sources ------------------------------------------------------ */}
-      <section className="tv-card tv-settings__card">
-        <div className="tv-settings__card-head">
-          <h2 className="tv-settings__card-title">Agent sources</h2>
-          <span className="tv-settings__badge tv-settings__badge--readonly">READ-ONLY sources</span>
-        </div>
-        <p className="tv-settings__desc">
-          Where each agent's transcripts are read from. Claudescope never writes to these
-          directories. Changes apply live — the index re-scans immediately; sessions from a
-          previous directory disappear from the index.
-        </p>
-        {groups.sources.map((s) => (
-          <SettingRow
-            key={s.key}
-            setting={s}
-            value={draft[s.key] ?? baselineOf(s)}
-            error={fieldErrors[s.key]}
-            dirty={dirtyKeys.some((d) => d.key === s.key)}
-            onChange={(v) => setDraft((d) => ({ ...d, [s.key]: v }))}
-          />
-        ))}
-      </section>
-
-      {/* ---- Indexing & startup ------------------------------------------ */}
-      <section className="tv-card tv-settings__card">
-        <h2 className="tv-settings__card-title">Indexing &amp; startup</h2>
-        {[...groups.indexing, ...groups.startup].map((s) => (
-          <SettingRow
-            key={s.key}
-            setting={s}
-            value={draft[s.key] ?? baselineOf(s)}
-            error={fieldErrors[s.key]}
-            dirty={dirtyKeys.some((d) => d.key === s.key)}
-            onChange={(v) => setDraft((d) => ({ ...d, [s.key]: v }))}
-          />
-        ))}
-        <p className="tv-settings__hint">Auto-reindex interval: 0 disables the background scan.</p>
-      </section>
-
-      {/* ---- Read-only paths ---------------------------------------------- */}
-      <section className="tv-card tv-settings__card">
-        <h2 className="tv-settings__card-title">App paths (read-only)</h2>
-        <p className="tv-settings__desc">
-          Infrastructure fixed at boot — change via env vars or CLI flags.
-        </p>
-        <table className="tv-settings__table">
-          <tbody>
-            {settings.readOnly.map((r) => (
-              <tr key={r.key}>
-                <td className="tv-settings__table-label">{r.label}</td>
-                <td className="tv-mono">{r.value}</td>
-                <td>
-                  <span className={`tv-settings__badge tv-settings__badge--${r.source}`}>
-                    {r.source === 'env' ? 'env' : 'default'}
-                  </span>
-                  {r.envVar ? <code className="tv-settings__envvar tv-mono">${r.envVar}</code> : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      {/* ---- Pricing ------------------------------------------------------- */}
-      <section className="tv-card tv-settings__card">
-        <h2 className="tv-settings__card-title">Pricing</h2>
-        <p className="tv-settings__desc">
-          Rates auto-refresh daily from LiteLLM; costs are local estimates. Edit{' '}
-          <code className="tv-mono">~/.claudescope/pricing.json</code> to override rates. Pricing
-          applies to newly indexed events — rebuild the index to re-price history.
-        </p>
-        <div className="tv-settings__actions">
-          <button
-            type="button"
-            className="tv-btn tv-btn--secondary"
-            disabled={pricingBusy}
-            onClick={() => void syncPricing()}
-          >
-            {pricingBusy ? 'Syncing…' : 'Sync prices now'}
-          </button>
-          {pricingResult ? <span className="tv-settings__meta">{pricingResult}</span> : null}
-        </div>
-      </section>
-
-      {/* ---- Update -------------------------------------------------------- */}
-      {system ? (
-        <section className="tv-card tv-settings__card">
-          <h2 className="tv-settings__card-title">Update</h2>
-          {system.updateAvailable && system.latestVersion ? (
+          {dirtyKeys.length > 0 ? (
             <>
-              <p className="tv-settings__desc">
-                v{system.version} → <strong>v{system.latestVersion}</strong> is available. Updates
-                run from the terminal ({system.installMethod} install):
-              </p>
-              <code className="tv-settings__cmd tv-mono">{system.updateCommand}</code>
-            </>
-          ) : (
-            <p className="tv-settings__desc">
-              v{system.version} — up to date
-              {system.latestVersion ? ` (latest: v${system.latestVersion})` : ''}.
-            </p>
-          )}
-        </section>
-      ) : null}
-
-      {/* ---- Danger zone ---------------------------------------------------- */}
-      <section className="tv-card tv-settings__card tv-settings__card--danger">
-        <h2 className="tv-settings__card-title">Danger zone</h2>
-        <p className="tv-settings__desc">
-          The index is a derived cache — rebuilding discards the local DuckDB file and re-indexes
-          every transcript from your sources. History is re-priced at current rates. The app stays
-          usable and shows build progress.
-        </p>
-        <div className="tv-settings__actions">
-          <button
-            type="button"
-            className="tv-btn tv-btn--danger"
-            disabled={state === 'building'}
-            onClick={() => setRebuildOpen(true)}
-          >
-            Rebuild index
-          </button>
-        </div>
-      </section>
-
-      {/* ---- Sticky save bar ------------------------------------------------ */}
-      {dirtyKeys.length > 0 || notice || warnings.length > 0 ? (
-        <div className="tv-settings__savebar">
-          <div className="tv-settings__savebar-text">
-            {dirtyKeys.length > 0 ? (
-              <span>
+              <span className="tv-settings__meta">
                 {dirtyKeys.length} unsaved change{dirtyKeys.length === 1 ? '' : 's'}
               </span>
-            ) : notice ? (
-              <span>{notice}</span>
-            ) : null}
-            {warnings.map((w) => (
-              <span key={`${w.key}:${w.message}`} className="tv-settings__hint--warn">
-                {settings.editable.find((s) => s.key === w.key)?.label ?? w.key}: {w.message}
-              </span>
-            ))}
-          </div>
-          {dirtyKeys.length > 0 ? (
-            <div className="tv-settings__savebar-actions">
               <button
                 type="button"
                 className="tv-btn tv-btn--secondary"
@@ -475,18 +293,262 @@ export function SettingsPage() {
               >
                 Discard
               </button>
-              <button
-                type="button"
-                className="tv-btn tv-btn--primary"
-                disabled={saving}
-                onClick={() => void save()}
-              >
-                {saving ? 'Saving…' : 'Save changes'}
-              </button>
-            </div>
+            </>
           ) : null}
+          <button
+            type="button"
+            className="tv-btn tv-btn--primary"
+            disabled={saving || dirtyKeys.length === 0}
+            onClick={() => void save()}
+          >
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </header>
+      {warnings.length > 0 ? (
+        <div className="tv-settings__warnings">
+          {warnings.map((w) => (
+            <span key={`${w.key}:${w.message}`} className="tv-settings__hint--warn">
+              {editable.find((s) => s.key === w.key)?.label ?? w.key}: {w.message}
+            </span>
+          ))}
         </div>
       ) : null}
+
+      {/* ---- Service lifecycle (indexer) ---------------------------------- */}
+      <section className="tv-settings__section">
+        <div className="tv-settings__section-head">
+          <div>
+            <h2 className="tv-settings__section-title">Service Lifecycle</h2>
+            <p className="tv-settings__desc">
+              Controls background indexing — the app stays browsable while paused. The server
+              itself is managed from the terminal (<code className="tv-mono">claudescope stop</code>).
+            </p>
+          </div>
+          <span className={`tv-settings__chip tv-settings__chip--${state}`}>
+            <span className="tv-settings__chip-dot" aria-hidden="true" />
+            {(STATE_LABELS[state] ?? state).toUpperCase()}
+          </span>
+        </div>
+        <div className="tv-settings__tiles">
+          <ActionTile
+            icon={Play}
+            label="Start"
+            disabled={!paused || actionBusy !== null}
+            busy={actionBusy === 'start'}
+            onClick={() => void runIndexerAction('start')}
+          />
+          <ActionTile
+            icon={Square}
+            label="Stop"
+            disabled={paused || building || actionBusy !== null}
+            busy={actionBusy === 'stop'}
+            onClick={() => void runIndexerAction('stop')}
+          />
+          <ActionTile
+            icon={RotateCcw}
+            label="Restart"
+            disabled={building || actionBusy !== null}
+            busy={actionBusy === 'restart'}
+            onClick={() => void runIndexerAction('restart')}
+          />
+          <ActionTile
+            icon={DollarSign}
+            label="Price Sync"
+            busy={pricingBusy}
+            onClick={() => void syncPricing()}
+          />
+        </div>
+        <div className="tv-settings__meta">
+          {system ? (
+            <>
+              v{system.version} · up {formatUptime(system.startedAt)}
+              {system.updateAvailable && system.latestVersion ? (
+                <>
+                  {' · '}
+                  <span className="tv-settings__hint--warn">
+                    v{system.latestVersion} available:{' '}
+                    <code className="tv-mono">{system.updateCommand}</code>
+                  </span>
+                </>
+              ) : (
+                ' · up to date'
+              )}
+            </>
+          ) : null}
+          {pricingResult ? <> · {pricingResult}</> : null}
+          {paused ? <> · paused until resumed or restart (not persisted)</> : null}
+        </div>
+      </section>
+
+      {/* ---- Global configuration | Appearance ---------------------------- */}
+      <div className="tv-settings__grid2">
+        <section className="tv-card tv-settings__card">
+          <h2 className="tv-settings__card-title">Global Configuration</h2>
+          <div className="tv-settings__row">
+            <div className="tv-settings__row-head">
+              <span className="tv-settings__label">Local Port</span>
+              <span className="tv-settings__badge tv-settings__badge--readonly">read-only</span>
+            </div>
+            <input
+              className="tv-settings__input tv-mono"
+              value={String(port?.value ?? '')}
+              disabled
+            />
+            <div className="tv-settings__hints">
+              <span className="tv-settings__hint">
+                Set with <code className="tv-mono">--port</code> or{' '}
+                <code className="tv-mono">$PORT</code>
+              </span>
+            </div>
+          </div>
+          {openBrowser ? (
+            <SettingRow
+              setting={openBrowser}
+              value={draft[openBrowser.key] ?? baselineOf(openBrowser)}
+              error={fieldErrors[openBrowser.key]}
+              dirty={dirtyKeys.some((d) => d.key === openBrowser.key)}
+              onChange={(v) => setDraftValue(openBrowser.key, v)}
+            />
+          ) : null}
+        </section>
+
+        <section className="tv-card tv-settings__card">
+          <h2 className="tv-settings__card-title">Appearance</h2>
+          <span className="tv-settings__label">Theme Preference</span>
+          <div className="tv-settings__theme-tiles" role="group" aria-label="Theme">
+            {THEME_OPTIONS.map((o) => {
+              const Icon = o.icon;
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  className={
+                    theme === o.value
+                      ? 'tv-settings__theme-tile is-active'
+                      : 'tv-settings__theme-tile'
+                  }
+                  onClick={() => setTheme(o.value)}
+                  aria-pressed={theme === o.value}
+                >
+                  <Icon size={20} aria-hidden="true" />
+                  <span>{o.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="tv-settings__hints">
+            <span className="tv-settings__hint">Stored per browser, not on the server.</span>
+          </div>
+        </section>
+      </div>
+
+      {/* ---- Path configuration ------------------------------------------- */}
+      <section className="tv-card tv-settings__card">
+        <div className="tv-settings__card-head">
+          <h2 className="tv-settings__card-title">Path Configuration</h2>
+        </div>
+        <p className="tv-settings__desc">
+          Agent transcript sources are read-only — Claudescope never writes to them. Path changes
+          apply live; sessions from a previous directory leave the index.
+        </p>
+        <div className="tv-settings__row">
+          <div className="tv-settings__row-head">
+            <span className="tv-settings__label">Claudescope home</span>
+            <span className="tv-settings__badge tv-settings__badge--readonly">read-only</span>
+            <code className="tv-settings__envvar tv-mono">$CLAUDESCOPE_HOME</code>
+          </div>
+          <input
+            className="tv-settings__input tv-mono"
+            value={String(home?.value ?? '')}
+            disabled
+          />
+        </div>
+        <div className="tv-settings__grid2 tv-settings__grid2--tight">
+          {sources.map((s) => (
+            <SettingRow
+              key={s.key}
+              setting={s}
+              value={draft[s.key] ?? baselineOf(s)}
+              error={fieldErrors[s.key]}
+              dirty={dirtyKeys.some((d) => d.key === s.key)}
+              onChange={(v) => setDraftValue(s.key, v)}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* ---- Advanced runtime + danger zone -------------------------------- */}
+      <section className="tv-card tv-settings__card">
+        <h2 className="tv-settings__card-title">Advanced Runtime</h2>
+        <div className="tv-settings__grid2">
+          <div>
+            {interval ? (
+              <div className="tv-settings__row">
+                <div className="tv-settings__row-head">
+                  <span className="tv-settings__label">Reindex Interval (ms)</span>
+                  {interval.source === 'env' ? (
+                    <span className="tv-settings__badge tv-settings__badge--env">env</span>
+                  ) : null}
+                </div>
+                <div className="tv-settings__slider-row">
+                  <input
+                    type="range"
+                    className="tv-settings__slider"
+                    min={0}
+                    max={60000}
+                    step={1000}
+                    value={Math.min(intervalNum, 60000)}
+                    onChange={(e) => setDraftValue(interval.key, e.target.value)}
+                    aria-label="Reindex interval"
+                  />
+                  <input
+                    type="number"
+                    className={
+                      fieldErrors[interval.key]
+                        ? 'tv-settings__input tv-settings__input--num tv-mono is-invalid'
+                        : 'tv-settings__input tv-settings__input--num tv-mono'
+                    }
+                    value={intervalDraft}
+                    onChange={(e) => setDraftValue(interval.key, e.target.value)}
+                  />
+                </div>
+                <div className="tv-settings__hints">
+                  {fieldErrors[interval.key] ? (
+                    <span className="tv-settings__hint tv-settings__hint--error">
+                      {fieldErrors[interval.key]}
+                    </span>
+                  ) : null}
+                  <span className="tv-settings__hint">
+                    How often the agent sources are scanned for new sessions. 0 disables.
+                  </span>
+                  {interval.source === 'env' && interval.fileValue !== undefined ? (
+                    <span className="tv-settings__hint tv-settings__hint--warn">
+                      Saved value is overridden by ${interval.envVar}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="tv-settings__danger">
+            <h3 className="tv-settings__danger-title">⚠ Danger Zone</h3>
+            <p className="tv-settings__desc">
+              Discards the local index (a rebuildable cache) and re-indexes every transcript.
+              History is re-priced at current rates. Cannot be undone.
+            </p>
+            <button
+              type="button"
+              className="tv-btn tv-btn--danger"
+              disabled={building}
+              onClick={() => setRebuildOpen(true)}
+            >
+              Rebuild Index
+            </button>
+          </div>
+        </div>
+      </section>
 
       {rebuildOpen ? (
         <ConfirmDialog

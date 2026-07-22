@@ -1,9 +1,6 @@
-import { useEffect, useState } from 'react';
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { Cpu, FolderOpen, LineChart, Search, Settings, type LucideIcon } from 'lucide-react';
-import type { SourceInfo } from '@claudescope/shared';
 import { ErrorBoundary } from './components';
-import { api } from './api/client.js';
 import { useServerStatus } from './status/StatusProvider.js';
 import { BrowsePage } from './pages/browse/BrowsePage.js';
 import { ProjectLayout } from './pages/browse/ProjectLayout.js';
@@ -30,23 +27,11 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/memory', label: 'Memory', icon: Cpu },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/analytics', label: 'Analytics', icon: LineChart },
-  { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
 /** Left navigation sidebar. */
 function Sidebar() {
   const { updateAvailable } = useServerStatus();
-  const [sources, setSources] = useState<SourceInfo[]>([]);
-  useEffect(() => {
-    const controller = new AbortController();
-    api
-      .sources(controller.signal)
-      .then(setSources)
-      .catch(() => {
-        /* footer is best-effort */
-      });
-    return () => controller.abort();
-  }, []);
 
   return (
     <nav className="tv-nav">
@@ -73,19 +58,21 @@ function Sidebar() {
         </NavLink>
       ))}
       <div className="tv-nav__spacer" />
-      <div className="tv-nav__footer">
-        {updateAvailable ? (
+      {/* Settings anchors the bottom of the sidebar, apart from the main nav. */}
+      <NavLink
+        to="/settings"
+        className={({ isActive }) => (isActive ? 'tv-nav__link is-active' : 'tv-nav__link')}
+      >
+        <Settings size={16} aria-hidden="true" />
+        Settings
+      </NavLink>
+      {updateAvailable ? (
+        <div className="tv-nav__footer">
           <span className="tv-nav__update" title={`Update available: v${updateAvailable}`}>
             v{updateAvailable} available — <code className="tv-mono">claudescope update</code>
           </span>
-        ) : null}
-        <span className="tv-nav__footer-label">Read-only sources</span>
-        {sources.map((s) => (
-          <span key={s.id} className="tv-nav__source tv-mono" title={`${s.label} · ${s.path}`}>
-            {s.path}
-          </span>
-        ))}
-      </div>
+        </div>
+      ) : null}
     </nav>
   );
 }
