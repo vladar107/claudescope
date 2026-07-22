@@ -858,6 +858,54 @@ mark {
   font-size: var(--tv-fs-sm);
   font-weight: 500;
 }
+.tv-btn--danger {
+  background: transparent;
+  border-color: var(--tv-danger);
+  color: var(--tv-danger);
+}
+.tv-btn--danger:hover {
+  background: var(--tv-danger-bg);
+  text-decoration: none;
+}
+.tv-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   Confirmation dialog — fixed overlay + a tv-card panel (see ConfirmDialog).
+   -------------------------------------------------------------------------- */
+.tv-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 50%);
+}
+.tv-dialog {
+  width: min(440px, calc(100vw - var(--tv-space-6)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-3);
+}
+.tv-dialog__title {
+  margin: 0;
+  font-size: var(--tv-fs-lg);
+  font-weight: 600;
+}
+.tv-dialog__body {
+  color: var(--tv-fg-muted);
+  font-size: var(--tv-fs-md);
+  line-height: 1.5;
+}
+.tv-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--tv-space-2);
+}
 
 /* Search/filter field — one shared control (magnifier in-field + clear ×). */
 .tv-field {

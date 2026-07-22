@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import { Cpu, FolderOpen, LineChart, Monitor, Moon, Search, Sun, type LucideIcon } from 'lucide-react';
+import { Cpu, FolderOpen, LineChart, Search, Settings, type LucideIcon } from 'lucide-react';
 import type { SourceInfo } from '@claudescope/shared';
 import { ErrorBoundary } from './components';
 import { api } from './api/client.js';
-import { useTheme, type ThemeChoice } from './theme/ThemeProvider.js';
 import { useServerStatus } from './status/StatusProvider.js';
 import { BrowsePage } from './pages/browse/BrowsePage.js';
 import { ProjectLayout } from './pages/browse/ProjectLayout.js';
@@ -16,6 +15,7 @@ import { MemoryPage } from './pages/memory/MemoryPage.js';
 import { AgentMemoryPage } from './pages/memory/AgentMemoryPage.js';
 import { AgentProjectMemoryPage } from './pages/memory/AgentProjectMemoryPage.js';
 import { ProjectMemoryPage } from './pages/memory/ProjectMemoryPage.js';
+import { SettingsPage } from './pages/settings/SettingsPage.js';
 
 interface NavItem {
   to: string;
@@ -30,37 +30,8 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/memory', label: 'Memory', icon: Cpu },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/analytics', label: 'Analytics', icon: LineChart },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ];
-
-const THEME_OPTIONS: { value: ThemeChoice; label: string; icon: LucideIcon }[] = [
-  { value: 'system', label: 'System', icon: Monitor },
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
-];
-
-/** Segmented System / Light / Dark theme control. */
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  return (
-    <div className="tv-theme-toggle" role="group" aria-label="Theme">
-      {THEME_OPTIONS.map((o) => {
-        const Icon = o.icon;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            className={theme === o.value ? 'tv-theme-toggle__btn is-active' : 'tv-theme-toggle__btn'}
-            onClick={() => setTheme(o.value)}
-            title={`${o.label} theme`}
-            aria-pressed={theme === o.value}
-          >
-            <Icon size={15} aria-hidden="true" />
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 /** Left navigation sidebar. */
 function Sidebar() {
@@ -102,7 +73,6 @@ function Sidebar() {
         </NavLink>
       ))}
       <div className="tv-nav__spacer" />
-      <ThemeToggle />
       <div className="tv-nav__footer">
         {updateAvailable ? (
           <span className="tv-nav__update" title={`Update available: v${updateAvailable}`}>
@@ -143,6 +113,7 @@ export function App() {
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/memory/:connectorId" element={<AgentMemoryPage />} />
             <Route path="/memory/:connectorId/:projectId" element={<AgentProjectMemoryPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </ErrorBoundary>
         </div>

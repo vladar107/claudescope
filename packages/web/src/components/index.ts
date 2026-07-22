@@ -17,4 +17,5 @@ export { LocalBadge } from './LocalBadge.js';
 export { ModelChips, shortModel, type ModelChipsProps } from './ModelChips.js';
 export { SummaryStrip, type SummaryItem } from './SummaryStrip.js';
 export { SearchField, type SearchFieldProps } from './SearchField.js';
+export { ConfirmDialog } from './ConfirmDialog.js';
 export { extractImage } from './image.js';

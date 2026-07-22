@@ -13,7 +13,7 @@
  */
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { IndexingProgress } from '@claudescope/shared';
+import type { HealthResponse, IndexingProgress } from '@claudescope/shared';
 import { api } from '../api/client.js';
 
 export interface ServerStatus {
@@ -33,6 +33,8 @@ export interface ServerStatus {
   dataVersion: number | null;
   /** Newer published version the daemon reported, for the sidebar nudge. */
   updateAvailable: string | null;
+  /** Compact indexer lifecycle state (null until the first health response). */
+  indexer: HealthResponse['indexer'] | null;
 }
 
 const idleStatus: ServerStatus = {
@@ -42,6 +44,7 @@ const idleStatus: ServerStatus = {
   indexingTick: 0,
   dataVersion: null,
   updateAvailable: null,
+  indexer: null,
 };
 
 const StatusContext = createContext<ServerStatus>(idleStatus);
@@ -70,6 +73,7 @@ export function StatusProvider({ children }: { children: ReactNode }) {
           indexingTick: building ? s.indexingTick + 1 : s.indexingTick,
           dataVersion: h.dataVersion,
           updateAvailable: h.updateAvailable ?? null,
+          indexer: h.indexer ?? null,
         }));
         timer = window.setTimeout(() => void tick(), building ? BUILDING_POLL_MS : IDLE_POLL_MS);
       } catch {

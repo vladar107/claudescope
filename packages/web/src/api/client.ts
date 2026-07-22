@@ -10,9 +10,12 @@ import type {
   AnalyticsGroupBy,
   AnalyticsResponse,
   HealthResponse,
+  IndexerStatus,
   MemoryResponse,
+  PricingRefreshResponse,
   ProjectMemoryResponse,
   ProjectsResponse,
+  RebuildStartedResponse,
   ReindexResponse,
   SearchResponse,
   SearchScope,
@@ -21,10 +24,14 @@ import type {
   SessionEfficiencyResponse,
   SessionFingerprintResponse,
   SessionEfficiencySort,
+  SettingsResponse,
+  SettingsUpdateRequest,
+  SettingsUpdateResponse,
   SortDir,
   SessionSort,
   SessionsResponse,
   SourcesResponse,
+  SystemInfoResponse,
   ToolUsageResponse,
   DigestResponse,
 } from '@claudescope/shared';
@@ -242,5 +249,48 @@ export const api = {
   /** POST /api/reindex */
   reindex(signal?: AbortSignal): Promise<ReindexResponse> {
     return request<ReindexResponse>('/reindex', { method: 'POST', body: {}, signal });
+  },
+
+  /** GET /api/settings */
+  getSettings(signal?: AbortSignal): Promise<SettingsResponse> {
+    return request<SettingsResponse>('/settings', { signal });
+  },
+
+  /** PUT /api/settings */
+  updateSettings(
+    set: SettingsUpdateRequest['set'],
+    signal?: AbortSignal,
+  ): Promise<SettingsUpdateResponse> {
+    return request<SettingsUpdateResponse>('/settings', { method: 'PUT', body: { set }, signal });
+  },
+
+  /** POST /api/indexer/stop — pause auto-indexing (the index stays queryable). */
+  indexerStop(signal?: AbortSignal): Promise<IndexerStatus> {
+    return request<IndexerStatus>('/indexer/stop', { method: 'POST', body: {}, signal });
+  },
+
+  /** POST /api/indexer/start — resume auto-indexing + kick a pass. */
+  indexerStart(signal?: AbortSignal): Promise<IndexerStatus> {
+    return request<IndexerStatus>('/indexer/start', { method: 'POST', body: {}, signal });
+  },
+
+  /** POST /api/indexer/restart — fresh pass now, poller re-armed. */
+  indexerRestart(signal?: AbortSignal): Promise<IndexerStatus> {
+    return request<IndexerStatus>('/indexer/restart', { method: 'POST', body: {}, signal });
+  },
+
+  /** POST /api/index/rebuild — discard the index and rebuild from sources. */
+  rebuildIndex(signal?: AbortSignal): Promise<RebuildStartedResponse> {
+    return request<RebuildStartedResponse>('/index/rebuild', { method: 'POST', body: {}, signal });
+  },
+
+  /** POST /api/pricing/refresh — sync rates from LiteLLM now. */
+  refreshPricing(signal?: AbortSignal): Promise<PricingRefreshResponse> {
+    return request<PricingRefreshResponse>('/pricing/refresh', { method: 'POST', body: {}, signal });
+  },
+
+  /** GET /api/system — version / update / uptime statics. */
+  systemInfo(signal?: AbortSignal): Promise<SystemInfoResponse> {
+    return request<SystemInfoResponse>('/system', { signal });
   },
 };
