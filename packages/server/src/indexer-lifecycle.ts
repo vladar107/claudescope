@@ -36,7 +36,9 @@ function disarmTimer(): void {
  *  or when the interval is 0 (auto-reindex disabled). */
 export function rearmTimer(): void {
   disarmTimer();
-  const interval = reindexIntervalMs();
+  // Clamp defensively: Node treats setInterval delays over 2^31-1 as 1ms
+  // (validation rejects such values, but an env var can still carry one).
+  const interval = Math.min(reindexIntervalMs(), 2_147_483_647);
   if (paused || interval <= 0) return;
   timer = setInterval(() => {
     reindex()

@@ -376,6 +376,12 @@ export function validateSettingsPatch(patch: Record<string, unknown>): SettingsV
         errors[key] = 'must be 0 (disabled) or at least 1000 ms';
         continue;
       }
+      // Node clamps setInterval delays over 2^31-1 to 1ms — a "basically
+      // never" value would become a busy loop. Reject instead.
+      if (value > 2_147_483_647) {
+        errors[key] = 'must be at most 2147483647 ms (~24.8 days)';
+        continue;
+      }
     } else if (typeof value !== 'boolean') {
       errors[key] = 'must be true or false';
       continue;

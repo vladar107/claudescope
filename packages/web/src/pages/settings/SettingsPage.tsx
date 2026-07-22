@@ -122,7 +122,12 @@ export function SettingsPage() {
 
   const editable = settings?.editable ?? [];
   const dirtyKeys = useMemo(
-    () => editable.filter((s) => draft[s.key] !== undefined && draft[s.key] !== baselineOf(s)),
+    // String-compare: number inputs hold strings mid-edit, so '15000' vs
+    // 15000 must not count as dirty when the user reverts an edit.
+    () =>
+      editable.filter(
+        (s) => draft[s.key] !== undefined && String(draft[s.key]) !== String(baselineOf(s)),
+      ),
     [editable, draft],
   );
 
@@ -142,9 +147,14 @@ export function SettingsPage() {
         const trimmed = String(v).trim();
         patch[s.key] = trimmed === '' ? null : trimmed; // empty clears to default
       } else if (s.type === 'number') {
-        const n = Number(v);
-        if (!Number.isFinite(n)) clientErrors[s.key] = 'must be a number';
-        else patch[s.key] = n;
+        const str = String(v).trim();
+        if (str === '') {
+          patch[s.key] = null; // empty clears to default, same as paths
+        } else {
+          const n = Number(str);
+          if (!Number.isFinite(n)) clientErrors[s.key] = 'must be a number';
+          else patch[s.key] = n;
+        }
       } else {
         patch[s.key] = v === true;
       }

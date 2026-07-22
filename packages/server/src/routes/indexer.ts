@@ -7,7 +7,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import type { IndexerStatus, RebuildStartedResponse } from '@claudescope/shared';
-import { isRebuildInFlight, rebuildIndex } from '../data/index.js';
+import { isRebuildInFlight, rebuildIndex, reindex } from '../data/index.js';
 import { pauseIndexing, restartIndexing, resumeIndexing } from '../indexer-lifecycle.js';
 
 export async function registerIndexerRoutes(app: FastifyInstance): Promise<void> {
@@ -25,7 +25,14 @@ export async function registerIndexerRoutes(app: FastifyInstance): Promise<void>
       void reply.code(409).send({ error: 'a rebuild is already in progress' });
       return;
     }
-    rebuildIndex().catch((err) => app.log.error({ err }, 'index rebuild failed'));
+    rebuildIndex().catch((err) => {
+      app.log.error({ err }, 'index rebuild failed');
+      // Recover: a failed rebuild leaves ready=false, and with the poller
+      // disabled or paused nothing would retry — kick a pass so the app
+      // doesn't wedge in "building" (getConnection's corrupt-DB recovery
+      // handles a half-discarded index).
+      reindex().catch((err2) => app.log.error({ err: err2 }, 'post-rebuild recovery failed'));
+    });
     void reply.code(202);
     return { started: true };
   });

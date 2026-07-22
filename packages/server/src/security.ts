@@ -120,10 +120,13 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  *   `same-origin`/`none` (direct navigation) is rejected. curl / the CLI /
  *   `app.inject()` don't send it and pass. The Vite dev proxy forwards the
  *   browser's `same-origin` value.
+ * - `Origin`: browsers have sent it on cross-origin POSTs since ~2011, so it
+ *   covers legacy browsers that predate Fetch Metadata even for BODY-LESS
+ *   mutations (which the content-type check below can't see). A non-loopback
+ *   (or `null`) origin is rejected; curl/CLI omit the header and pass.
  * - Content type: a no-cors cross-origin request can only carry simple types
  *   (text/plain & co) — `application/json` forces a CORS preflight, which
- *   fails because this server serves no CORS headers. Requiring JSON bodies
- *   covers legacy browsers that predate `Sec-Fetch-Site`.
+ *   fails because this server serves no CORS headers.
  */
 export function registerMutationGuard(app: FastifyInstance): void {
   app.addHook('onRequest', async (req, reply) => {
@@ -133,10 +136,25 @@ export function registerMutationGuard(app: FastifyInstance): void {
       reply.code(403).send({ error: 'Forbidden: cross-site request' });
       return reply;
     }
+    const origin = req.headers.origin;
+    if (typeof origin === 'string' && !isAllowedOrigin(origin)) {
+      reply.code(403).send({ error: 'Forbidden: cross-origin request' });
+      return reply;
+    }
     const contentType = req.headers['content-type'];
     if (contentType !== undefined && !contentType.toLowerCase().startsWith('application/json')) {
       reply.code(415).send({ error: 'Unsupported content type — use application/json' });
       return reply;
     }
   });
+}
+
+/** True when an `Origin` header names a permitted loopback host. Opaque
+ *  (`null`) or unparsable origins fail — only real loopback pages pass. */
+export function isAllowedOrigin(origin: string): boolean {
+  try {
+    return ALLOWED_HOSTNAMES.has(new URL(origin).hostname.replace(/^\[|\]$/g, '').toLowerCase());
+  } catch {
+    return false;
+  }
 }
