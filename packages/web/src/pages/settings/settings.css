@@ -8,12 +8,21 @@
   max-width: 1040px;
 }
 
-/* Header: page title left, Save Changes right */
+/* Header: page title left, Save Changes right. Sticky so Save stays reachable
+   while scrolling; bleeds over the .tv-main__inner padding so scrolled content
+   never peeks above it. */
 .tv-settings__header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--tv-space-3);
+  background: var(--tv-bg);
+  margin: calc(-1 * var(--tv-space-5)) calc(-1 * var(--tv-space-5)) 0;
+  padding: var(--tv-space-4) var(--tv-space-5);
+  border-bottom: 1px solid var(--tv-border);
 }
 .tv-settings__header .tv-page-title {
   margin: 0;
@@ -70,12 +79,12 @@
   line-height: 1.5;
 }
 
-/* Two-column layout */
+/* Two-column layout. Cards stretch to equal height so a shorter card doesn't
+   leave a ragged gap next to its neighbor. */
 .tv-settings__grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--tv-space-4);
-  align-items: start;
 }
 .tv-settings__grid2--tight {
   gap: 0 var(--tv-space-4);

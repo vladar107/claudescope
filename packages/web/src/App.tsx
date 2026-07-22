@@ -31,7 +31,7 @@ const NAV_ITEMS: NavItem[] = [
 
 /** Left navigation sidebar. */
 function Sidebar() {
-  const { updateAvailable } = useServerStatus();
+  const { updateAvailable, version } = useServerStatus();
 
   return (
     <nav className="tv-nav">
@@ -66,6 +66,7 @@ function Sidebar() {
         <Settings size={16} aria-hidden="true" />
         Settings
       </NavLink>
+      {version ? <span className="tv-nav__version tv-mono">v{version}</span> : null}
       {updateAvailable ? (
         <div className="tv-nav__footer">
           <span className="tv-nav__update" title={`Update available: v${updateAvailable}`}>

@@ -35,6 +35,8 @@ export interface ServerStatus {
   updateAvailable: string | null;
   /** Compact indexer lifecycle state (null until the first health response). */
   indexer: HealthResponse['indexer'] | null;
+  /** Running app version (null until the first health response). */
+  version: string | null;
 }
 
 const idleStatus: ServerStatus = {
@@ -45,6 +47,7 @@ const idleStatus: ServerStatus = {
   dataVersion: null,
   updateAvailable: null,
   indexer: null,
+  version: null,
 };
 
 const StatusContext = createContext<ServerStatus>(idleStatus);
@@ -74,6 +77,7 @@ export function StatusProvider({ children }: { children: ReactNode }) {
           dataVersion: h.dataVersion,
           updateAvailable: h.updateAvailable ?? null,
           indexer: h.indexer ?? null,
+          version: h.version,
         }));
         timer = window.setTimeout(() => void tick(), building ? BUILDING_POLL_MS : IDLE_POLL_MS);
       } catch {

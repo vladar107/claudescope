@@ -235,6 +235,15 @@ button {
   text-overflow: ellipsis;
 }
 /* Update nudge above the sources — a hint, not an alert, so muted colors. */
+/* Running app version, tucked under the Settings link at the sidebar bottom. */
+.tv-nav__version {
+  padding: 2px var(--tv-space-3);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--tv-fg-faint);
+}
+
 .tv-nav__update {
   font-size: 11px;
   color: var(--tv-fg-muted);
