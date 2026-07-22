@@ -13,7 +13,15 @@
  * indexer / routes / CLI. Nothing here writes outside CLAUDESCOPE_HOME.
  */
 
-import { existsSync, readFileSync, renameSync, statSync, writeFileSync, copyFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import type { SettingSource, SettingValue } from '@claudescope/shared';
@@ -310,6 +318,8 @@ export function saveSettings(patch: Partial<Record<SettingKey, SettingValue | nu
   }
   current.schemaVersion = SETTINGS_SCHEMA_VERSION;
 
+  // Self-sufficient: don't depend on ensureStateDir() having run at boot.
+  mkdirSync(CLAUDESCOPE_HOME, { recursive: true });
   const tmp = `${SETTINGS_PATH}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(current, null, 2)}\n`);
   renameSync(tmp, SETTINGS_PATH);

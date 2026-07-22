@@ -454,11 +454,14 @@ export async function rebuildIndex(): Promise<ReindexResponse> {
   // Already rebuilding → join the in-flight rebuild.
   if (rebuilding && inFlight) return inFlight;
   const prior = inFlight;
+  // Set synchronously — before the prior pass drains — so a second rebuild
+  // request during the drain window 409s instead of queueing a redundant
+  // second discard-and-rebuild.
+  rebuilding = true;
   const run = (async (): Promise<ReindexResponse> => {
     // Let any in-flight pass drain first — passes are uninterruptible and we
     // must not close the connection underneath one.
     if (prior) await prior.catch(() => {});
-    rebuilding = true;
     ready = false; // health flips to "building"; the web building UX takes over
     try {
       await closeConnection();
