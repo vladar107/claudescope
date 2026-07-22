@@ -104,3 +104,39 @@ export function registerHostGuard(app: FastifyInstance): void {
     }
   });
 }
+
+/** Request methods that can never mutate state and skip the mutation guard. */
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * Guard every mutating request (POST/PUT/…) against cross-origin CSRF. The
+ * host guard stops DNS rebinding but NOT same-`Host` cross-origin side
+ * effects: any website can fire `fetch('http://localhost:4317/…', {method:
+ * 'POST', mode: 'no-cors'})` and it arrives with a loopback Host header. That
+ * was harmless while `/api/reindex` was the only mutation; not once settings
+ * writes and index rebuilds exist. Two independent checks:
+ *
+ * - `Sec-Fetch-Site`: every evergreen browser sends it; anything other than
+ *   `same-origin`/`none` (direct navigation) is rejected. curl / the CLI /
+ *   `app.inject()` don't send it and pass. The Vite dev proxy forwards the
+ *   browser's `same-origin` value.
+ * - Content type: a no-cors cross-origin request can only carry simple types
+ *   (text/plain & co) — `application/json` forces a CORS preflight, which
+ *   fails because this server serves no CORS headers. Requiring JSON bodies
+ *   covers legacy browsers that predate `Sec-Fetch-Site`.
+ */
+export function registerMutationGuard(app: FastifyInstance): void {
+  app.addHook('onRequest', async (req, reply) => {
+    if (SAFE_METHODS.has(req.method)) return;
+    const site = req.headers['sec-fetch-site'];
+    if (typeof site === 'string' && site !== 'same-origin' && site !== 'none') {
+      reply.code(403).send({ error: 'Forbidden: cross-site request' });
+      return reply;
+    }
+    const contentType = req.headers['content-type'];
+    if (contentType !== undefined && !contentType.toLowerCase().startsWith('application/json')) {
+      reply.code(415).send({ error: 'Unsupported content type — use application/json' });
+      return reply;
+    }
+  });
+}

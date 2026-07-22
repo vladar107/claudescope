@@ -23,6 +23,10 @@ import { registerErrorsRoute } from './analytics-errors.js';
 import { registerDigestRoute } from './analytics-digest.js';
 import { registerSourcesRoute } from './sources.js';
 import { registerMemoryRoute } from './memory.js';
+import { registerSettingsRoute } from './settings.js';
+import { registerIndexerRoutes } from './indexer.js';
+import { registerPricingRoute } from './pricing.js';
+import { registerSystemRoute } from './system.js';
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/health', async (): Promise<HealthResponse> => {
@@ -53,6 +57,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await registerDigestRoute(app);
   await registerSourcesRoute(app);
   await registerMemoryRoute(app);
+  await registerSettingsRoute(app);
+  await registerIndexerRoutes(app);
+  await registerPricingRoute(app);
+  await registerSystemRoute(app);
 
   app.post('/api/reindex', async (): Promise<ReindexResponse> => {
     return reindex();

@@ -19,7 +19,7 @@ import {
 } from './config.js';
 import { claudeProjectsDir } from './settings.js';
 import { registerRoutes } from './routes/index.js';
-import { registerHostGuard, registerSecurityHeaders } from './security.js';
+import { registerHostGuard, registerMutationGuard, registerSecurityHeaders } from './security.js';
 import { startIndexer, stopIndexerTimer } from './indexer-lifecycle.js';
 import { refreshPricing } from './data/pricing-refresh.js';
 import { maybeSelfRestart } from './self-restart.js';
@@ -52,8 +52,10 @@ async function main(): Promise<void> {
   const app = Fastify({ logger: true });
 
   // Reject non-loopback Host headers (anti DNS-rebinding) before anything routes,
-  // and lock down what the served SPA may load (CSP). See security.ts.
+  // block cross-origin mutations (CSRF), and lock down what the served SPA may
+  // load (CSP). See security.ts.
   registerHostGuard(app);
+  registerMutationGuard(app);
   registerSecurityHeaders(app);
 
   await registerRoutes(app);
