@@ -1,0 +1,331 @@
+/* Settings page — mockup layout: header w/ Save Changes, lifecycle tiles,
+   two-column config cards, path configuration, advanced runtime + danger. */
+
+.tv-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-4);
+  max-width: 1040px;
+}
+
+/* Header: page title left, Save Changes right. Sticky so Save stays reachable
+   while scrolling; bleeds over the .tv-main__inner padding so scrolled content
+   never peeks above it. */
+.tv-settings__header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tv-space-3);
+  background: var(--tv-bg);
+  margin: calc(-1 * var(--tv-space-5)) calc(-1 * var(--tv-space-5)) 0;
+  padding: var(--tv-space-4) var(--tv-space-5);
+  border-bottom: 1px solid var(--tv-border);
+}
+.tv-settings__header .tv-page-title {
+  margin: 0;
+}
+.tv-settings__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+}
+.tv-settings__warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--tv-fs-sm);
+}
+
+/* Sections & cards */
+.tv-settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-3);
+}
+.tv-settings__section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--tv-space-3);
+}
+.tv-settings__section-title {
+  margin: 0 0 var(--tv-space-1);
+  font-size: var(--tv-fs-lg);
+  font-weight: 600;
+}
+.tv-settings__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-3);
+}
+.tv-settings__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tv-space-2);
+}
+.tv-settings__card-title {
+  margin: 0;
+  font-size: var(--tv-fs-lg);
+  font-weight: 600;
+}
+.tv-settings__desc {
+  margin: 0;
+  color: var(--tv-fg-muted);
+  font-size: var(--tv-fs-md);
+  line-height: 1.5;
+}
+
+/* Two-column layout. Cards stretch to equal height so a shorter card doesn't
+   leave a ragged gap next to its neighbor. */
+.tv-settings__grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--tv-space-4);
+}
+.tv-settings__grid2--tight {
+  gap: 0 var(--tv-space-4);
+}
+@media (max-width: 900px) {
+  .tv-settings__grid2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Status chip (● INDEXER RUNNING) */
+.tv-settings__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  padding: var(--tv-space-1) var(--tv-space-3);
+  border: 1px solid var(--tv-border-strong);
+  border-radius: var(--tv-radius);
+  background: var(--tv-bg-elevated);
+  font-size: var(--tv-fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.tv-settings__chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tv-fg-faint);
+}
+.tv-settings__chip--watching .tv-settings__chip-dot {
+  background: var(--tv-success);
+}
+.tv-settings__chip--indexing .tv-settings__chip-dot,
+.tv-settings__chip--building .tv-settings__chip-dot {
+  background: var(--tv-accent);
+}
+.tv-settings__chip--paused .tv-settings__chip-dot {
+  background: var(--tv-warning);
+}
+
+/* Lifecycle action tiles */
+.tv-settings__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--tv-space-3);
+}
+.tv-settings__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tv-space-2);
+  padding: var(--tv-space-4) var(--tv-space-3);
+  border: 1px solid var(--tv-border-strong);
+  border-radius: var(--tv-radius);
+  background: var(--tv-bg-elevated);
+  color: var(--tv-fg-muted);
+  font-family: inherit;
+  font-size: var(--tv-fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.tv-settings__tile:hover:not(:disabled) {
+  border-color: var(--tv-accent);
+  color: var(--tv-fg);
+}
+.tv-settings__tile:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.tv-settings__tile.is-busy {
+  border-color: var(--tv-accent);
+  color: var(--tv-accent);
+}
+
+/* Setting rows */
+.tv-settings__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-1);
+  padding: var(--tv-space-2) 0;
+}
+.tv-settings__row.is-dirty .tv-settings__input {
+  border-color: var(--tv-accent);
+}
+.tv-settings__row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+}
+.tv-settings__label {
+  font-size: var(--tv-fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--tv-fg-muted);
+}
+.tv-settings__envvar {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+}
+
+.tv-settings__input {
+  width: 100%;
+  padding: var(--tv-space-2) var(--tv-space-3);
+  border: 1px solid var(--tv-border-strong);
+  border-radius: var(--tv-radius);
+  background: var(--tv-bg-inset);
+  color: var(--tv-fg);
+  font-size: var(--tv-fs-md);
+}
+.tv-settings__input:focus-visible {
+  outline: none;
+  border-color: var(--tv-accent);
+}
+.tv-settings__input.is-invalid {
+  border-color: var(--tv-danger);
+}
+.tv-settings__input:disabled {
+  color: var(--tv-fg-muted);
+}
+.tv-settings__input--num {
+  width: 110px;
+  flex: 0 0 auto;
+}
+
+.tv-settings__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  cursor: pointer;
+  font-size: var(--tv-fs-md);
+}
+.tv-settings__toggle-text {
+  color: var(--tv-fg-muted);
+}
+
+/* Provenance badges */
+.tv-settings__badge {
+  padding: 1px var(--tv-space-2);
+  border-radius: 999px;
+  font-size: var(--tv-fs-sm);
+  font-weight: 600;
+  border: 1px solid var(--tv-border-strong);
+  color: var(--tv-fg-muted);
+  white-space: nowrap;
+}
+.tv-settings__badge--env {
+  color: var(--tv-warning);
+  border-color: var(--tv-warning);
+}
+.tv-settings__badge--file {
+  color: var(--tv-accent);
+  border-color: var(--tv-accent);
+}
+.tv-settings__badge--readonly,
+.tv-settings__badge--default {
+  color: var(--tv-fg-faint);
+}
+
+/* Hints */
+.tv-settings__hints {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tv-settings__hint {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+}
+.tv-settings__hint--warn {
+  color: var(--tv-warning);
+}
+.tv-settings__hint--error {
+  color: var(--tv-danger);
+}
+.tv-settings__meta {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+}
+
+/* Theme tiles (Appearance card) */
+.tv-settings__theme-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--tv-space-3);
+}
+.tv-settings__theme-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--tv-space-2);
+  padding: var(--tv-space-4) var(--tv-space-2);
+  border: 1px solid var(--tv-border-strong);
+  border-radius: var(--tv-radius);
+  background: var(--tv-bg-inset);
+  color: var(--tv-fg-muted);
+  font-family: inherit;
+  font-size: var(--tv-fs-md);
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.tv-settings__theme-tile:hover {
+  color: var(--tv-fg);
+}
+.tv-settings__theme-tile.is-active {
+  border-color: var(--tv-accent);
+  color: var(--tv-fg);
+  box-shadow: 0 0 0 1px var(--tv-accent);
+}
+
+/* Reindex interval slider */
+.tv-settings__slider-row {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-3);
+}
+.tv-settings__slider {
+  flex: 1;
+  accent-color: var(--tv-accent);
+}
+
+/* Danger zone */
+.tv-settings__danger {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--tv-space-2);
+  padding: var(--tv-space-3);
+  border: 1px solid var(--tv-danger);
+  border-radius: var(--tv-radius);
+  background: var(--tv-danger-bg);
+}
+.tv-settings__danger-title {
+  margin: 0;
+  font-size: var(--tv-fs-md);
+  font-weight: 600;
+  color: var(--tv-danger);
+  letter-spacing: 0.03em;
+}

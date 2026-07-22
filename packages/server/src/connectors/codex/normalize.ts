@@ -30,7 +30,7 @@ import type {
   ToolUseBlock,
   UserEvent,
 } from '@claudescope/shared';
-import { CODEX_SESSIONS_DIR } from '../../config.js';
+import { codexSessionsDir } from '../../settings.js';
 import { toolNamesCsv } from '../tool-names.js';
 import { toolErrorCount } from '../tool-errors.js';
 
@@ -113,7 +113,7 @@ export function listRollouts(): RolloutFile[] {
       }
     }
   };
-  walk(CODEX_SESSIONS_DIR);
+  walk(codexSessionsDir());
   return out;
 }
 

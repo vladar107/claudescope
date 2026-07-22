@@ -16,7 +16,8 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CLAUDESCOPE_HOME, OPENCODE_DATA_DIR, OPENCODE_DB_PATH } from '../../config.js';
+import { CLAUDESCOPE_HOME } from '../../config.js';
+import { opencodeDataDir, opencodeDbPath } from '../../settings.js';
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
@@ -27,9 +28,6 @@ const CACHE_DIR = join(CLAUDESCOPE_HOME, 'cache', 'opencode');
 
 /** Synthetic per-session key → its DB path + session id. opencode ids are
  *  `ses_<base62>` (no `#`), so splitting on the first `#` is unambiguous. */
-function makeKey(sessionId: string): string {
-  return `${OPENCODE_DB_PATH}#${sessionId}`;
-}
 function parseKey(filePath: string): { dbPath: string; sessionId: string } {
   const i = filePath.indexOf('#');
   return i === -1
@@ -51,8 +49,9 @@ function cachePath(filePath: string): string {
  * connector and preserves its prior files — see `data/index.ts`).
  */
 function discover(): DiscoveredFile[] {
-  return listSessions(OPENCODE_DB_PATH).map((s) => ({
-    path: makeKey(s.id),
+  const dbPath = opencodeDbPath(); // resolve once per pass
+  return listSessions(dbPath).map((s) => ({
+    path: `${dbPath}#${s.id}`,
     mtimeMs: s.mtimeMs,
     size: s.size,
   }));
@@ -139,7 +138,10 @@ async function loadSession(sessionId: string, paths: string[]): Promise<SessionD
 export const opencodeConnector: AgentConnector = {
   id: 'opencode',
   label: 'opencode',
-  sourceDir: OPENCODE_DATA_DIR,
+  // Resolved per access so a settings.json change applies without a restart.
+  get sourceDir() {
+    return opencodeDataDir();
+  },
   discover,
   prepare,
   eventsProjectionSql,

@@ -16,6 +16,7 @@ import {
   hostnameFromHeader,
   isAllowedHost,
   registerHostGuard,
+  registerMutationGuard,
   registerSecurityHeaders,
 } from '../src/security.js';
 
@@ -106,5 +107,92 @@ describe('host guard (anti DNS-rebinding)', () => {
     expect(isAllowedHost('localhost.evil.com')).toBe(false);
     expect(hostnameFromHeader('[::1]:4317')).toBe('::1');
     expect(hostnameFromHeader('LocalHost:5317')).toBe('localhost');
+  });
+});
+
+describe('mutation guard (anti-CSRF on mutating routes)', () => {
+  function appWithGuard() {
+    const app = Fastify();
+    registerMutationGuard(app);
+    app.post('/api/mutate', async () => ({ ok: true }));
+    app.get('/api/read', async () => ({ ok: true }));
+    return app;
+  }
+
+  // A cross-origin no-cors fetch from any website arrives with a loopback Host
+  // but a non-same-origin Sec-Fetch-Site — every such mutation must be refused.
+  // `same-site` covers the subdomain variant; both are attacker-reachable.
+  it.each(['cross-site', 'same-site'])(
+    'rejects a POST with Sec-Fetch-Site: %s (403)',
+    async (site) => {
+      const app = appWithGuard();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/mutate',
+        headers: { 'sec-fetch-site': site },
+        payload: { a: 1 },
+      });
+      expect(res.statusCode).toBe(403);
+      await app.close();
+    },
+  );
+
+  // Legit callers: the SPA (same-origin), a direct navigation (none), and
+  // curl / the CLI / app.inject (no Sec-Fetch-Site at all).
+  it.each(['same-origin', 'none'])('allows a POST with Sec-Fetch-Site: %s', async (site) => {
+    const app = appWithGuard();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/mutate',
+      headers: { 'sec-fetch-site': site },
+      payload: { a: 1 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    await app.close();
+  });
+
+  it('allows a POST with no Sec-Fetch-Site header and a JSON body (curl / CLI)', async () => {
+    const app = appWithGuard();
+    const res = await app.inject({ method: 'POST', url: '/api/mutate', payload: { a: 1 } });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  // Legacy-browser fallback: a no-cors cross-origin POST can only carry simple
+  // content types (text/plain & co) — requiring JSON closes that path too.
+  it('rejects a non-JSON content type on a mutating request (415)', async () => {
+    const app = appWithGuard();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/mutate',
+      headers: { 'content-type': 'text/plain' },
+      payload: 'a=1',
+    });
+    expect(res.statusCode).toBe(415);
+    await app.close();
+  });
+
+  it('accepts application/json with a charset parameter', async () => {
+    const app = appWithGuard();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/mutate',
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      payload: JSON.stringify({ a: 1 }),
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('skips safe methods: a GET passes even with Sec-Fetch-Site: cross-site', async () => {
+    const app = appWithGuard();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/read',
+      headers: { 'sec-fetch-site': 'cross-site' },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
   });
 });

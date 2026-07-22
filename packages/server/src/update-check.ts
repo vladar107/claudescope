@@ -59,6 +59,12 @@ export function updateAvailable(): string | null {
   return cachedLatest && isNewer(cachedLatest, APP_VERSION) ? cachedLatest : null;
 }
 
+/** The last latest-version value the daemon fetched, newer or not (for the
+ *  Settings Update card, which also shows the "up to date" state). */
+export function getCachedLatest(): string | null {
+  return cachedLatest;
+}
+
 /** Refresh the daemon-side cache from the (file-cached) registry lookup.
  *  Never throws — offline just leaves the last-known value in place. */
 export async function refreshLatestVersion(): Promise<void> {

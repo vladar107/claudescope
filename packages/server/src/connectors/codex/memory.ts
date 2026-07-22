@@ -15,7 +15,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MemorySource } from '@claudescope/shared';
-import { CODEX_HOME } from '../../config.js';
+import { codexHome } from '../../settings.js';
 import { contractHome } from '../../util/paths.js';
 
 /**
@@ -51,7 +51,7 @@ export function codexGlobalMemory(): MemorySource[] {
   const out: MemorySource[] = [];
 
   // Instruction file first: the user-authored global AGENTS.md.
-  const agents = readSource(join(CODEX_HOME, 'AGENTS.md'), {
+  const agents = readSource(join(codexHome(), 'AGENTS.md'), {
     provenance: 'user-authored',
     kind: 'document',
     title: 'AGENTS.md (global)',
@@ -59,7 +59,7 @@ export function codexGlobalMemory(): MemorySource[] {
   if (agents) out.push(agents);
 
   // Best-effort agent-authored handbook + summary; absent for almost everyone.
-  const memoriesDir = join(CODEX_HOME, 'memories');
+  const memoriesDir = join(codexHome(), 'memories');
   const handbook = readSource(join(memoriesDir, 'MEMORY.md'), {
     provenance: 'agent-authored',
     kind: 'document',

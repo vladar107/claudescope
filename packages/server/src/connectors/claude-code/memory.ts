@@ -21,7 +21,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MemorySource } from '@claudescope/shared';
 import type { AgentMemoryDir } from '../types.js';
-import { CLAUDE_HOME, CLAUDE_PROJECTS_DIR } from '../../config.js';
+import { claudeHome, claudeProjectsDir } from '../../settings.js';
 import { contractHome } from '../../util/paths.js';
 
 /**
@@ -120,7 +120,7 @@ function relatedNames(body: string): string[] {
  * `document` source. `[]` when absent, empty, or unreadable.
  */
 export function globalMemory(): MemorySource[] {
-  const path = join(CLAUDE_HOME, 'CLAUDE.md');
+  const path = join(claudeHome(), 'CLAUDE.md');
   try {
     const markdown = readFileSync(path, 'utf8');
     if (!markdown.trim()) return [];
@@ -170,9 +170,10 @@ function readFact(dir: string, fileName: string): MemorySource | null {
  * `originSessionId` (slug as the fallback). `[]` when none exist.
  */
 export function projectMemory(): AgentMemoryDir[] {
+  const projectsDir = claudeProjectsDir();
   let projectDirs: import('node:fs').Dirent[];
   try {
-    projectDirs = readdirSync(CLAUDE_PROJECTS_DIR, { withFileTypes: true });
+    projectDirs = readdirSync(projectsDir, { withFileTypes: true });
   } catch {
     return [];
   }
@@ -180,7 +181,7 @@ export function projectMemory(): AgentMemoryDir[] {
   const dirs: AgentMemoryDir[] = [];
   for (const projectDir of projectDirs) {
     if (!projectDir.isDirectory()) continue;
-    const memDir = join(CLAUDE_PROJECTS_DIR, projectDir.name, 'memory');
+    const memDir = join(projectsDir, projectDir.name, 'memory');
 
     let entries: import('node:fs').Dirent[];
     try {

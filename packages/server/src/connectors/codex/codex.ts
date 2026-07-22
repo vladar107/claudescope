@@ -18,7 +18,8 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CLAUDESCOPE_HOME, CODEX_SESSIONS_DIR } from '../../config.js';
+import { CLAUDESCOPE_HOME } from '../../config.js';
+import { codexSessionsDir } from '../../settings.js';
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
@@ -107,7 +108,10 @@ async function loadSession(sessionId: string, paths: string[]): Promise<SessionD
 export const codexConnector: AgentConnector = {
   id: 'codex',
   label: 'Codex',
-  sourceDir: CODEX_SESSIONS_DIR,
+  // Resolved per access so a settings.json change applies without a restart.
+  get sourceDir() {
+    return codexSessionsDir();
+  },
   discover,
   prepare,
   eventsProjectionSql,

@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import type { HealthResponse, ReindexResponse } from '@claudescope/shared';
 import { APP_VERSION } from '../config.js';
 import { getDataVersion, getIndexProgress, isIndexReady, reindex } from '../data/index.js';
+import { getIndexerStatus } from '../indexer-lifecycle.js';
 import { updateAvailable } from '../update-check.js';
 import { registerProjectsRoute } from './projects.js';
 import { registerSessionsRoutes } from './sessions.js';
@@ -22,11 +23,16 @@ import { registerErrorsRoute } from './analytics-errors.js';
 import { registerDigestRoute } from './analytics-digest.js';
 import { registerSourcesRoute } from './sources.js';
 import { registerMemoryRoute } from './memory.js';
+import { registerSettingsRoute } from './settings.js';
+import { registerIndexerRoutes } from './indexer.js';
+import { registerPricingRoute } from './pricing.js';
+import { registerSystemRoute } from './system.js';
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/health', async (): Promise<HealthResponse> => {
     const indexing = getIndexProgress();
     const latest = updateAvailable();
+    const { state, paused, intervalMs } = getIndexerStatus();
     return {
       status: 'ok',
       version: APP_VERSION,
@@ -34,6 +40,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       dataVersion: getDataVersion(),
       ...(indexing ? { indexing } : {}),
       ...(latest ? { updateAvailable: latest } : {}),
+      indexer: { state, paused, intervalMs },
     };
   });
 
@@ -50,6 +57,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await registerDigestRoute(app);
   await registerSourcesRoute(app);
   await registerMemoryRoute(app);
+  await registerSettingsRoute(app);
+  await registerIndexerRoutes(app);
+  await registerPricingRoute(app);
+  await registerSystemRoute(app);
 
   app.post('/api/reindex', async (): Promise<ReindexResponse> => {
     return reindex();

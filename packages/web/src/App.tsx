@@ -1,10 +1,6 @@
-import { useEffect, useState } from 'react';
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import { Cpu, FolderOpen, LineChart, Monitor, Moon, Search, Sun, type LucideIcon } from 'lucide-react';
-import type { SourceInfo } from '@claudescope/shared';
+import { Cpu, FolderOpen, LineChart, Search, Settings, type LucideIcon } from 'lucide-react';
 import { ErrorBoundary } from './components';
-import { api } from './api/client.js';
-import { useTheme, type ThemeChoice } from './theme/ThemeProvider.js';
 import { useServerStatus } from './status/StatusProvider.js';
 import { BrowsePage } from './pages/browse/BrowsePage.js';
 import { ProjectLayout } from './pages/browse/ProjectLayout.js';
@@ -16,6 +12,7 @@ import { MemoryPage } from './pages/memory/MemoryPage.js';
 import { AgentMemoryPage } from './pages/memory/AgentMemoryPage.js';
 import { AgentProjectMemoryPage } from './pages/memory/AgentProjectMemoryPage.js';
 import { ProjectMemoryPage } from './pages/memory/ProjectMemoryPage.js';
+import { SettingsPage } from './pages/settings/SettingsPage.js';
 
 interface NavItem {
   to: string;
@@ -32,50 +29,9 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/analytics', label: 'Analytics', icon: LineChart },
 ];
 
-const THEME_OPTIONS: { value: ThemeChoice; label: string; icon: LucideIcon }[] = [
-  { value: 'system', label: 'System', icon: Monitor },
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
-];
-
-/** Segmented System / Light / Dark theme control. */
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  return (
-    <div className="tv-theme-toggle" role="group" aria-label="Theme">
-      {THEME_OPTIONS.map((o) => {
-        const Icon = o.icon;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            className={theme === o.value ? 'tv-theme-toggle__btn is-active' : 'tv-theme-toggle__btn'}
-            onClick={() => setTheme(o.value)}
-            title={`${o.label} theme`}
-            aria-pressed={theme === o.value}
-          >
-            <Icon size={15} aria-hidden="true" />
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /** Left navigation sidebar. */
 function Sidebar() {
-  const { updateAvailable } = useServerStatus();
-  const [sources, setSources] = useState<SourceInfo[]>([]);
-  useEffect(() => {
-    const controller = new AbortController();
-    api
-      .sources(controller.signal)
-      .then(setSources)
-      .catch(() => {
-        /* footer is best-effort */
-      });
-    return () => controller.abort();
-  }, []);
+  const { updateAvailable, version } = useServerStatus();
 
   return (
     <nav className="tv-nav">
@@ -102,20 +58,22 @@ function Sidebar() {
         </NavLink>
       ))}
       <div className="tv-nav__spacer" />
-      <ThemeToggle />
-      <div className="tv-nav__footer">
-        {updateAvailable ? (
+      {/* Settings anchors the bottom of the sidebar, apart from the main nav. */}
+      <NavLink
+        to="/settings"
+        className={({ isActive }) => (isActive ? 'tv-nav__link is-active' : 'tv-nav__link')}
+      >
+        <Settings size={16} aria-hidden="true" />
+        Settings
+      </NavLink>
+      {version ? <span className="tv-nav__version tv-mono">v{version}</span> : null}
+      {updateAvailable ? (
+        <div className="tv-nav__footer">
           <span className="tv-nav__update" title={`Update available: v${updateAvailable}`}>
             v{updateAvailable} available — <code className="tv-mono">claudescope update</code>
           </span>
-        ) : null}
-        <span className="tv-nav__footer-label">Read-only sources</span>
-        {sources.map((s) => (
-          <span key={s.id} className="tv-nav__source tv-mono" title={`${s.label} · ${s.path}`}>
-            {s.path}
-          </span>
-        ))}
-      </div>
+        </div>
+      ) : null}
     </nav>
   );
 }
@@ -143,6 +101,7 @@ export function App() {
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/memory/:connectorId" element={<AgentMemoryPage />} />
             <Route path="/memory/:connectorId/:projectId" element={<AgentProjectMemoryPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </ErrorBoundary>
         </div>

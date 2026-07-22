@@ -13,7 +13,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { RawEvent } from '@claudescope/shared';
-import { CLAUDE_PROJECTS_DIR } from '../../config.js';
+import { claudeProjectsDir } from '../../settings.js';
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
@@ -133,7 +133,7 @@ function discover(): DiscoveredFile[] {
     }
   };
 
-  walk(CLAUDE_PROJECTS_DIR);
+  walk(claudeProjectsDir());
   return out;
 }
 
@@ -334,7 +334,10 @@ async function loadSession(sessionId: string, paths: string[]): Promise<SessionD
 export const claudeCodeConnector: AgentConnector = {
   id: 'claude-code',
   label: 'Claude Code',
-  sourceDir: CLAUDE_PROJECTS_DIR,
+  // Resolved per access so a settings.json change applies without a restart.
+  get sourceDir() {
+    return claudeProjectsDir();
+  },
   discover,
   eventsProjectionSql,
   auxProjections,

@@ -17,7 +17,8 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CLAUDESCOPE_HOME, COPILOT_SESSIONS_DIR } from '../../config.js';
+import { CLAUDESCOPE_HOME } from '../../config.js';
+import { copilotSessionsDir } from '../../settings.js';
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
@@ -34,16 +35,17 @@ function cachePath(filePath: string): string {
 
 /** Collect every `<uuid>/events.jsonl` under the Copilot session-state dir. */
 function discover(): DiscoveredFile[] {
+  const sessionsDir = copilotSessionsDir(); // resolve once per pass
   const out: DiscoveredFile[] = [];
   let dirs: import('node:fs').Dirent[];
   try {
-    dirs = readdirSync(COPILOT_SESSIONS_DIR, { withFileTypes: true });
+    dirs = readdirSync(sessionsDir, { withFileTypes: true });
   } catch {
     return out; // no Copilot install
   }
   for (const dir of dirs) {
     if (!dir.isDirectory()) continue;
-    const full = join(COPILOT_SESSIONS_DIR, dir.name, 'events.jsonl');
+    const full = join(sessionsDir, dir.name, 'events.jsonl');
     try {
       const st = statSync(full);
       out.push({ path: full, mtimeMs: Math.floor(st.mtimeMs), size: st.size });
@@ -116,7 +118,10 @@ async function loadSession(_sessionId: string, paths: string[]): Promise<Session
 export const copilotConnector: AgentConnector = {
   id: 'copilot',
   label: 'GitHub Copilot CLI',
-  sourceDir: COPILOT_SESSIONS_DIR,
+  // Resolved per access so a settings.json change applies without a restart.
+  get sourceDir() {
+    return copilotSessionsDir();
+  },
   discover,
   prepare,
   eventsProjectionSql,

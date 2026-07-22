@@ -19,17 +19,16 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
-import { dirname } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import {
   APP_VERSION,
-  CLAUDE_PROJECTS_DIR,
   CLAUDESCOPE_HOME,
   PORT as DEFAULT_PORT,
   autoRestartEnabled,
 } from './config.js';
+import { claudeProjectsDir, openBrowserOnStart } from './settings.js';
 import {
   DAEMON_FILE,
   EXIT_WAIT_MS,
@@ -56,6 +55,7 @@ import {
 } from './agent/query.js';
 import { ensureDaemon } from './daemon.js';
 import { PKG, getLatestVersion, isNewer } from './update-check.js';
+import { detectInstallMethod } from './install-method.js';
 import { refreshPricing } from './data/pricing-refresh.js';
 import { openBrowser } from './util/open-browser.js';
 
@@ -71,10 +71,6 @@ export {
   type DaemonRecord,
   type ExistingState,
 } from './daemon.js';
-
-// The bundle is ESM, so the CJS `__dirname` global doesn't exist — derive it
-// from import.meta.url like config.ts/daemon.ts do (the bundler injects none).
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** Start the server in the background, idempotently. */
 async function start(port: number, open: boolean): Promise<void> {
@@ -136,7 +132,7 @@ async function start(port: number, open: boolean): Promise<void> {
     return;
   }
   console.log(`\n✓ claudescope running → ${url}`);
-  console.log(`  Sessions: ${CLAUDE_PROJECTS_DIR} (read-only)`);
+  console.log(`  Sessions: ${claudeProjectsDir()} (read-only)`);
   if (open) openBrowser(url);
   await maybeNotifyUpdate(false);
 }
@@ -208,26 +204,6 @@ async function confirm(question: string, defaultYes: boolean): Promise<boolean> 
   } finally {
     rl.close();
   }
-}
-
-type InstallMethod = 'brew' | 'nix' | 'npm';
-
-/** Classify how this CLI was installed from where its bundle resides. Homebrew
- *  symlinks the bin out of the Cellar's libexec (realpath resolves it back); Nix
- *  installs under /nix/store; everything else (npm global, npx) is treated as npm. */
-function detectInstallMethod(): InstallMethod {
-  let p = __dirname;
-  try {
-    p = realpathSync(__dirname);
-  } catch {
-    /* keep __dirname if the path can't be resolved */
-  }
-  if (p.includes('/nix/store/')) return 'nix';
-  // Match the formula's Cellar dir specifically (…/Cellar/claudescope/<version>/…),
-  // not a generic "homebrew" — a plain `npm i -g` under Homebrew's own Node lives
-  // at …/homebrew/lib/node_modules/… and must NOT be mistaken for a brew install.
-  if (/[\\/]Cellar[\\/]claudescope[\\/]/.test(p)) return 'brew';
-  return 'npm';
 }
 
 /** Upgrade the global install to the latest published version and restart.
@@ -393,7 +369,9 @@ Options:
 
 State (index, pricing, logs, PID) lives in ${CLAUDESCOPE_HOME}
 (override with $CLAUDESCOPE_HOME). Sessions are read from
-${CLAUDE_PROJECTS_DIR} (override with $CLAUDE_PROJECTS_DIR).
+${claudeProjectsDir()} (override with $CLAUDE_PROJECTS_DIR).
+Settings edited in the web UI persist to settings.json in the state dir
+(env vars always win over saved settings).
 CLAUDESCOPE_AUTO_RESTART=0 disables automatic daemon restarts on version skew.`);
 }
 
@@ -429,7 +407,9 @@ async function main(): Promise<void> {
   });
 
   const port = values.port ? Number(values.port) : DEFAULT_PORT;
-  const open = !values['no-open'];
+  // Flag wins, then the persisted setting (which itself folds settings.json >
+  // default true; the OPEN_BROWSER env var stays the launcher's contract).
+  const open = values['no-open'] ? false : openBrowserOnStart();
 
   let command = positionals[0];
   if (!command) command = values.help ? 'help' : values.version ? 'version' : 'start';

@@ -15,7 +15,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MemorySource } from '@claudescope/shared';
-import { CLAUDESCOPE_HOME, JUNIE_HOME, JUNIE_SESSIONS_DIR } from '../../config.js';
+import { CLAUDESCOPE_HOME } from '../../config.js';
+import { junieHome, junieSessionsDir } from '../../settings.js';
 import { contractHome } from '../../util/paths.js';
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData } from '../../data/session-loader.js';
@@ -36,7 +37,8 @@ function cachePath(filePath: string): string {
  * mirrors how Junie itself enumerates sessions and skips stray subdirectories.
  */
 function discover(): DiscoveredFile[] {
-  const indexPath = join(JUNIE_SESSIONS_DIR, 'index.jsonl');
+  const sessionsDir = junieSessionsDir(); // resolve once per pass
+  const indexPath = join(sessionsDir, 'index.jsonl');
   let raw: string;
   try {
     raw = readFileSync(indexPath, 'utf8');
@@ -54,10 +56,10 @@ function discover(): DiscoveredFile[] {
       continue;
     }
     // sessionId is used to build a filesystem path, so reject anything from a
-    // poisoned index.jsonl that could escape JUNIE_SESSIONS_DIR (separators or a
+    // poisoned index.jsonl that could escape the sessions dir (separators or a
     // traversal segment). Real Junie ids are a single plain `session-…` segment.
     if (!sessionId || /[/\\]/.test(sessionId) || sessionId === '.' || sessionId === '..') continue;
-    const full = join(JUNIE_SESSIONS_DIR, sessionId, 'events.jsonl');
+    const full = join(sessionsDir, sessionId, 'events.jsonl');
     try {
       const st = statSync(full);
       out.push({ path: full, mtimeMs: Math.floor(st.mtimeMs), size: st.size });
@@ -120,7 +122,7 @@ async function loadSession(_sessionId: string, paths: string[]): Promise<Session
  * `projectMemory`. Returns `[]` when the file is absent.
  */
 function globalMemory(): MemorySource[] {
-  const agentsPath = join(JUNIE_HOME, 'AGENTS.md');
+  const agentsPath = join(junieHome(), 'AGENTS.md');
   try {
     const markdown = readFileSync(agentsPath, 'utf8');
     if (!markdown.trim()) return []; // empty file → no memory
@@ -142,7 +144,10 @@ function globalMemory(): MemorySource[] {
 export const junieConnector: AgentConnector = {
   id: 'junie',
   label: 'Junie',
-  sourceDir: JUNIE_SESSIONS_DIR,
+  // Resolved per access so a settings.json change applies without a restart.
+  get sourceDir() {
+    return junieSessionsDir();
+  },
   discover,
   prepare,
   eventsProjectionSql,

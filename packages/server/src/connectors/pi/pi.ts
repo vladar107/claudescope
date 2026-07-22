@@ -21,7 +21,8 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { CLAUDESCOPE_HOME, PI_SESSIONS_DIR } from '../../config.js';
+import { CLAUDESCOPE_HOME } from '../../config.js';
+import { piSessionsDir } from '../../settings.js';
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
@@ -66,7 +67,7 @@ function discover(): DiscoveredFile[] {
       }
     }
   };
-  walk(PI_SESSIONS_DIR);
+  walk(piSessionsDir());
   return out;
 }
 
@@ -146,7 +147,10 @@ async function loadSession(_sessionId: string, paths: string[]): Promise<Session
 export const piConnector: AgentConnector = {
   id: 'pi',
   label: 'pi',
-  sourceDir: PI_SESSIONS_DIR,
+  // Resolved per access so a settings.json change applies without a restart.
+  get sourceDir() {
+    return piSessionsDir();
+  },
   discover,
   prepare,
   eventsProjectionSql,

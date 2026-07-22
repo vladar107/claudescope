@@ -23,7 +23,8 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { CLAUDESCOPE_HOME, GROK_SESSIONS_DIR } from '../../config.js';
+import { CLAUDESCOPE_HOME } from '../../config.js';
+import { grokSessionsDir } from '../../settings.js';
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
@@ -73,10 +74,11 @@ function foldedStat(chatPath: string): Pick<DiscoveredFile, 'mtimeMs' | 'size'> 
  * `prompt_history.jsonl`, and the session dir's other files by construction.
  */
 function discover(): DiscoveredFile[] {
+  const sessionsDir = grokSessionsDir(); // resolve once per pass
   const out: DiscoveredFile[] = [];
   let cwdDirs: import('node:fs').Dirent[];
   try {
-    cwdDirs = readdirSync(GROK_SESSIONS_DIR, { withFileTypes: true });
+    cwdDirs = readdirSync(sessionsDir, { withFileTypes: true });
   } catch {
     return out; // no Grok install
   }
@@ -84,13 +86,13 @@ function discover(): DiscoveredFile[] {
     if (!cwdDir.isDirectory()) continue;
     let sessionDirs: import('node:fs').Dirent[];
     try {
-      sessionDirs = readdirSync(join(GROK_SESSIONS_DIR, cwdDir.name), { withFileTypes: true });
+      sessionDirs = readdirSync(join(sessionsDir, cwdDir.name), { withFileTypes: true });
     } catch {
       continue;
     }
     for (const sessionDir of sessionDirs) {
       if (!sessionDir.isDirectory()) continue;
-      const chatPath = join(GROK_SESSIONS_DIR, cwdDir.name, sessionDir.name, 'chat_history.jsonl');
+      const chatPath = join(sessionsDir, cwdDir.name, sessionDir.name, 'chat_history.jsonl');
       const st = foldedStat(chatPath);
       if (st) out.push({ path: chatPath, ...st });
     }
@@ -182,7 +184,10 @@ async function loadSession(_sessionId: string, paths: string[]): Promise<Session
 export const grokConnector: AgentConnector = {
   id: 'grok',
   label: 'Grok CLI',
-  sourceDir: GROK_SESSIONS_DIR,
+  // Resolved per access so a settings.json change applies without a restart.
+  get sourceDir() {
+    return grokSessionsDir();
+  },
   discover,
   prepare,
   eventsProjectionSql,
