@@ -441,6 +441,112 @@ export interface HealthResponse {
   indexing?: IndexingProgress;
   /** Latest published version, when the daemon knows it is newer than itself. */
   updateAvailable?: string;
+  /** Compact indexer lifecycle state (full status lives on the action responses). */
+  indexer?: Pick<IndexerStatus, 'state' | 'paused' | 'intervalMs'>;
+}
+
+// ---------------------------------------------------------------------------
+// Settings & lifecycle
+// ---------------------------------------------------------------------------
+
+/** Where an effective setting value came from (precedence: env > file > default). */
+export type SettingSource = 'env' | 'file' | 'default';
+
+export type SettingValue = string | number | boolean;
+
+/** One editable setting row, driven by the server-side registry. */
+export interface EditableSetting {
+  /** Registry key, e.g. `claudeProjectsDir`. */
+  key: string;
+  /** Human label, e.g. `Claude Code sessions`. */
+  label: string;
+  group: 'sources' | 'indexing' | 'startup';
+  type: 'path' | 'number' | 'boolean';
+  /** The env var that overrides this setting, e.g. `CLAUDE_PROJECTS_DIR`.
+   *  Absent for settings with no env layer (e.g. `openBrowser`, whose
+   *  `OPEN_BROWSER` env var is an internal launcher contract, not an override). */
+  envVar?: string;
+  /** The value currently in effect after precedence resolution. */
+  effective: SettingValue;
+  source: SettingSource;
+  /** Saved settings.json value, when present (may be shadowed by env). */
+  fileValue?: SettingValue;
+  defaultValue: SettingValue;
+  /** False → change takes effect on the next `claudescope start`. */
+  live: boolean;
+  /** Paths only: whether the effective path exists on disk. */
+  exists?: boolean;
+  /** Sources only: the connector this dir feeds, for UI labeling. */
+  connectorId?: string;
+}
+
+/** A config value shown for transparency but not editable from the UI. */
+export interface ReadOnlySetting {
+  key: string;
+  label: string;
+  envVar?: string;
+  value: string | number;
+  source: SettingSource;
+}
+
+/** GET /api/settings */
+export interface SettingsResponse {
+  schemaVersion: number;
+  editable: EditableSetting[];
+  readOnly: ReadOnlySetting[];
+}
+
+/** PUT /api/settings — `null` clears a key back to its default. */
+export interface SettingsUpdateRequest {
+  set: Record<string, SettingValue | null>;
+}
+
+export interface SettingsUpdateResponse {
+  /** Fresh post-save snapshot. */
+  settings: SettingsResponse;
+  applied: { key: string; live: boolean }[];
+  warnings: { key: string; message: string }[];
+}
+
+/** Indexer lifecycle state (the poller + reindex engine, not the process). */
+export interface IndexerStatus {
+  state: 'building' | 'watching' | 'paused' | 'indexing';
+  /** Runtime-only pause flag — not persisted; a restart resumes indexing. */
+  paused: boolean;
+  /** Effective auto-reindex interval (0 = disabled). */
+  intervalMs: number;
+  /** ISO timestamp of the last completed pass, if any. */
+  lastPassAt: string | null;
+  lastPass: ReindexResponse | null;
+  rebuilding: boolean;
+}
+
+/** POST /api/index/rebuild → 202 */
+export interface RebuildStartedResponse {
+  started: true;
+}
+
+/** POST /api/pricing/refresh */
+export interface PricingRefreshResponse {
+  fetchedAt: string;
+  modelCount: number;
+  changed: number;
+  /** Snapshot path, home dir contracted to `~`. */
+  path: string;
+}
+
+/** GET /api/system — per-process statics for the Status/Update cards. */
+export interface SystemInfoResponse {
+  version: string;
+  /** Latest published version, or null when offline / dev build. */
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  installMethod: 'npm' | 'brew' | 'nix';
+  /** Exact upgrade command for the detected install method. */
+  updateCommand: string;
+  /** ISO timestamp of process start, for uptime display. */
+  startedAt: string;
+  dataVersion: number;
 }
 
 // ---------------------------------------------------------------------------

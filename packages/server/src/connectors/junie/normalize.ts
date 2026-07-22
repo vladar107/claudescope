@@ -33,7 +33,7 @@ import type {
   MessageUsage,
   UserEvent,
 } from '@claudescope/shared';
-import { JUNIE_HOME } from '../../config.js';
+import { junieHome } from '../../settings.js';
 import { resolveImageWithin } from '../safe-image.js';
 import { toolNamesCsv } from '../tool-names.js';
 
@@ -90,7 +90,7 @@ interface StepAgg {
  * dir — the only tree this connector is ever allowed to read.
  */
 function imageBlockFromPath(path: string): ImageBlock | null {
-  return resolveImageWithin(JUNIE_HOME, path);
+  return resolveImageWithin(junieHome(), path);
 }
 
 /** Image blocks for a UserPromptEvent's string-path attachments (objects skipped). */

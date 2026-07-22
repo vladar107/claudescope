@@ -25,11 +25,11 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import {
   APP_VERSION,
-  CLAUDE_PROJECTS_DIR,
   CLAUDESCOPE_HOME,
   PORT as DEFAULT_PORT,
   autoRestartEnabled,
 } from './config.js';
+import { claudeProjectsDir } from './settings.js';
 import {
   DAEMON_FILE,
   EXIT_WAIT_MS,
@@ -136,7 +136,7 @@ async function start(port: number, open: boolean): Promise<void> {
     return;
   }
   console.log(`\n✓ claudescope running → ${url}`);
-  console.log(`  Sessions: ${CLAUDE_PROJECTS_DIR} (read-only)`);
+  console.log(`  Sessions: ${claudeProjectsDir()} (read-only)`);
   if (open) openBrowser(url);
   await maybeNotifyUpdate(false);
 }
@@ -393,7 +393,7 @@ Options:
 
 State (index, pricing, logs, PID) lives in ${CLAUDESCOPE_HOME}
 (override with $CLAUDESCOPE_HOME). Sessions are read from
-${CLAUDE_PROJECTS_DIR} (override with $CLAUDE_PROJECTS_DIR).
+${claudeProjectsDir()} (override with $CLAUDE_PROJECTS_DIR).
 CLAUDESCOPE_AUTO_RESTART=0 disables automatic daemon restarts on version skew.`);
 }
 

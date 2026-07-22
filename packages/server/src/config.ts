@@ -9,7 +9,7 @@ import type { PricingConfig } from '@claudescope/shared';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** Return the first candidate path that exists, or `fallback` if none do. */
-function firstExisting(candidates: string[], fallback: string): string {
+export function firstExisting(candidates: string[], fallback: string): string {
   return candidates.find((p) => existsSync(p)) ?? fallback;
 }
 
@@ -20,140 +20,21 @@ export const PORT = Number(process.env.PORT ?? 4317);
 export const PACKAGE_ROOT = join(__dirname, '..');
 
 /** Expand a leading `~` to the user's home directory. */
-function expandHome(p: string): string {
+export function expandHome(p: string): string {
   if (p === '~') return homedir();
   if (p.startsWith('~/')) return join(homedir(), p.slice(2));
   return p;
 }
 
-/**
- * READ-ONLY source of session data. The app MUST NEVER write here.
- *
- * Defaults to `~/.claude/projects`. Override with the CLAUDE_PROJECTS_DIR
- * environment variable to point at a different location (e.g. a copy of
- * transcripts exported from another machine). A leading `~` is expanded.
- */
-export const CLAUDE_PROJECTS_DIR = expandHome(
-  process.env.CLAUDE_PROJECTS_DIR ?? join(homedir(), '.claude', 'projects'),
-);
-
-/**
- * READ-ONLY source of OpenAI Codex CLI sessions. The app MUST NEVER write here.
- * Defaults to `~/.codex/sessions` (`rollout-*.jsonl` under `YYYY/MM/DD/`).
- * Override with CODEX_SESSIONS_DIR. A leading `~` is expanded.
- */
-export const CODEX_SESSIONS_DIR = expandHome(
-  process.env.CODEX_SESSIONS_DIR ?? join(homedir(), '.codex', 'sessions'),
-);
-
-/**
- * READ-ONLY source of JetBrains Junie sessions. The app MUST NEVER write here.
- * Defaults to `~/.junie/sessions` (`session-<id>/events.jsonl`, plus an
- * `index.jsonl` listing every session). Override with JUNIE_SESSIONS_DIR. A
- * leading `~` is expanded.
- */
-export const JUNIE_SESSIONS_DIR = expandHome(
-  process.env.JUNIE_SESSIONS_DIR ?? join(homedir(), '.junie', 'sessions'),
-);
-
-/**
- * READ-ONLY source of pi (`@earendil-works/pi-coding-agent`) sessions. The app
- * MUST NEVER write here. Defaults to `~/.pi/agent/sessions` (one
- * `<ts>_<uuid>.jsonl` per session, under a per-`cwd` directory). Override with
- * PI_SESSIONS_DIR. A leading `~` is expanded.
- */
-export const PI_SESSIONS_DIR = expandHome(
-  process.env.PI_SESSIONS_DIR ?? join(homedir(), '.pi', 'agent', 'sessions'),
-);
-
-/**
- * READ-ONLY source of opencode sessions. The app MUST NEVER write here. Unlike the
- * other agents, opencode stores everything in ONE SQLite DB. `OPENCODE_DATA_DIR`
- * defaults to `$XDG_DATA_HOME/opencode` (else `~/.local/share/opencode`) and
- * `OPENCODE_DB_PATH` is `<dataDir>/opencode.db`. The connector opens the DB
- * strictly read-only (`node:sqlite`). Override either with its env var; a leading
- * `~` is expanded.
- */
-export const OPENCODE_DATA_DIR = expandHome(
-  process.env.OPENCODE_DATA_DIR ??
-    join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'opencode'),
-);
-export const OPENCODE_DB_PATH =
-  process.env.OPENCODE_DB_PATH ?? join(OPENCODE_DATA_DIR, 'opencode.db');
-
-/**
- * READ-ONLY source of GitHub Copilot CLI sessions. The app MUST NEVER write here.
- * Defaults to `~/.copilot/session-state` (one `<uuid>/events.jsonl` per session,
- * with a sibling `workspace.yaml` and an optional `files/` attachment dir).
- * Override with COPILOT_SESSIONS_DIR. A leading `~` is expanded.
- */
-export const COPILOT_SESSIONS_DIR = expandHome(
-  process.env.COPILOT_SESSIONS_DIR ?? join(homedir(), '.copilot', 'session-state'),
-);
-
-/**
- * READ-ONLY source of xAI Grok CLI sessions. The app MUST NEVER write here.
- * Defaults to `~/.grok/sessions` (one `<session-uuid>/` dir per session under a
- * per-cwd url-encoded directory, holding `chat_history.jsonl` + `updates.jsonl`
- * + `summary.json`). Override with GROK_SESSIONS_DIR. A leading `~` is expanded.
- */
-export const GROK_SESSIONS_DIR = expandHome(
-  process.env.GROK_SESSIONS_DIR ?? join(homedir(), '.grok', 'sessions'),
-);
-
-/**
- * READ-ONLY source of Google Antigravity sessions. The app MUST NEVER write here.
- * Antigravity 2.0 has two surfaces that share the same on-disk shape — the CLI
- * (`agy`) and the desktop app — each with its own appDataDir under `~/.gemini`.
- * One connector scans both: `<dir>/brain/<conv-id>/.system_generated/logs/transcript_full.jsonl`
- * (with cwd resolved out-of-band from `<dir>/history.jsonl`). Override either dir
- * with its env var; a leading `~` is expanded.
- */
-export const ANTIGRAVITY_CLI_DIR = expandHome(
-  process.env.ANTIGRAVITY_CLI_DIR ?? join(homedir(), '.gemini', 'antigravity-cli'),
-);
-export const ANTIGRAVITY_DESKTOP_DIR = expandHome(
-  process.env.ANTIGRAVITY_DIR ?? join(homedir(), '.gemini', 'antigravity'),
-);
-/** Every Antigravity appDataDir the connector scans (both surfaces). */
-export const ANTIGRAVITY_DIRS = [ANTIGRAVITY_CLI_DIR, ANTIGRAVITY_DESKTOP_DIR];
-/**
- * The Antigravity source dir reported to `/api/sources` — the first surface that
- * exists (CLI or desktop). `discover()` scans both, so keying the sources footer
- * on the CLI dir alone would hide the source for a desktop-only install.
- */
-export const ANTIGRAVITY_SOURCE_DIR = firstExisting(
-  [ANTIGRAVITY_CLI_DIR, ANTIGRAVITY_DESKTOP_DIR],
-  ANTIGRAVITY_CLI_DIR,
-);
-
-/**
- * READ-ONLY agent home directories — the parents of the session/project dirs
- * above, where each agent keeps its memory (`CLAUDE.md`, `AGENTS.md`, the Codex
- * `memories/` tree). Derived from the dirs above so the env overrides carry
- * through. The app MUST NEVER write here. Memory is read **only** from these
- * home dirs — never from the user's project directories.
- */
-export const CLAUDE_HOME = dirname(CLAUDE_PROJECTS_DIR);
-export const CODEX_HOME = dirname(CODEX_SESSIONS_DIR);
-export const JUNIE_HOME = dirname(JUNIE_SESSIONS_DIR);
-/** `~/.copilot` — holds the global `copilot-instructions.md` memory file. */
-export const COPILOT_HOME = dirname(COPILOT_SESSIONS_DIR);
-/**
- * `~/.gemini` — the shared Gemini/Antigravity home, parent of the appDataDirs.
- * Holds Antigravity's global rules (`config/agents/AGENTS.md`) and `GEMINI.md`.
- */
-export const ANTIGRAVITY_HOME = dirname(ANTIGRAVITY_CLI_DIR);
+// NOTE: the READ-ONLY agent source dirs (CLAUDE_PROJECTS_DIR & co), the derived
+// *_HOME memory dirs, and REINDEX_INTERVAL_MS moved to settings.ts as runtime
+// getters — they resolve env > settings.json > default PER CALL, so the web
+// UI's Settings page can change them without a process restart. The consts
+// remaining here are infra frozen at boot (port, state paths, intervals wired
+// to boot-time timers).
 
 /** Whether to auto-open the default browser on startup (set by the launcher). */
 export const OPEN_BROWSER = process.env.OPEN_BROWSER === '1';
-
-/**
- * How often (ms) to auto-reindex so live/new sessions show up without a
- * restart. Each poll just stats files and bails when nothing changed, so the
- * cost is negligible. Set REINDEX_INTERVAL_MS=0 to disable. Default 15s.
- */
-export const REINDEX_INTERVAL_MS = Number(process.env.REINDEX_INTERVAL_MS ?? 15000);
 
 /**
  * Per-user state directory. Owns everything the app writes (the derived index,

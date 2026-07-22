@@ -17,7 +17,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MemorySource } from '@claudescope/shared';
-import { COPILOT_HOME } from '../../config.js';
+import { copilotHome } from '../../settings.js';
 import { contractHome } from '../../util/paths.js';
 
 /**
@@ -25,7 +25,7 @@ import { contractHome } from '../../util/paths.js';
  * Absent for most users → `[]`, never an error.
  */
 export function copilotGlobalMemory(): MemorySource[] {
-  const path = join(COPILOT_HOME, 'copilot-instructions.md');
+  const path = join(copilotHome(), 'copilot-instructions.md');
   try {
     const markdown = readFileSync(path, 'utf8');
     if (!markdown.trim()) return [];

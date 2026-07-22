@@ -15,7 +15,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MemorySource } from '@claudescope/shared';
-import { ANTIGRAVITY_HOME } from '../../config.js';
+import { antigravityHome } from '../../settings.js';
 import { contractHome } from '../../util/paths.js';
 
 /**
@@ -23,9 +23,10 @@ import { contractHome } from '../../util/paths.js';
  * an error.
  */
 export function antigravityGlobalMemory(): MemorySource[] {
+  const home = antigravityHome();
   const candidates: { path: string; title: string }[] = [
-    { path: join(ANTIGRAVITY_HOME, 'config', 'agents', 'AGENTS.md'), title: 'AGENTS.md (global)' },
-    { path: join(ANTIGRAVITY_HOME, 'GEMINI.md'), title: 'GEMINI.md (global)' },
+    { path: join(home, 'config', 'agents', 'AGENTS.md'), title: 'AGENTS.md (global)' },
+    { path: join(home, 'GEMINI.md'), title: 'GEMINI.md (global)' },
   ];
   const out: MemorySource[] = [];
   for (const c of candidates) {

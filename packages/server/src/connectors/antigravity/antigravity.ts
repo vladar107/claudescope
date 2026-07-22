@@ -23,7 +23,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MemorySource, RawEvent } from '@claudescope/shared';
-import { ANTIGRAVITY_DIRS, ANTIGRAVITY_SOURCE_DIR, CLAUDESCOPE_HOME } from '../../config.js';
+import { CLAUDESCOPE_HOME } from '../../config.js';
+import { antigravityDirs, antigravitySourceDir } from '../../settings.js';
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
@@ -48,7 +49,7 @@ function cachePath(filePath: string): string {
 /** Every transcript across both Antigravity appDataDirs. */
 function discover(): DiscoveredFile[] {
   const out: DiscoveredFile[] = [];
-  for (const dir of ANTIGRAVITY_DIRS) {
+  for (const dir of antigravityDirs()) {
     const transcripts = listTranscripts(dir);
     if (transcripts.length === 0) continue;
     const { subagents } = getContext(dir);
@@ -138,7 +139,10 @@ function globalMemory(): MemorySource[] {
 export const antigravityConnector: AgentConnector = {
   id: 'antigravity',
   label: 'Antigravity',
-  sourceDir: ANTIGRAVITY_SOURCE_DIR,
+  // Resolved per access so a settings.json change applies without a restart.
+  get sourceDir() {
+    return antigravitySourceDir();
+  },
   discover,
   prepare,
   eventsProjectionSql,
