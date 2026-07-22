@@ -1,8 +1,8 @@
 # 0051 — Settings page: indexer lifecycle + settings.json layer
 
-- **Status:** in-progress
+- **Status:** done
 - **Date:** 2026-07-22
-- **PR:** <pending>
+- **PR:** https://github.com/vladar107/claudescope/pull/69
 
 ## Context
 
