@@ -1,6 +1,6 @@
 # 0050 — Dependabot alerts #7–#10 remediation
 
-- **Status:** in-progress
+- **Status:** done
 - **Date:** 2026-07-22
 - **PR:** https://github.com/vladar107/claudescope/pull/68
 
