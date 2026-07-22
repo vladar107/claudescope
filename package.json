@@ -49,11 +49,16 @@
     "node": ">=22.12"
   },
   "devDependencies": {
-    "concurrently": "^10.0.3",
+    "concurrently": "^9.2.4",
     "esbuild": "^0.28.1",
     "playwright": "^1.49.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "@modelcontextprotocol/sdk": {
+      "@hono/node-server": "2.0.11"
+    }
   }
 }
