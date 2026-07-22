@@ -247,6 +247,10 @@ All optional — set via environment variables.
 Each agent source is optional — if a directory doesn't exist it's simply skipped,
 so the app works whether you use one agent or all eight.
 
+The source directories and the reindex interval can also be changed from the
+web UI's **Settings** page — saved to `~/.claudescope/settings.json` and applied
+live, no restart needed. Environment variables always override saved settings.
+
 Examples:
 
 ```bash

@@ -48,9 +48,16 @@ npm-workspaces monorepo (`packages/*`):
   the DuckDB index, a user-editable `pricing.json` (seeded from a shipped
   default; `loadPricing` falls back to the default if the copy is missing),
   `pricing.fetched.json` (runtime-fetched rates snapshot, auto-refreshed daily
-  from LiteLLM, or manually via `claudescope pricing update`), the daemon PID
-  file, and logs. State lives outside the package dir so global installs survive
-  upgrades — do not move it back into the package.
+  from LiteLLM, or manually via `claudescope pricing update`), `settings.json`
+  (written by the web UI's Settings page; **env vars always win** over saved
+  values — resolution is env > file > default, per call via `settings.ts`
+  getters, so source dirs and the reindex interval apply live without a
+  restart), the daemon PID file, and logs. State lives outside the package dir
+  so global installs survive upgrades — do not move it back into the package.
+- The web Settings page's Start/Stop/Restart control the **indexer** (the
+  reindex poller — `indexer-lifecycle.ts`), never the HTTP process; stopping
+  the server stays terminal-only (`claudescope stop`). The pause flag is
+  runtime-only (not persisted).
 
 ## Commands
 

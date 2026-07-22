@@ -75,3 +75,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0048 | [xAI Grok CLI connector](./0048-grok-connector.md) | done |
 | 0049 | [Dependabot #6: brace-expansion DoS remediation](./0049-dependabot-brace-expansion.md) | done |
 | 0050 | [Dependabot alerts #7–#10 remediation](./0050-dependabot-alerts-7-10.md) | done |
+| 0051 | [Settings page: indexer lifecycle + settings.json layer](./0051-settings-page.md) | in-progress |
