@@ -17,10 +17,10 @@ import {
   WEB_DIST_DIR,
   ensureStateDir,
 } from './config.js';
-import { claudeProjectsDir, reindexIntervalMs } from './settings.js';
+import { claudeProjectsDir } from './settings.js';
 import { registerRoutes } from './routes/index.js';
 import { registerHostGuard, registerSecurityHeaders } from './security.js';
-import { reindex } from './data/index.js';
+import { startIndexer, stopIndexerTimer } from './indexer-lifecycle.js';
 import { refreshPricing } from './data/pricing-refresh.js';
 import { maybeSelfRestart } from './self-restart.js';
 import { refreshLatestVersion } from './update-check.js';
@@ -58,39 +58,11 @@ async function main(): Promise<void> {
 
   await registerRoutes(app);
 
-  // Kick off an initial (incremental) index build in the background so the
-  // server can accept connections immediately. /api/health reports readiness.
-  reindex()
-    .then((res) =>
-      app.log.info(
-        { reindexed: res.reindexed, durationMs: res.durationMs },
-        'initial index build complete',
-      ),
-    )
-    .catch((err) => app.log.error({ err }, 'initial index build failed'));
-
-  // Auto-reindex on an interval so live/new sessions appear without a restart.
-  // Each poll stats files and returns immediately when nothing changed, so it's
-  // cheap; only log when work was actually done.
-  if (reindexIntervalMs() > 0) {
-    const timer = setInterval(() => {
-      reindex()
-        .then((res) => {
-          if (res.reindexed > 0) {
-            app.log.info(
-              { reindexed: res.reindexed, durationMs: res.durationMs },
-              'auto-reindex picked up changes',
-            );
-          }
-        })
-        // A background poll failing is non-fatal — the server keeps serving the
-        // existing index — so warn rather than error (avoids error-level spam
-        // every interval when, e.g., a single file is briefly unreadable).
-        .catch((err) => app.log.warn({ err }, 'auto-reindex failed'));
-    }, reindexIntervalMs());
-    timer.unref(); // don't keep the process alive solely for the timer
-    app.addHook('onClose', async () => clearInterval(timer));
-  }
+  // Kick the initial background build and arm the auto-reindex poller. The
+  // indexer-lifecycle module owns both so the Settings page can pause/resume/
+  // restart indexing and re-arm the interval at runtime.
+  startIndexer(app.log);
+  app.addHook('onClose', async () => stopIndexerTimer());
 
   // Auto-refresh pricing from LiteLLM: once at boot when the snapshot is
   // missing/stale (>24h), then on an interval so long-running daemons track new

@@ -79,8 +79,10 @@ async function openAndPrepare(): Promise<{ conn: DuckDBConnection; inst: DuckDBI
   return { conn, inst };
 }
 
-/** Delete the persistent DB file and its WAL/temp siblings. */
-function discardCorruptDb(): void {
+/** Delete the persistent DB file and its WAL/temp siblings. Used by the
+ *  corrupt-open recovery below and by the explicit rebuild-index action —
+ *  callers must {@link closeConnection} first to release the file lock. */
+export function discardDbFiles(): void {
   for (const suffix of ['', '.wal', '.tmp']) {
     rmSync(`${DUCKDB_PATH}${suffix}`, { force: true, recursive: true });
   }
@@ -110,7 +112,7 @@ export async function getConnection(): Promise<DuckDBConnection> {
         `[duckdb] failed to open index at ${DUCKDB_PATH}; discarding and rebuilding. Cause:`,
         err instanceof Error ? err.message : err,
       );
-      discardCorruptDb();
+      discardDbFiles();
       opened = await openAndPrepare();
     }
     connection = opened.conn;

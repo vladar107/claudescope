@@ -17,7 +17,7 @@
 
 import type { DuckDBConnection } from '@duckdb/node-api';
 import type { IndexingProgress, PricingConfig, ReindexResponse } from '@claudescope/shared';
-import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import { closeConnection, discardDbFiles, getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { connectors } from '../connectors/registry.js';
 import type { AgentConnector, DiscoveredFile } from '../connectors/types.js';
 import { loadPricing } from './pricing.js';
@@ -48,6 +48,27 @@ export function isIndexReady(): boolean {
 /** Whether a reindex pass is currently running (self-restart defers on it). */
 export function isReindexInFlight(): boolean {
   return inFlight !== null;
+}
+
+/** True while an explicit discard-and-rebuild is running (see {@link rebuildIndex}). */
+let rebuilding = false;
+export function isRebuildInFlight(): boolean {
+  return rebuilding;
+}
+
+/** Bookkeeping for the last completed pass (surfaced on the indexer status). */
+let lastPass: ReindexResponse | null = null;
+let lastPassAt: string | null = null;
+export function getLastPass(): ReindexResponse | null {
+  return lastPass;
+}
+export function getLastPassAt(): string | null {
+  return lastPassAt;
+}
+function stampLastPass(res: ReindexResponse): ReindexResponse {
+  lastPass = res;
+  lastPassAt = new Date().toISOString();
+  return res;
 }
 
 export function getIndexProgress(): IndexingProgress | null {
@@ -410,11 +431,50 @@ async function rebuildFtsIndex(conn: DuckDBConnection): Promise<void> {
  */
 export async function reindex(): Promise<ReindexResponse> {
   if (inFlight) return inFlight;
-  inFlight = doReindex();
+  const pass = doReindex().then(stampLastPass);
+  inFlight = pass;
   try {
-    return await inFlight;
+    return await pass;
   } finally {
-    inFlight = null;
+    // Only clear our own slot: rebuildIndex may have replaced it while this
+    // pass was still draining, and clobbering that would let a new pass run
+    // concurrently with the rebuild.
+    if (inFlight === pass) inFlight = null;
+  }
+}
+
+/**
+ * Discard the DuckDB file and rebuild the index from scratch (the danger-zone
+ * "Rebuild index" action). Runs through the same {@link inFlight} slot as
+ * {@link reindex}, so a poller tick during the rebuild coalesces onto it
+ * instead of racing the closed connection. Also re-prices all history at the
+ * current pricing, since every event is re-stamped at load time.
+ */
+export async function rebuildIndex(): Promise<ReindexResponse> {
+  // Already rebuilding → join the in-flight rebuild.
+  if (rebuilding && inFlight) return inFlight;
+  const prior = inFlight;
+  const run = (async (): Promise<ReindexResponse> => {
+    // Let any in-flight pass drain first — passes are uninterruptible and we
+    // must not close the connection underneath one.
+    if (prior) await prior.catch(() => {});
+    rebuilding = true;
+    ready = false; // health flips to "building"; the web building UX takes over
+    try {
+      await closeConnection();
+      discardDbFiles();
+      await getConnection();
+      // Empty `files` table ⇒ doReindex reloads everything from the sources.
+      return stampLastPass(await doReindex());
+    } finally {
+      rebuilding = false;
+    }
+  })();
+  inFlight = run;
+  try {
+    return await run;
+  } finally {
+    if (inFlight === run) inFlight = null;
   }
 }
 

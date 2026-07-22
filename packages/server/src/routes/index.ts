@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import type { HealthResponse, ReindexResponse } from '@claudescope/shared';
 import { APP_VERSION } from '../config.js';
 import { getDataVersion, getIndexProgress, isIndexReady, reindex } from '../data/index.js';
+import { getIndexerStatus } from '../indexer-lifecycle.js';
 import { updateAvailable } from '../update-check.js';
 import { registerProjectsRoute } from './projects.js';
 import { registerSessionsRoutes } from './sessions.js';
@@ -27,6 +28,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/health', async (): Promise<HealthResponse> => {
     const indexing = getIndexProgress();
     const latest = updateAvailable();
+    const { state, paused, intervalMs } = getIndexerStatus();
     return {
       status: 'ok',
       version: APP_VERSION,
@@ -34,6 +36,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       dataVersion: getDataVersion(),
       ...(indexing ? { indexing } : {}),
       ...(latest ? { updateAvailable: latest } : {}),
+      indexer: { state, paused, intervalMs },
     };
   });
 
