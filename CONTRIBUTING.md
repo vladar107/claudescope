@@ -63,7 +63,8 @@ never touched — and exercises every API endpoint end-to-end via Fastify
 
 **Key rule:** the app is **read-only** over every agent source (`~/.claude`,
 `~/.codex`, `~/.junie`, `~/.pi`, opencode's database); its own state lives in
-`~/.claudescope/`. See [`CLAUDE.md`](./CLAUDE.md) for the full architecture.
+`~/.claudescope/`. See [`CLAUDE.md`](./CLAUDE.md) for the full architecture and
+[`docs/architecture.md`](./docs/architecture.md) for C4 architecture diagrams.
 
 ## Making changes
 
