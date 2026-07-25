@@ -424,8 +424,10 @@ Claudescope is open source and contributions are welcome. How it works (the
 DuckDB index, the per-agent **connectors**, and the threading parser), the local
 dev loop, the test suite, **how to add a connector for another agent**, and the
 release process all live in [`CONTRIBUTING.md`](./CONTRIBUTING.md), with
-[`CLAUDE.md`](./CLAUDE.md) as the deeper architectural source of truth. To run a
-local copy, see [Run from source](#run-from-source) above.
+[`CLAUDE.md`](./CLAUDE.md) as the deeper architectural source of truth and
+[`docs/architecture.md`](docs/architecture.md) for C4 architecture diagrams
+(levels 1–3). To run a local copy, see [Run from source](#run-from-source)
+above.
 
 ---
 
