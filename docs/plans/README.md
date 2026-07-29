@@ -83,3 +83,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0056 | [Prune the normalize cache when its source is gone](./0056-prune-normalize-cache.md) | done |
 | 0057 | [Untrusted-content hardening](./0057-untrusted-content-hardening.md) | done |
 | 0058 | [Consolidate the analytics duplication](./0058-analytics-duplication.md) | done |
+| 0059 | [Three small cleanups from the review](./0059-small-cleanups.md) | done |

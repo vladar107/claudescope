@@ -35,13 +35,10 @@ async function searchSessions(
   project: string | undefined,
   format: SnippetFormat,
 ): Promise<SearchResult[]> {
+  // NOTE: this query depends on `scalar_subquery_error_on_multiple_rows = false`,
+  // which is applied once when the connection opens (see db/duckdb.ts) rather than
+  // here — it is a connection-level setting, and the connection is shared.
   const conn = await getConnection();
-  // `events.uuid` is duplicated by fork/resume copies (the same lines re-listed
-  // under a new session id), so `match_bm25(uuid, …)` — whose internal lookup is
-  // a scalar subquery keyed by uuid — can hit multiple rows. Newer DuckDB errors
-  // on that; this restores the prior "pick a representative row" behavior (the
-  // duplicates are identical copies, so any is fine). Pre-existing issue on main.
-  await conn.run('SET scalar_subquery_error_on_multiple_rows = false');
 
   const filters: string[] = ['score IS NOT NULL'];
   if (type === 'user' || type === 'assistant') filters.push(`role = ${sqlString(type)}`);

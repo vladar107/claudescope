@@ -150,13 +150,14 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
         reply.code(404).send({ error: 'Session not found' });
         return;
       }
-      const meta = rowToSessionMeta(rows[0] as Record<string, unknown>);
+      const row = rows[0] as Record<string, unknown>;
+      const meta = rowToSessionMeta(row);
 
       const { mainEvents, subagents: subagentSources } = await loadSessionData(id);
       let thread = assembleThread(mainEvents);
       let subagents = buildSubagentRuns(thread, subagentSources);
 
-      const cwd = readRow(rows[0] as Record<string, unknown>, 'sessions').str('project_cwd');
+      const cwd = readRow(row, 'sessions').str('project_cwd');
       const resume = buildResumeInfo(connectorById(meta.connectorId), id, cwd || null);
 
       const res: SessionDetailResponse = { meta, thread, subagents };
