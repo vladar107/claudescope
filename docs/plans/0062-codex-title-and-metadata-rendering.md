@@ -2,7 +2,7 @@
 
 - **Status:** done
 - **Date:** 2026-07-29
-- **PR:** —
+- **PR:** https://github.com/vladar107/claudescope/pull/83
 
 ## Context
 
@@ -100,4 +100,3 @@ rendered assistant Markdown without changing the stored/source transcript.
 - Memory-citation metadata remains searchable/exportable because this change is
   presentation-only. That preserves transcript fidelity; filtering those other
   surfaces would be a separate product decision.
-- Add the final PR URL here once a PR is opened.
