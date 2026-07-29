@@ -22,8 +22,32 @@ export function firstExisting(candidates: string[], fallback: string): string {
   return candidates.find((p) => existsSync(p)) ?? fallback;
 }
 
-/** TCP port the Fastify server listens on. Override with PORT. */
-export const PORT = Number(process.env.PORT ?? 4317);
+/** Default TCP port when none is configured. */
+export const DEFAULT_PORT = 4317;
+
+/**
+ * TCP port the Fastify server listens on. Override with PORT.
+ *
+ * Validated because an unusable value used to reach `app.listen` and kill the
+ * daemon instantly with ERR_SOCKET_BAD_PORT, which the CLI could only report as
+ * a health timeout. Warn-and-fall-back rather than throw: this module is
+ * imported at load time by the CLI, the server, and the MCP entry, so throwing
+ * would break commands that never bind a port.
+ */
+function resolvePort(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_PORT;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) {
+    console.warn(
+      `[config] ignoring PORT='${raw}' — expected an integer between 1 and 65535; ` +
+        `using ${DEFAULT_PORT}`,
+    );
+    return DEFAULT_PORT;
+  }
+  return n;
+}
+
+export const PORT = resolvePort(process.env.PORT);
 
 /** Root directory of the server package (resolved from dist or src at runtime). */
 export const PACKAGE_ROOT = join(__dirname, '..');

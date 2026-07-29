@@ -191,6 +191,7 @@ describe('ensureDaemon version healing', () => {
   // these tests never spawn or kill anything.
   const probes = (over: Partial<import('../src/daemon.js').DaemonProbes> = {}) => ({
     alive: () => true,
+    owns: () => true as boolean | 'unknown',
     healthy: async () => true,
     terminate: vi.fn(async () => {}),
     spawn: vi.fn(),
@@ -262,5 +263,94 @@ describe('ensureDaemon version healing', () => {
     const d = await daemon.ensureDaemon(() => {}, p);
     expect(d.port).toBe(4317);
     expect(p.terminate).not.toHaveBeenCalled();
+  });
+});
+
+describe('wedged-daemon ownership (never SIGTERM a PID we do not own)', () => {
+  // A crash leaves daemon.json behind; if the OS reuses that PID, "alive but the
+  // port is silent" describes an UNRELATED process just as well as our hung
+  // daemon. planWedgeAction is the gate — these pin each verdict's action.
+  it('replaces the daemon when the PID is confirmed ours', () => {
+    expect(daemon.planWedgeAction(record(), true)).toEqual({ kind: 'replace' });
+  });
+
+  it('discards the record — without signalling — when the PID is someone else', () => {
+    const action = daemon.planWedgeAction(record(), false);
+    expect(action.kind).toBe('discard');
+    expect(action.kind !== 'replace' && action.message).toMatch(/PID was reused/i);
+  });
+
+  it('refuses to signal when ownership cannot be determined', () => {
+    const action = daemon.planWedgeAction(record(), 'unknown');
+    expect(action.kind).toBe('refuse');
+    // The message has to tell the user what to do, since we deliberately did nothing.
+    expect(action.kind !== 'replace' && action.message).toMatch(/kill 4242/);
+  });
+
+  it('never claims a non-daemon process, even one run from a claudescope checkout', () => {
+    // The invariant that matters. This very vitest process runs under node from a
+    // directory called `claudescope`, so a `claudescope`-only match claimed it —
+    // which is why the probe also requires the server bundle's filename.
+    expect(daemon.daemonOwnsPid(process.pid)).not.toBe(true);
+  });
+
+  it('daemonOwnsPid returns unknown for a PID that cannot be inspected', () => {
+    // 2^22 is above every platform's default pid_max, so the probe fails.
+    expect(daemon.daemonOwnsPid(4_194_304)).toBe('unknown');
+  });
+});
+
+describe('ensureDaemon on a wedged record', () => {
+  const base = (over: Partial<import('../src/daemon.js').DaemonProbes> = {}) => ({
+    alive: () => true,
+    owns: () => true as boolean | 'unknown',
+    healthy: async () => false, // wedged: alive but not answering
+    health: async () => null,
+    terminate: vi.fn(async () => {}),
+    spawn: vi.fn(),
+    waitHealthy: async () => true,
+    ...over,
+  });
+
+  it('SIGTERMs and respawns when the PID is ours', async () => {
+    writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    const p = base();
+    await daemon.ensureDaemon(() => {}, p);
+    expect(p.terminate).toHaveBeenCalledOnce();
+    expect(p.spawn).toHaveBeenCalledOnce();
+  });
+
+  it('spawns WITHOUT signalling when the PID was recycled', async () => {
+    writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    const p = base({ owns: () => false });
+    await daemon.ensureDaemon(() => {}, p);
+    expect(p.terminate).not.toHaveBeenCalled();
+    expect(p.spawn).toHaveBeenCalledOnce();
+  });
+
+  it('signals nothing and throws when ownership is unknown', async () => {
+    writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    const p = base({ owns: () => 'unknown' });
+    await expect(daemon.ensureDaemon(() => {}, p)).rejects.toThrow(/could not verify/i);
+    expect(p.terminate).not.toHaveBeenCalled();
+    expect(p.spawn).not.toHaveBeenCalled();
+  });
+});
+
+describe('parsePort', () => {
+  it('defaults when the flag is absent', () => {
+    expect(cli.parsePort(undefined, 4317)).toBe(4317);
+  });
+
+  it.each(['8080', '1', '65535'])('accepts %s', (v) => {
+    expect(cli.parsePort(v, 4317)).toBe(Number(v));
+  });
+
+  // Each of these used to reach spawnDaemon: the daemon died instantly with
+  // ERR_SOCKET_BAD_PORT (or bound a random port for 0) while the CLI polled the
+  // recorded value for 20s. `0` is legal to listen on but unusable here, because
+  // the OS picks the port and the recorded one can never answer.
+  it.each(['abc', '0', '-1', '99999', '80.5', '', ' '])('rejects %s', (v) => {
+    expect(() => cli.parsePort(v, 4317)).toThrow(/between 1 and 65535/);
   });
 });
