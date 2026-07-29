@@ -118,7 +118,8 @@ async function main(): Promise<void> {
   }
 
   // In production, serve the built SPA. In dev, Vite serves it and proxies /api.
-  if (existsSync(WEB_DIST_DIR)) {
+  const servesWeb = existsSync(WEB_DIST_DIR);
+  if (servesWeb) {
     await app.register(fastifyStatic, { root: WEB_DIST_DIR });
     // SPA fallback for client-side routing.
     app.setNotFoundHandler((req, reply) => {
@@ -130,7 +131,6 @@ async function main(): Promise<void> {
     });
   }
 
-  const servesWeb = existsSync(WEB_DIST_DIR);
   if (!existsSync(claudeProjectsDir())) {
     app.log.warn(
       `sessions directory not found: ${claudeProjectsDir()} — the app will be empty. ` +
