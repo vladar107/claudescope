@@ -20,6 +20,7 @@ import { isZeroRated } from '@claudescope/shared';
 import { getConnection, queryRows, sqlLikeEscape, sqlString } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { displayNameFromCwd, projectIdFromCwd } from '../data/project-id.js';
+import { projectFilter } from '../data/analytics-scope.js';
 import { toIso } from './projects.js';
 import { assembleThread, buildSubagentRuns } from '../data/parser.js';
 import { loadSessionData } from '../data/session-loader.js';
@@ -93,18 +94,9 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
     if (agent) {
       where.push(`connector_id = ${sqlString(agent)}`);
     }
-    if (project) {
-      // project is the slug id; match against the slug of project_cwd.
-      // We resolve the cwd by scanning distinct cwds (small set).
-      const cwds = await queryRows(
-        conn,
-        'SELECT DISTINCT project_cwd FROM sessions WHERE project_cwd IS NOT NULL',
-      );
-      const match = cwds
-        .map((c) => String(c.project_cwd))
-        .find((c) => projectIdFromCwd(c) === project);
-      where.push(`project_cwd = ${match ? sqlString(match) : "'\\0'"}`);
-    }
+    // `project` is the slug id; resolution + the unknown-slug sentinel are shared
+    // with /api/search and the analytics routes.
+    if (project) where.push(await projectFilter(conn, project));
     if (q && q.trim()) {
       where.push(
         `(lower(title) LIKE ${sqlString('%' + sqlLikeEscape(q.toLowerCase()) + '%')} ESCAPE '\\')`,

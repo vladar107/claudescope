@@ -12,7 +12,6 @@
  *  - events:   one row per conversational (user/assistant) event, with usage,
  *              per-event cost, and extracted plain text for full-text search.
  *  - sessions: derived per-session metadata (counts, totals, time span, etc).
- *  - projects: derived per-cwd metadata.
  *  - pr_links: pr-link events keyed by sessionId.
  *  - titles:   ai-title events keyed by sessionId (latest wins).
  */

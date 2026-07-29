@@ -19,6 +19,7 @@ import type {
 } from '@claudescope/shared';
 import { getConnection, queryRows } from '../db/duckdb.js';
 import { scopeFilters } from '../data/analytics-scope.js';
+import { cacheHitRatioSql } from '../data/analytics-metrics.js';
 import { readRow } from '../db/row.js';
 import { projectIdFromCwd, displayNameFromCwd } from '../data/project-id.js';
 import { toIso } from './projects.js';
@@ -103,12 +104,7 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
           a.responses                       AS responses,
           (COALESCE(a.input_tokens,0) + COALESCE(a.output_tokens,0)
             + COALESCE(a.cache_write_tokens,0) + COALESCE(a.cache_read_tokens,0)) AS total_tokens,
-          CASE
-            WHEN (COALESCE(a.cache_read_tokens,0) + COALESCE(a.cache_write_tokens,0) + COALESCE(a.input_tokens,0)) > 0
-            THEN COALESCE(a.cache_read_tokens,0)::DOUBLE
-                 / (COALESCE(a.cache_read_tokens,0) + COALESCE(a.cache_write_tokens,0) + COALESCE(a.input_tokens,0))
-            ELSE 0
-          END AS cache_hit_ratio,
+          ${cacheHitRatioSql('a.cache_read_tokens', 'a.cache_write_tokens', 'a.input_tokens')} AS cache_hit_ratio,
           COALESCE(a.cost_usd,0)::DOUBLE / NULLIF(a.responses, 0) AS cost_per_response,
           (COALESCE(a.input_tokens,0) + COALESCE(a.output_tokens,0)
             + COALESCE(a.cache_write_tokens,0) + COALESCE(a.cache_read_tokens,0))::DOUBLE

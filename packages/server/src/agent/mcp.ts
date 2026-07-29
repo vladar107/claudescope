@@ -26,9 +26,11 @@ import {
   DEFAULT_LIMIT,
   DEFAULT_MAX_TOOL_CHARS,
   DEFAULT_TURNS,
+  analyticsTotalsLine,
   day,
   fmtCost,
   fmtTokens,
+  resolveWindowArgs,
   shapeSearchResults,
   shapeSessionMarkdown,
 } from './shape.js';
@@ -174,11 +176,8 @@ export function createMcpServer(deps: McpDeps): McpServer {
       },
     },
     guarded(async (client, args: { sessionId: string; offset?: number; limit?: number; around?: string; radius?: number; maxToolChars?: number; redact?: boolean }) => {
-      const windowed = args.around === undefined && args.offset === undefined && args.limit === undefined
-        ? { offset: 0, limit: DEFAULT_TURNS }
-        : { offset: args.offset, limit: args.limit, around: args.around, radius: args.radius };
       const data = await client.session(args.sessionId, {
-        ...windowed,
+        ...resolveWindowArgs(args),
         maxToolChars: args.maxToolChars ?? DEFAULT_MAX_TOOL_CHARS,
       });
       return shapeSessionMarkdown(data, args.redact ?? false);
@@ -228,11 +227,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
           `cache r/w ${fmtTokens(row.cacheReadTokens)}/${fmtTokens(row.cacheCreationTokens)}) · ` +
           `${fmtCost(row.costUsd)} · ${row.messageCount} responses`,
       );
-      const t = res.totals;
-      lines.push(
-        `Total: ${fmtTokens(t.totalTokens)} tok · ${fmtCost(t.costUsd)} · ${t.messageCount} responses · ` +
-          `cache hit ${(t.cacheHitRatio * 100).toFixed(0)}%`,
-      );
+      lines.push(analyticsTotalsLine(res.totals));
       return lines.join('\n');
     }),
   );

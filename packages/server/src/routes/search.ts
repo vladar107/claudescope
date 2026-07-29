@@ -20,6 +20,7 @@ import type {
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { projectIdFromCwd } from '../data/project-id.js';
+import { projectFilter } from '../data/analytics-scope.js';
 import { collectMemory } from '../data/memory.js';
 import { makeSnippet } from './snippet.js';
 
@@ -44,14 +45,7 @@ async function searchSessions(
 
   const filters: string[] = ['score IS NOT NULL'];
   if (type === 'user' || type === 'assistant') filters.push(`role = ${sqlString(type)}`);
-  if (project) {
-    const cwds = await queryRows(
-      conn,
-      'SELECT DISTINCT project_cwd FROM sessions WHERE project_cwd IS NOT NULL',
-    );
-    const match = cwds.map((c) => String(c.project_cwd)).find((c) => projectIdFromCwd(c) === project);
-    filters.push(`project_cwd = ${match ? sqlString(match) : "'\\0'"}`);
-  }
+  if (project) filters.push(await projectFilter(conn, project));
 
   const rows = await queryRows(
     conn,
