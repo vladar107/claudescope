@@ -2,7 +2,7 @@
 
 - **Status:** done <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-07-29
-- **PR:** <link, once opened>
+- **PR:** https://github.com/vladar107/claudescope/pull/74
 
 ## Context
 
@@ -60,10 +60,12 @@ says why instead of timing out silently.
   Rejected: comparing process start time (no Node API for an arbitrary PID, and
   parsing `ps -o lstart` is brittle) and dropping the wedged self-heal entirely
   (it is a real feature — a hung daemon should get replaced).
-- **Match the command line on `claudescope`, not just the exact entry path** —
-  after an upgrade or a brew/nix relocation, the running daemon's path may differ
-  from this CLI's `SERVER_ENTRY`. A false `false` is safe (we don't kill, we hit
-  `EADDRINUSE` instead); a false `true` is not.
+- **Match on `claudescope` AND the server bundle's filename** — not the exact
+  `SERVER_ENTRY` path, which an upgrade or brew/nix relocation moves. Matching
+  `claudescope` alone was tried first and rejected: the new test caught it
+  claiming this repo's own vitest process (the checkout is named `claudescope`),
+  and it would equally claim a sibling `claudescope mcp`/`search`. A false `false`
+  is safe (we don't kill, we hit `EADDRINUSE`); a false `true` is the bug.
 - **`owns` goes on `DaemonProbes`** — the existing seam that lets the CLI tests
   cover this without spawning or killing anything (`classifyExisting`
   precedent). `start()` in `cli.ts` gets the same treatment.
