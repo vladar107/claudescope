@@ -1,8 +1,8 @@
 # 0060 — Dependabot alerts #13–#19
 
-- **Status:** in-progress <!-- proposed | in-progress | done | superseded | abandoned -->
+- **Status:** done <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-07-29
-- **PR:** <link, once opened>
+- **PR:** https://github.com/vladar107/claudescope/pull/80
 
 ## Context
 
