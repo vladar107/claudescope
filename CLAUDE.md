@@ -129,6 +129,8 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
 - **Commits:** [Conventional Commits](https://www.conventionalcommits.org)
   (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`). **Do not add AI
   co-author / "Generated with" trailers** — keep history clean and human-authored.
+- **Branches:** use conventional purpose prefixes (`feat/`, `fix/`, `chore/`,
+  etc.); never use generic agent-identity prefixes such as `agent/`.
 - **Linear history:** rebase onto `main`; no merge commits. PRs land via
   fast-forward / rebase / squash.
 - **Plans:** when an agent does non-trivial work, **save the plan directly into
@@ -263,5 +265,4 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   OIDC). See `CONTRIBUTING.md`.
 
 See `CONTRIBUTING.md` for the full workflow and `README.md` for user-facing docs.
-
 
