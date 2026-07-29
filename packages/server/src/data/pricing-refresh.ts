@@ -11,10 +11,15 @@
  * import-time side effects and never touches DuckDB.
  */
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { FetchedPricing, ModelRates } from '@claudescope/shared';
-import { FETCHED_PRICING_PATH, LITELLM_PRICING_URL } from '../config.js';
+import {
+  FETCHED_PRICING_PATH,
+  LITELLM_PRICING_URL,
+  STATE_FILE_MODE,
+  ensureStateDir,
+} from '../config.js';
 
 /**
  * Providers whose models we keep. Bare transcript model ids only ever match
@@ -189,9 +194,9 @@ export async function refreshPricing(): Promise<{
   const snapshot: FetchedPricing = { fetchedAt, models };
 
   // Atomic write: stage to a temp file in the same dir, then rename over target.
-  mkdirSync(dirname(FETCHED_PRICING_PATH), { recursive: true });
+  ensureStateDir(dirname(FETCHED_PRICING_PATH));
   const tmp = join(dirname(FETCHED_PRICING_PATH), `.pricing.fetched.${process.pid}.tmp`);
-  writeFileSync(tmp, `${JSON.stringify(snapshot, null, 2)}\n`);
+  writeFileSync(tmp, `${JSON.stringify(snapshot, null, 2)}\n`, { mode: STATE_FILE_MODE });
   renameSync(tmp, FETCHED_PRICING_PATH);
 
   return { fetchedAt, modelCount: Object.keys(models).length, changed, path: FETCHED_PRICING_PATH };

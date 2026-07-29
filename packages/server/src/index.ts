@@ -15,7 +15,7 @@ import {
   PRICING_REFRESH_INTERVAL_MS,
   SELF_RESTART_INTERVAL_MS,
   WEB_DIST_DIR,
-  ensureStateDir,
+  initStateDir,
 } from './config.js';
 import { claudeProjectsDir } from './settings.js';
 import { registerRoutes } from './routes/index.js';
@@ -47,7 +47,7 @@ function pricingSnapshotIsStale(): boolean {
 async function main(): Promise<void> {
   // Create ~/.claudescope and seed the user-editable pricing file before any
   // module touches the index or pricing.
-  ensureStateDir();
+  initStateDir();
 
   const app = Fastify({ logger: true });
 

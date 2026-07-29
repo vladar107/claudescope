@@ -416,6 +416,12 @@ export interface ImpactResponse {
 /** POST /api/reindex */
 export interface ReindexResponse {
   reindexed: number;
+  /**
+   * Files the pass could not load (each isolated and skipped). Non-zero means
+   * the index is STALE for those files, not that nothing changed — without this
+   * a fully-failing pass is indistinguishable from a genuinely idle one.
+   */
+  failed: number;
   durationMs: number;
 }
 

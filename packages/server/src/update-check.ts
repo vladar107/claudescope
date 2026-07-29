@@ -8,9 +8,9 @@
  * day. Everything degrades to "no info" (null) offline — never throws.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { APP_VERSION, CLAUDESCOPE_HOME } from './config.js';
+import { APP_VERSION, CLAUDESCOPE_HOME, STATE_FILE_MODE, ensureStateDir } from './config.js';
 
 export const PKG = '@vladar107/claudescope';
 const UPDATE_CHECK_FILE = join(CLAUDESCOPE_HOME, 'update-check.json');
@@ -46,8 +46,10 @@ export async function getLatestVersion(force: boolean): Promise<string | null> {
   if (!res.ok) return null;
   const json = (await res.json()) as { version?: string };
   if (!json.version) return null;
-  mkdirSync(CLAUDESCOPE_HOME, { recursive: true });
-  writeFileSync(UPDATE_CHECK_FILE, JSON.stringify({ lastCheck: now, latest: json.version }));
+  ensureStateDir();
+  writeFileSync(UPDATE_CHECK_FILE, JSON.stringify({ lastCheck: now, latest: json.version }), {
+    mode: STATE_FILE_MODE,
+  });
   return json.version;
 }
 

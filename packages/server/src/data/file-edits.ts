@@ -33,14 +33,24 @@ const INSERT_CHUNK = 500;
  * finds no canonical edit blocks).
  */
 async function editBearing(conn: DuckDBConnection, sessionIds: string[]): Promise<string[]> {
-  const ids = sessionIds.map(sqlString).join(', ');
-  const rows = await queryRows(
-    conn,
-    `SELECT DISTINCT session_id FROM events
-     WHERE session_id IN (${ids})
-       AND (tool_names LIKE '%Edit%' OR tool_names LIKE '%Write%')`,
-  );
-  return rows.map((r) => String(r.session_id));
+  // Chunked for the same reason the DELETE in refreshFileEdits is: on a cold
+  // build EVERY session is touched, so an unchunked IN list is one statement
+  // carrying the whole corpus (~147 KB of SQL at 5k sessions).
+  const out: string[] = [];
+  for (let i = 0; i < sessionIds.length; i += INSERT_CHUNK) {
+    const ids = sessionIds
+      .slice(i, i + INSERT_CHUNK)
+      .map(sqlString)
+      .join(', ');
+    const rows = await queryRows(
+      conn,
+      `SELECT DISTINCT session_id FROM events
+       WHERE session_id IN (${ids})
+         AND (tool_names LIKE '%Edit%' OR tool_names LIKE '%Write%')`,
+    );
+    for (const r of rows) out.push(String(r.session_id));
+  }
+  return out;
 }
 
 /**

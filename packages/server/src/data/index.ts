@@ -94,6 +94,15 @@ const EVENTS_ALIAS = 'ev';
 const RATES_ALIAS = 'pr';
 
 /**
+ * Suffix for {@link loadFile}'s staging temp tables. Constant (not per-file):
+ * only one pass runs at a time (see {@link inFlight}) and it loads files
+ * sequentially, so `CREATE OR REPLACE` reuses the same three tables instead of
+ * leaking one set per indexed file. Temp tables are connection-scoped, so this
+ * can never collide with a route's query.
+ */
+const STAGE_SUFFIX = 'load';
+
+/**
  * (Re)create and populate the `pricing_rates` join table from the merged
  * pricing's exact-id model rates. At a few hundred rows this is cheap, so we
  * just recreate it once per reindex run (never per file). The cost expression
@@ -187,22 +196,34 @@ async function loadFile(
   costExpr: string,
 ): Promise<void> {
   const path = sqlString(file.path);
-  // Formats that can't be projected per-row normalize to a canonical NDJSON first.
+  // Formats that can't be projected per-row normalize to a canonical NDJSON
+  // first. Runs before anything is deleted, so a prepare failure is a no-op.
   await connector.prepare?.(file.path);
-  // Delete stale aux rows before clearing events: if an ai-title or pr-link line
-  // was removed from the transcript, the old row must not survive the reload and
-  // get LEFT JOINed back into the rebuilt session. The subquery reads events
-  // before they are deleted, so these must come first.
-  await conn.run(`DELETE FROM titles   WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${path})`);
-  await conn.run(`DELETE FROM pr_links WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${path})`);
-  await conn.run(`DELETE FROM events WHERE file_path = ${path}`);
+
+  // STAGE FIRST, THEN SWAP. The projection is materialized into temp tables
+  // before a single existing row is touched, because every realistic failure
+  // happens while projecting: an unreadable or unparseable source file and —
+  // critically — a bad rate in the user-editable pricing.json, which is
+  // string-interpolated into `costExpr` and so yields invalid SQL. Deleting
+  // first meant such a failure destroyed the file's indexed rows while the
+  // derived tables kept advertising them (one typo in pricing.json wiped a
+  // session's events, then another session's on every subsequent pass).
+  //
+  // Deliberately NOT an explicit transaction: the indexer shares its DuckDB
+  // connection with every HTTP route (see db/duckdb.ts), so a BEGIN here would
+  // enclose concurrent route queries and abort them along with a failed load.
+  // Staging is non-destructive without needing one.
+  const stagedEvents = `stage_events_${STAGE_SUFFIX}`;
+  const stagedTitles = `stage_titles_${STAGE_SUFFIX}`;
+  const stagedPrLinks = `stage_pr_links_${STAGE_SUFFIX}`;
 
   // The cost expression references the projected token/model columns plus the
   // pricing_rates join (aliased `pr` — see buildCostExpr). LEFT JOIN on the
   // model column so events whose model has no exact-id row fall through to the
   // family/default CASE; the table is recreated each reindex (syncPricingTable).
+  // This column order IS the `events` column order — the swap below relies on it.
   await conn.run(`
-    INSERT INTO events
+    CREATE OR REPLACE TEMP TABLE ${stagedEvents} AS
     SELECT
       ev.file_path, ev.session_id, ev.uuid, ev.parent_uuid, ev.role, ev.type, ev.ts, ev.cwd, ev.git_branch,
       ev.model, ev.provider, ev.input_tokens, ev.output_tokens, ev.cache_read_tokens, ev.cache_write_tokens,
@@ -217,13 +238,33 @@ async function loadFile(
     LEFT JOIN pricing_rates ${RATES_ALIAS} ON ${RATES_ALIAS}.model = ev.model
   `);
 
+  // Aux projections read the same source file, so stage them too — otherwise a
+  // malformed title record would fail after `events` had already been swapped.
   const aux = connector.auxProjections(file.path);
   if (aux.titles) {
-    await conn.run(`INSERT OR REPLACE INTO titles (session_id, title) ${aux.titles}`);
+    await conn.run(`CREATE OR REPLACE TEMP TABLE ${stagedTitles} AS ${aux.titles}`);
+  }
+  if (aux.prLinks) {
+    await conn.run(`CREATE OR REPLACE TEMP TABLE ${stagedPrLinks} AS ${aux.prLinks}`);
+  }
+
+  // Swap. From here the statements are table-to-table copies — no source file,
+  // no interpolated pricing, nothing left that can realistically fail.
+  //
+  // Delete stale aux rows before clearing events: if an ai-title or pr-link line
+  // was removed from the transcript, the old row must not survive the reload and
+  // get LEFT JOINed back into the rebuilt session. The subquery reads events
+  // before they are deleted, so these must come first.
+  await conn.run(`DELETE FROM titles   WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${path})`);
+  await conn.run(`DELETE FROM pr_links WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${path})`);
+  await conn.run(`DELETE FROM events WHERE file_path = ${path}`);
+  await conn.run(`INSERT INTO events SELECT * FROM ${stagedEvents}`);
+  if (aux.titles) {
+    await conn.run(`INSERT OR REPLACE INTO titles (session_id, title) SELECT * FROM ${stagedTitles}`);
   }
   if (aux.prLinks) {
     await conn.run(
-      `INSERT OR REPLACE INTO pr_links (session_id, pr_number, pr_repository, pr_url) ${aux.prLinks}`,
+      `INSERT OR REPLACE INTO pr_links (session_id, pr_number, pr_repository, pr_url) SELECT * FROM ${stagedPrLinks}`,
     );
   }
 }
@@ -295,7 +336,12 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
     modal_cwd AS (
       SELECT session_id, cwd FROM (
         SELECT session_id, cwd,
-               row_number() OVER (PARTITION BY session_id ORDER BY count(*) DESC) AS rn
+               -- The trailing cwd is the tie-break, not decoration: on a count
+               -- tie DuckDB is free to order either way, and it does — a tied
+               -- session was observed flipping between projects across
+               -- evaluations of the SAME data, moving it (and its cost) between
+               -- projects from one pass to the next.
+               row_number() OVER (PARTITION BY session_id ORDER BY count(*) DESC, cwd) AS rn
         FROM events WHERE cwd IS NOT NULL GROUP BY session_id, cwd
       ) WHERE rn = 1
     ),
@@ -566,6 +612,11 @@ async function doReindex(): Promise<ReindexResponse> {
   });
 
   let reindexed = 0;
+  // Files this pass could not load. Reported on ReindexResponse so a pass that
+  // failed on everything is distinguishable from an idle one — otherwise both
+  // read as {reindexed: 0} and ingestion can stop permanently while /api/health
+  // still says "watching".
+  let failed = 0;
   if (changed.length > 0) progress = { processed: 0, total: changed.length };
   // Timestamp of the last mid-pass partial `sessions` rebuild (first build only).
   let lastPartialRebuild = start;
@@ -613,6 +664,7 @@ async function doReindex(): Promise<ReindexResponse> {
           dataVersion += 1;
         }
       } catch (err) {
+        failed += 1;
         console.warn(`claudescope: skipping unreadable transcript ${file.path}:`, err);
       } finally {
         // Skipped files still advance the counter so processed reaches total.
@@ -623,9 +675,14 @@ async function doReindex(): Promise<ReindexResponse> {
     // Nothing changed on disk: skip the (relatively expensive) derived-table and
     // FTS rebuild + CHECKPOINT entirely. This keeps periodic auto-reindex polls
     // cheap — they only stat files and bail when there's no new data.
-    if (reindexed === 0 && removed === 0) {
+    //
+    // `failed === 0` guard: loadFile is atomic, so a failed file leaves the
+    // tables untouched and skipping the rebuild is correct today. The guard is
+    // belt-and-braces — if a future non-atomic path ever half-applies a load,
+    // this must not report a clean idle pass over an inconsistent index.
+    if (reindexed === 0 && removed === 0 && failed === 0) {
       ready = true;
-      return { reindexed, durationMs: Date.now() - start };
+      return { reindexed, failed, durationMs: Date.now() - start };
     }
 
     // Something changed: re-elect the usage-canonical rows globally, then rebuild
@@ -640,7 +697,7 @@ async function doReindex(): Promise<ReindexResponse> {
 
     ready = true;
     dataVersion += 1;
-    return { reindexed, durationMs: Date.now() - start };
+    return { reindexed, failed, durationMs: Date.now() - start };
   } finally {
     // Progress stays visible through finalization ("finishing up"), then clears.
     progress = null;

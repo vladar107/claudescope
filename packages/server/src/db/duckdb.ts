@@ -5,11 +5,11 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdirSync, rmSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
 import type { DuckDBConnection } from '@duckdb/node-api';
-import { DUCKDB_PATH } from '../config.js';
+import { DUCKDB_PATH, ensureStateDir } from '../config.js';
 import { SCHEMA_DDL, SCHEMA_VERSION } from './schema.js';
 
 /**
@@ -56,7 +56,9 @@ async function isStaleSchema(conn: DuckDBConnection): Promise<boolean> {
 
 /** Open the DB file, load extensions, and apply the idempotent schema. */
 async function openAndPrepare(): Promise<{ conn: DuckDBConnection; inst: DuckDBInstance }> {
-  mkdirSync(dirname(DUCKDB_PATH), { recursive: true });
+  // Owner-only: DuckDB creates index.duckdb itself (we can't pass a mode), so
+  // the 0700 directory is what keeps the indexed transcript corpus private.
+  ensureStateDir(dirname(DUCKDB_PATH));
   const inst = await DuckDBInstance.create(DUCKDB_PATH);
   const conn = await inst.connect();
   await conn.run('INSTALL json; LOAD json;');
