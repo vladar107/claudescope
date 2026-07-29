@@ -6,8 +6,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { connectors } from '../src/connectors/registry.js';
 import type { AttributedMemory } from '../src/data/memory.js';
 import { buildConnectorOverviews } from '../src/data/memory.js';
+
+function allOverviews(items: AttributedMemory[]) {
+  return buildConnectorOverviews(items, connectors);
+}
 
 /** A project fact with sensible defaults; override what each case cares about. */
 function fact(over: Partial<AttributedMemory> & { connectorId: string; updatedAt: string; title: string }): AttributedMemory {
@@ -36,7 +41,7 @@ describe('buildConnectorOverviews', () => {
       fact({ connectorId: 'claude-code', title: 'newest', updatedAt: '2026-03-01T00:00:00.000Z', projectId: 'proj-b' }),
       fact({ connectorId: 'claude-code', title: 'mid', updatedAt: '2026-02-01T00:00:00.000Z', projectId: 'proj-b' }),
     ];
-    const overviews = buildConnectorOverviews(items);
+    const overviews = allOverviews(items);
     const cc = overviews.find((o) => o.connectorId === 'claude-code')!;
     expect(cc.supported).toBe(true);
     expect(cc.globalFiles).toBe(0);
@@ -64,7 +69,7 @@ describe('buildConnectorOverviews', () => {
         },
       },
     ];
-    const codex = buildConnectorOverviews(items).find((o) => o.connectorId === 'codex')!;
+    const codex = allOverviews(items).find((o) => o.connectorId === 'codex')!;
     expect(codex.supported).toBe(true);
     expect(codex.globalFiles).toBe(1);
     expect(codex.totalFacts).toBe(0);
@@ -76,7 +81,7 @@ describe('buildConnectorOverviews', () => {
 
   it('marks a no-provider connector supported=false with no preview', () => {
     // pi and opencode implement neither globalMemory nor projectMemory.
-    const overviews = buildConnectorOverviews([]);
+    const overviews = allOverviews([]);
     for (const id of ['pi', 'opencode']) {
       const o = overviews.find((x) => x.connectorId === id)!;
       expect(o, id).toBeDefined();
@@ -106,23 +111,22 @@ describe('buildConnectorOverviews', () => {
         },
       },
     ];
-    const cc = buildConnectorOverviews(items).find((o) => o.connectorId === 'claude-code')!;
+    const cc = allOverviews(items).find((o) => o.connectorId === 'claude-code')!;
     expect(cc.preview?.description).toBe(
       'Heading Commit as the user only and omit the trailer.',
     );
   });
 
-  it('includes every registered connector and orders content > supported-empty > unsupported', () => {
+  it('includes only visible connectors and orders content > supported-empty > unsupported', () => {
     const items: AttributedMemory[] = [
       // claude-code has content (a fact) → rank 0.
       fact({ connectorId: 'claude-code', title: 'f', updatedAt: '2026-01-01T00:00:00.000Z' }),
-      // codex/junie/copilot are supported but empty here → rank 1.
-      // pi/opencode/grok are unsupported → rank 2.
+      // codex is supported but empty here → rank 1; pi is unsupported → rank 2.
     ];
-    const overviews = buildConnectorOverviews(items);
-    // Every registered agent appears (claude-code, codex, junie, pi, opencode, copilot, antigravity, grok).
+    const visible = connectors.filter((c) => ['claude-code', 'codex', 'pi'].includes(c.id));
+    const overviews = buildConnectorOverviews(items, visible);
     expect(overviews.map((o) => o.connectorId).sort()).toEqual(
-      ['claude-code', 'codex', 'copilot', 'junie', 'opencode', 'pi', 'antigravity', 'grok'].sort(),
+      ['claude-code', 'codex', 'pi'].sort(),
     );
     const rank = (o: { supported: boolean; preview?: unknown }) =>
       o.supported && o.preview ? 0 : o.supported ? 1 : 2;

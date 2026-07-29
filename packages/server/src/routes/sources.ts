@@ -6,16 +6,14 @@
  * to `~` for display.
  */
 
-import { existsSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import type { SourcesResponse } from '@claudescope/shared';
-import { connectors } from '../connectors/registry.js';
+import { detectedConnectors } from '../connectors/registry.js';
 import { contractHome } from '../util/paths.js';
 
 export async function registerSourcesRoute(app: FastifyInstance): Promise<void> {
   app.get('/api/sources', async (): Promise<SourcesResponse> => {
-    return connectors
-      .filter((c) => existsSync(c.sourceDir))
+    return detectedConnectors()
       .map((c) => ({ id: c.id, label: c.label, path: contractHome(c.sourceDir) }));
   });
 }

@@ -648,8 +648,8 @@ export interface MemoryPreview {
 
 /**
  * Per-connector rollup for the memory landing page: counts plus a content
- * preview, listed for EVERY known agent so the UI can mark agents that keep no
- * memory store at all (`supported: false`).
+ * preview, listed for every agent detected on the current machine. Detected
+ * agents that keep no memory store have `supported: false`.
  */
 export interface MemoryConnectorOverview {
   connectorId: string;
@@ -670,7 +670,7 @@ export interface MemoryConnectorOverview {
 export interface MemoryResponse {
   global: GlobalMemory[];
   projects: ProjectMemorySummary[];
-  /** One rollup per known agent connector, for the landing-page cards. */
+  /** One rollup per locally detected agent connector, for the landing-page cards. */
   connectors: MemoryConnectorOverview[];
 }
 
