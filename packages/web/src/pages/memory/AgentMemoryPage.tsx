@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router';
 import type { MemoryResponse, MemorySource } from '@claudescope/shared';
 import { api } from '../../api/client.js';
 import { AgentBadge, agentLabel, ErrorBox, Spinner } from '../../components';

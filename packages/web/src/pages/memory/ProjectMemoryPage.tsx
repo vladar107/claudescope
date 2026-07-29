@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams } from 'react-router';
 import type { ProjectMemoryResponse } from '@claudescope/shared';
 import { api } from '../../api/client.js';
 import { ErrorBox, Spinner } from '../../components';

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import type { ProjectMeta, SourceInfo } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
 import { AgentBadge, ErrorBox, formatCost, formatCount, SearchField, Spinner, SummaryStrip } from '../../components';
