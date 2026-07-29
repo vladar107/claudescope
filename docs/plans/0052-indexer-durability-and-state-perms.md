@@ -90,9 +90,9 @@ deterministic for tied cwds.
 2. `data/pricing.ts`: coerce every `ModelRates` through a validator on the
    cache-miss path; drop unusable `models`/`families`/`providers` entries, zero
    unusable `default` fields, warn once per file change.
-3. `data/index.ts`: transaction around `loadFile`'s mutations; count and return
-   `failed`; gate the early return on it; add `, cwd` to the `modal_cwd`
-   tie-break.
+3. `data/index.ts`: stage `loadFile`'s projection (events + aux) into temp
+   tables, then delete-and-swap; count and return `failed`; gate the early
+   return on it; add the `cwd` tie-break to `modal_cwd`.
 4. `data/file-edits.ts`: chunk `editBearing` at the existing `INSERT_CHUNK`.
 5. `indexer-lifecycle.ts`: log at warn level when a pass reports failures.
 6. `config.ts`: `ensureDir` (mode `0700`) + `STATE_FILE_MODE` (`0600`); route the
@@ -103,24 +103,30 @@ deterministic for tied cwds.
 
 - `packages/shared/src/api.ts` — `ReindexResponse.failed`.
 - `packages/server/src/data/pricing.ts` — rate validation on load.
-- `packages/server/src/data/index.ts` — `loadFile` transaction, `failed`
+- `packages/server/src/data/index.ts` — `loadFile` stage-then-swap, `failed`
   accounting, `modal_cwd` tie-break.
 - `packages/server/src/data/file-edits.ts` — chunk `editBearing`.
 - `packages/server/src/indexer-lifecycle.ts` — surface `failed` in the poll log.
-- `packages/server/src/config.ts` — `ensureDir` / `STATE_FILE_MODE`, mode migration.
-- `packages/server/src/{daemon,cli,update-check,settings}.ts` — use `ensureDir`.
-- `packages/server/src/data/pricing-refresh.ts` — write the snapshot `0600`.
+- `packages/server/src/config.ts` — `ensureStateDir` / `STATE_FILE_MODE`, mode
+  migration; the old `ensureStateDir` boot helper becomes `initStateDir`.
+- `packages/server/src/{daemon,cli,update-check,settings}.ts`,
+  `src/db/duckdb.ts`, `src/data/pricing-refresh.ts` — use `ensureStateDir`.
 - `packages/server/test/index-durability.integration.test.ts` — new.
-- `packages/server/test/pricing.test.ts` — validation cases.
 
 ## Testing
 
-- `npm test` and `npm run typecheck` (baseline: 484 tests / 55 files green).
-- New integration test asserts a `default`-block typo leaves `events` intact,
-  reports `failed: 1`, and that a later valid pass recovers the data.
-- New test asserts a tied-cwd session resolves to the same project across
-  repeated evaluations.
-- Manual: `stat` the state dir after boot to confirm `0700`/`0600`.
+- `npm test` (484/55 baseline → 488/56), `npm run typecheck`, `npm run build`,
+  markdownlint. Suite run 3x, since the rejected transaction approach surfaced
+  as a first-run-only failure before it reproduced deterministically in isolation.
+- `index-durability.integration.test.ts` covers each layer separately, because
+  the two fixes overlap: validation neutralises the pricing trigger, so staging
+  has to be exercised by a failure validation CANNOT foresee (an unreadable
+  source file). It also asserts concurrent route-style queries survive a failing
+  load, and that the cwd tie-break is stable over 20 evaluations.
+- Both fixes were verified to be genuinely guarded: reverting the staging change
+  fails the suite with `expected +0 to be 2` (events destroyed), and disabling
+  validation fails all four new tests.
+- State-dir mode verified for a fresh dir and for migrating an existing 0755 one.
 
 ## Risks / open questions
 
