@@ -10,7 +10,9 @@
  */
 import type { FastifyInstance } from 'fastify';
 import type { ActivityCell, ActivityResponse, StreakInfo } from '@claudescope/shared';
-import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import { getConnection, queryRows } from '../db/duckdb.js';
+import { scopeFilters } from '../data/analytics-scope.js';
+import { isoDayParam } from '../params.js';
 import { readRow } from '../db/row.js';
 
 const DAY_MS = 86_400_000;
@@ -50,24 +52,26 @@ function clampOffset(raw: string | undefined): number {
   return Math.max(-840, Math.min(840, n));
 }
 
-const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
-
 export async function registerActivityRoute(app: FastifyInstance): Promise<void> {
   app.get<{
     Querystring: { from?: string; to?: string; tzOffsetMinutes?: string; today?: string };
   }>('/api/analytics/activity', async (req): Promise<ActivityResponse> => {
     const conn = await getConnection();
     const offset = clampOffset(req.query.tzOffsetMinutes);
-    const today = ISO_DAY.test(req.query.today ?? '') ? (req.query.today as string) : '';
+    const today = isoDayParam(req.query.today) ?? '';
     const localTs = `(e.ts + to_minutes(${offset}))`;
 
     // Heatmap: honors the date filter (matches the rest of the page).
     // Exclude sidechain rows (subagent-internal user turns) and fork-copy rows
     // (copied when a session is forked/resumed) so only genuine human prompts
     // are counted — sidechain + fork copies would otherwise inflate by ~2.6×.
-    const filters: string[] = ["e.type = 'user'", 'NOT e.is_sidechain', 'e.forked_from_session_id IS NULL'];
-    if (req.query.from) filters.push(`e.ts >= ${sqlString(req.query.from)}::TIMESTAMP`);
-    if (req.query.to) filters.push(`e.ts <= ${sqlString(req.query.to)}::TIMESTAMP`);
+    const filters: string[] = [
+      "e.type = 'user'",
+      'NOT e.is_sidechain',
+      'e.forked_from_session_id IS NULL',
+      // Shared (validated) bounds, on the event timestamp.
+      ...(await scopeFilters(conn, { from: req.query.from, to: req.query.to }, { ts: 'e.ts' })),
+    ];
     const heatmapRows = await queryRows(
       conn,
       `SELECT

@@ -18,8 +18,9 @@ import type {
   AnalyticsRow,
   AnalyticsTotals,
 } from '@claudescope/shared';
-import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import { getConnection, queryRows } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
+import { scopeFilters } from '../data/analytics-scope.js';
 import { projectIdFromCwd } from '../data/project-id.js';
 
 /**
@@ -67,9 +68,13 @@ export async function registerAnalyticsRoute(app: FastifyInstance): Promise<void
     const groupBy = (req.query.groupBy as AnalyticsGroupBy) ?? 'project';
     const { keyExpr, fromSql } = groupSource(groupBy);
 
-    const filters: string[] = ["e.type = 'assistant'"];
-    if (req.query.from) filters.push(`e.ts >= ${sqlString(req.query.from)}::TIMESTAMP`);
-    if (req.query.to) filters.push(`e.ts <= ${sqlString(req.query.to)}::TIMESTAMP`);
+    // Bounds go through the shared scope helper (which validates them); this
+    // route filters the EVENT timestamp, not the session start, hence the `ts`
+    // override. No project filter here — only the bounds are shared.
+    const filters: string[] = [
+      "e.type = 'assistant'",
+      ...(await scopeFilters(conn, { from: req.query.from, to: req.query.to }, { ts: 'e.ts' })),
+    ];
     const whereSql = `WHERE ${filters.join(' AND ')}`;
 
     const rows = await queryRows(

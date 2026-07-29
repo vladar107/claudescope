@@ -36,6 +36,9 @@ export const CONTENT_SECURITY_POLICY = [
   "object-src 'none'",
   "base-uri 'self'",
   "frame-ancestors 'none'",
+  // form-action is a NAVIGATION directive: unlike the fetch directives it does
+  // not inherit from default-src, so without this a form could post anywhere.
+  "form-action 'self'",
 ].join('; ');
 
 /**
