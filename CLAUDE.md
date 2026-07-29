@@ -38,6 +38,11 @@ npm-workspaces monorepo (`packages/*`):
   Adding an agent = adding a connector; the index/FTS/cost paths stay shared.
 - The DuckDB index is a **derived cache** — fully rebuildable from the JSONL. If
   it's corrupt the app discards and rebuilds it.
+- **One DuckDB connection is shared by the indexer AND every HTTP route**
+  (`getConnection()` is a singleton). So indexer work must **never** open an
+  explicit transaction: a `BEGIN` there encloses whatever queries the routes
+  issue concurrently and aborts them along with a failed load. `loadFile`
+  therefore gets its atomicity by staging instead (see Gotchas).
 
 ## Runtime state — critical
 
@@ -54,6 +59,8 @@ npm-workspaces monorepo (`packages/*`):
   getters, so source dirs and the reindex interval apply live without a
   restart), the daemon PID file, and logs. State lives outside the package dir
   so global installs survive upgrades — do not move it back into the package.
+- App-owned state is created **owner-only** — always via `ensureStateDir()` from
+  `config.ts`, never a bare `mkdirSync`.
 - The web Settings page's Start/Stop/Restart control the **indexer** (the
   reindex poller — `indexer-lifecycle.ts`), never the HTTP process; stopping
   the server stays terminal-only (`claudescope stop`). The pause flag is
@@ -240,7 +247,13 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   `providers` section overrides model rates for it entirely (shipped defaults
   zero-rate local runtimes like LM Studio/Ollama). Pricing changes apply
   **prospectively** — cost is stamped per event at index time, so only an index
-  rebuild re-prices already-indexed history.
+  rebuild re-prices already-indexed history. Rates are interpolated into SQL, so
+  `loadPricing` validates them — an unusable rate is dropped, not passed through.
+- **`loadFile` stages, then swaps — keep it that way.** It materializes the
+  projection into temp tables *before* deleting the file's existing rows, so a
+  failure while projecting (unreadable source, a bad rate reaching the
+  interpolated cost expression) can't destroy already-indexed events. A
+  transaction is not an option here — see the shared-connection note above.
 - **Release is maintainer-only** and tag-triggered (npm Trusted Publishing /
   OIDC). See `CONTRIBUTING.md`.
 

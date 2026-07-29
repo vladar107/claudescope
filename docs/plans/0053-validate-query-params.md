@@ -1,6 +1,6 @@
 # 0053 — Validate query params before they reach SQL
 
-- **Status:** in-progress <!-- proposed | in-progress | done | superseded | abandoned -->
+- **Status:** done <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-07-29
 - **PR:** https://github.com/vladar107/claudescope/pull/73
 
