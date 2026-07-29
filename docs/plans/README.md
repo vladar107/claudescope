@@ -78,3 +78,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0051 | [Settings page: indexer lifecycle + settings.json layer](./0051-settings-page.md) | done |
 | 0052 | [Indexer durability + state-dir permissions](./0052-indexer-durability-and-state-perms.md) | done |
 | 0053 | [Validate query params before they reach SQL](./0053-validate-query-params.md) | done |
+| 0054 | [Don't SIGTERM a PID we don't own; validate the port](./0054-daemon-pid-ownership-and-port.md) | done |

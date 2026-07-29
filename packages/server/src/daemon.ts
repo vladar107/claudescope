@@ -8,7 +8,7 @@
  * stdout, which an MCP stdio server owns as its protocol channel.
  */
 
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
   existsSync,
   openSync,
@@ -18,7 +18,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { HealthResponse } from '@claudescope/shared';
 import {
@@ -67,6 +67,54 @@ export function isAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether a live PID really belongs to a Claudescope daemon — `'unknown'` when
+ * we could not find out.
+ *
+ * `isAlive` only proves *something* holds the PID. After a crash leaves
+ * `daemon.json` behind and the OS recycles that PID, it belongs to an unrelated
+ * process — and the `wedged` branch's whole job is to SIGTERM it. So callers must
+ * confirm ownership first, and treat `'unknown'` as "do not signal": failing
+ * loudly beats killing a process we cannot identify.
+ *
+ * Implemented by reading the process's command line, which is the one signal
+ * that survives a crash (Node exposes no start-time API for an arbitrary PID).
+ *
+ * The match requires BOTH `claudescope` and the server bundle's filename, rather
+ * than this CLI's exact {@link SERVER_ENTRY} path — an upgrade or a brew/nix
+ * relocation moves that path, so pinning it would produce false negatives. Both
+ * halves are needed: `claudescope` alone also matches a sibling CLI invocation
+ * (`claudescope mcp`, `claudescope search`) and, in a dev checkout, any process
+ * launched from a directory named `claudescope`. A false negative is safe — we
+ * skip the kill and get a clear `EADDRINUSE` instead — whereas a false positive
+ * is exactly the bug this closes.
+ */
+export function daemonOwnsPid(pid: number): boolean | 'unknown' {
+  const [cmd, args] =
+    process.platform === 'win32'
+      ? [
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-Command',
+            `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
+          ],
+        ]
+      : ['ps', ['-o', 'args=', '-p', String(pid)]];
+  let out: string;
+  try {
+    out = execFileSync(cmd, args, { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    // `ps` exits non-zero for an unknown PID — but by the time we get here the
+    // process was alive, so this is a probe failure (missing binary, timeout, no
+    // permission), not evidence either way.
+    return 'unknown';
+  }
+  const line = out.trim().toLowerCase();
+  if (line === '') return 'unknown';
+  return line.includes('claudescope') && line.includes(basename(SERVER_ENTRY).toLowerCase());
 }
 
 /** Probe the server's health endpoint (short timeout, never throws). */
@@ -154,6 +202,41 @@ export async function classifyExisting(
   return (await healthyFn(record.port)) ? 'healthy' : 'wedged';
 }
 
+/**
+ * Decide what to do with an alive-but-unhealthy (`wedged`) record, given an
+ * ownership verdict from {@link daemonOwnsPid}. Shared by `ensureDaemon` and the
+ * CLI's `start` so the two can't drift on something this consequential.
+ *
+ * - `replace` — it is our hung daemon: SIGTERM it and spawn a new one.
+ * - `discard` — the PID was recycled and belongs to someone else: the record is
+ *   stale, so drop it and spawn WITHOUT signalling anything.
+ * - `refuse`  — ownership is unknown; do not signal, surface `message`.
+ */
+export type WedgeAction =
+  | { kind: 'replace' }
+  | { kind: 'discard'; message: string }
+  | { kind: 'refuse'; message: string };
+
+export function planWedgeAction(record: DaemonRecord, owned: boolean | 'unknown'): WedgeAction {
+  if (owned === true) return { kind: 'replace' };
+  if (owned === false) {
+    return {
+      kind: 'discard',
+      message:
+        `pid ${record.pid} in daemon.json is not a claudescope process — the PID was ` +
+        'reused after a crash. Discarding the stale record without signalling it.',
+    };
+  }
+  return {
+    kind: 'refuse',
+    message:
+      `could not verify that pid ${record.pid} is the claudescope daemon, so it was ` +
+      'NOT signalled. Check it yourself and, if it is ours, stop it manually:\n' +
+      `  ps -p ${record.pid} -o args=\n` +
+      `  kill ${record.pid}`,
+  };
+}
+
 /** Roll the daemon log to `.1` once it exceeds {@link LOG_MAX_BYTES}. Best-effort. */
 export function rotateLogIfLarge(): void {
   try {
@@ -208,6 +291,8 @@ export interface EnsuredDaemon {
  *  {@link classifyExisting} pattern — tests never spawn or kill anything. */
 export interface DaemonProbes {
   alive: (pid: number) => boolean;
+  /** Confirms a live PID is really our daemon before we signal it. */
+  owns: (pid: number) => boolean | 'unknown';
   healthy: (port: number) => Promise<boolean>;
   health: (port: number) => Promise<HealthResponse | null>;
   terminate: (record: DaemonRecord) => Promise<void>;
@@ -217,6 +302,7 @@ export interface DaemonProbes {
 
 const realProbes: DaemonProbes = {
   alive: isAlive,
+  owns: daemonOwnsPid,
   healthy: isHealthy,
   health: fetchDaemonHealth,
   terminate: terminateDaemon,
@@ -261,9 +347,17 @@ export async function ensureDaemon(
   if (state === 'stale') rmSync(DAEMON_FILE, { force: true });
   if (state === 'wedged' && existing) {
     // Same replace semantics as `claudescope start`: SIGTERM and wait, rather
-    // than spawning a second server that would fail to bind.
-    log(`claudescope daemon (pid ${existing.pid}) is unresponsive; replacing it…`);
-    await p.terminate(existing);
+    // than spawning a second server that would fail to bind — but only once the
+    // PID is confirmed ours (see planWedgeAction).
+    const action = planWedgeAction(existing, p.owns(existing.pid));
+    if (action.kind === 'refuse') throw new Error(action.message);
+    if (action.kind === 'discard') {
+      log(action.message);
+      rmSync(DAEMON_FILE, { force: true });
+    } else {
+      log(`claudescope daemon (pid ${existing.pid}) is unresponsive; replacing it…`);
+      await p.terminate(existing);
+    }
   }
 
   // Respawn a healed (healthy-but-skewed) daemon on its original port — a

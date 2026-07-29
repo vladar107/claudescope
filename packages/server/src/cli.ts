@@ -35,9 +35,11 @@ import {
   EXIT_WAIT_MS,
   LOG_FILE,
   classifyExisting,
+  daemonOwnsPid,
   fetchDaemonHealth,
   isAlive,
   isHealthy,
+  planWedgeAction,
   readDaemon,
   spawnDaemon,
   terminateDaemon,
@@ -112,13 +114,26 @@ async function start(port: number, open: boolean): Promise<void> {
   // SIGTERM and wait for it to exit, rather than spawning a second server that
   // would fail to bind (EADDRINUSE) and leave the old one orphaned.
   if (state === 'wedged' && existing) {
-    console.log(`claudescope (pid ${existing.pid}) is unresponsive; restarting it…`);
-    try {
-      await terminateDaemon(existing);
-    } catch (err) {
-      console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
+    // Only signal a PID we can confirm is ours — after a crash + PID reuse it
+    // belongs to an unrelated process (see planWedgeAction).
+    const action = planWedgeAction(existing, daemonOwnsPid(existing.pid));
+    if (action.kind === 'refuse') {
+      console.error(`✗ ${action.message}`);
       process.exitCode = 1;
       return;
+    }
+    if (action.kind === 'discard') {
+      console.log(`› ${action.message}`);
+      rmSync(DAEMON_FILE, { force: true });
+    } else {
+      console.log(`claudescope (pid ${existing.pid}) is unresponsive; restarting it…`);
+      try {
+        await terminateDaemon(existing);
+      } catch (err) {
+        console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
+        process.exitCode = 1;
+        return;
+      }
     }
   }
 
@@ -128,7 +143,13 @@ async function start(port: number, open: boolean): Promise<void> {
   process.stdout.write('› Starting claudescope');
   const ok = await waitForHealth(port, 20000, () => process.stdout.write('.'));
   if (!ok) {
-    console.error(`\n✗ Server did not become healthy in time. Inspect: claudescope logs`);
+    console.error(`\n✗ Server did not become healthy on port ${port}.`);
+    // The reason is almost always in the log the daemon just wrote to (a port
+    // already in use, a bad PORT, a corrupt index). Printing the tail turns a
+    // bare timeout into something actionable.
+    const tail = logTail(15);
+    if (tail) console.error(`\nLast lines of ${LOG_FILE}:\n${tail}`);
+    console.error('\nFull log: claudescope logs');
     process.exitCode = 1;
     return;
   }
@@ -175,6 +196,16 @@ function openApp(): void {
     openBrowser(d.url);
   } else {
     console.log('claudescope is not running. Start it with: claudescope start');
+  }
+}
+
+/** Last `n` lines of the daemon log, or '' when there is nothing to show.
+ *  Used to explain a startup failure instead of just reporting the timeout. */
+function logTail(n: number): string {
+  try {
+    return readFileSync(LOG_FILE, 'utf8').trimEnd().split('\n').slice(-n).join('\n');
+  } catch {
+    return '';
   }
 }
 
@@ -288,6 +319,22 @@ async function pricingUpdate(): Promise<void> {
 
 /** A bad flag value or missing argument on a query subcommand. */
 class UsageError extends Error {}
+
+/**
+ * Parse `--port`. Rejects everything the server cannot listen on, because an
+ * invalid value used to be recorded in daemon.json (NaN serializes to `null`)
+ * and then polled for 20s while the daemon was already dead with
+ * ERR_SOCKET_BAD_PORT. Port 0 is rejected too: it IS legal to listen on, but the
+ * OS then picks the port, so the recorded one can never answer a health check.
+ */
+export function parsePort(raw: string | undefined, dflt: number): number {
+  if (raw === undefined) return dflt;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) {
+    throw new UsageError(`--port expects an integer between 1 and 65535 (got '${raw}')`);
+  }
+  return n;
+}
 
 /** Parse a non-negative integer flag; undefined when absent, UsageError when bogus. */
 function intFlag(name: string, v: string | undefined): number | undefined {
@@ -407,7 +454,7 @@ async function main(): Promise<void> {
     },
   });
 
-  const port = values.port ? Number(values.port) : DEFAULT_PORT;
+  const port = parsePort(values.port, DEFAULT_PORT);
   // Flag wins, then the persisted setting (which itself folds settings.json >
   // default true; the OPEN_BROWSER env var stays the launcher's contract).
   const open = values['no-open'] ? false : openBrowserOnStart();
@@ -544,7 +591,10 @@ function isEntrypoint(): boolean {
 
 if (isEntrypoint()) {
   main().catch((err) => {
-    console.error(err);
+    // A usage error is the user's typo, not a crash — print the message, not a
+    // stack (matches how the query subcommands report bad flags).
+    if (err instanceof UsageError) console.error(`✗ ${err.message}`);
+    else console.error(err);
     process.exit(1);
   });
 }
