@@ -59,11 +59,26 @@ export function MermaidBlock({ code }: MermaidBlockProps) {
           maxTextSize: MAX_DIAGRAM_CHARS,
           theme: resolvedTheme === 'dark' ? 'dark' : 'default',
         });
-        // A detached staging node contains Mermaid's temporary DOM and is
-        // discarded on both success and failure.
+        // Mermaid's renderers look up their temporary SVG through `document`,
+        // so the container must be connected while layout is calculated.
         const staging = document.createElement('div');
-        const { svg } = await mermaid.render(renderId, code, staging);
-        if (!cancelled) setState({ status: 'rendered', svg });
+        staging.setAttribute('aria-hidden', 'true');
+        Object.assign(staging.style, {
+          position: 'fixed',
+          left: '-100000px',
+          top: '0',
+          width: '1000px',
+          visibility: 'hidden',
+          pointerEvents: 'none',
+        });
+        document.body.append(staging);
+
+        try {
+          const { svg } = await mermaid.render(renderId, code, staging);
+          if (!cancelled) setState({ status: 'rendered', svg });
+        } finally {
+          staging.remove();
+        }
       })
       .catch((error: unknown) => {
         if (!cancelled) setState({ status: 'failed', message: readableError(error) });
