@@ -1,6 +1,15 @@
 /** Centralized server configuration constants. */
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -204,11 +213,40 @@ export function reconcilePricingConfig(
 }
 
 /**
- * Create the state directory and reconcile the user-editable pricing file with
- * the shipped default (seed on first run; non-destructively migrate a stale
- * copy). Idempotent; call once at boot.
+ * Mode for app-owned state files. The index is a searchable copy of every
+ * transcript we can read, so it must not be more permissive than the sources it
+ * derives from — `~/.claude/projects` is 0700, and a default-umask 0644
+ * `index.duckdb` would hand the whole corpus (plus its FTS index) to any local
+ * user. Same reasoning for the normalize cache, which holds transcript text
+ * verbatim.
  */
-export function ensureStateDir(): void {
-  mkdirSync(CLAUDESCOPE_HOME, { recursive: true });
+export const STATE_FILE_MODE = 0o600;
+
+/** Mode for app-owned state directories (see {@link STATE_FILE_MODE}). */
+export const STATE_DIR_MODE = 0o700;
+
+/**
+ * Create an app-owned state directory owner-only, tightening an existing dir
+ * that a previous version created with the default umask. Every writer of
+ * {@link CLAUDESCOPE_HOME} (and its subdirs) goes through this so the mode can't
+ * drift back at one of the call sites.
+ */
+export function ensureStateDir(dir: string = CLAUDESCOPE_HOME): void {
+  mkdirSync(dir, { recursive: true, mode: STATE_DIR_MODE });
+  try {
+    // Pre-existing dirs keep their old mode through mkdirSync — tighten in place.
+    if ((statSync(dir).mode & 0o777) !== STATE_DIR_MODE) chmodSync(dir, STATE_DIR_MODE);
+  } catch {
+    /* best-effort: a mode we can't read or set must not block startup */
+  }
+}
+
+/**
+ * Boot-time setup: create the state directory owner-only and reconcile the
+ * user-editable pricing file with the shipped default (seed on first run;
+ * non-destructively migrate a stale copy). Idempotent; call once at boot.
+ */
+export function initStateDir(): void {
+  ensureStateDir();
   reconcilePricingConfig();
 }

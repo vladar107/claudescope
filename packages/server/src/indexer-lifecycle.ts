@@ -43,7 +43,15 @@ export function rearmTimer(): void {
   timer = setInterval(() => {
     reindex()
       .then((res) => {
-        if (res.reindexed > 0) {
+        // Failures are reported, not swallowed: a pass that could load nothing
+        // returns reindexed: 0 and would otherwise be silent, so the index could
+        // stop advancing indefinitely with no signal anywhere.
+        if (res.failed > 0) {
+          log.warn(
+            { reindexed: res.reindexed, failed: res.failed, durationMs: res.durationMs },
+            'auto-reindex could not load some files — the index is stale for them',
+          );
+        } else if (res.reindexed > 0) {
           log.info(
             { reindexed: res.reindexed, durationMs: res.durationMs },
             'auto-reindex picked up changes',
@@ -65,7 +73,7 @@ export function startIndexer(logger: FastifyBaseLogger): void {
   reindex()
     .then((res) =>
       log.info(
-        { reindexed: res.reindexed, durationMs: res.durationMs },
+        { reindexed: res.reindexed, failed: res.failed, durationMs: res.durationMs },
         'initial index build complete',
       ),
     )

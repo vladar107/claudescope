@@ -18,7 +18,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +27,7 @@ import {
   CLAUDESCOPE_HOME,
   PORT as DEFAULT_PORT,
   autoRestartEnabled,
+  ensureStateDir,
 } from './config.js';
 import { claudeProjectsDir, openBrowserOnStart } from './settings.js';
 import {
@@ -74,7 +75,7 @@ export {
 
 /** Start the server in the background, idempotently. */
 async function start(port: number, open: boolean): Promise<void> {
-  mkdirSync(CLAUDESCOPE_HOME, { recursive: true });
+  ensureStateDir();
 
   const existing = readDaemon();
   const state = await classifyExisting(existing, isAlive, isHealthy);

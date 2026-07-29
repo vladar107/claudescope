@@ -16,7 +16,6 @@
 import {
   copyFileSync,
   existsSync,
-  mkdirSync,
   readFileSync,
   renameSync,
   statSync,
@@ -25,7 +24,13 @@ import {
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import type { SettingSource, SettingValue } from '@claudescope/shared';
-import { CLAUDESCOPE_HOME, expandHome, firstExisting } from './config.js';
+import {
+  CLAUDESCOPE_HOME,
+  STATE_FILE_MODE,
+  ensureStateDir,
+  expandHome,
+  firstExisting,
+} from './config.js';
 
 export const SETTINGS_SCHEMA_VERSION = 1;
 
@@ -318,10 +323,10 @@ export function saveSettings(patch: Partial<Record<SettingKey, SettingValue | nu
   }
   current.schemaVersion = SETTINGS_SCHEMA_VERSION;
 
-  // Self-sufficient: don't depend on ensureStateDir() having run at boot.
-  mkdirSync(CLAUDESCOPE_HOME, { recursive: true });
+  // Self-sufficient: don't depend on boot-time init having run.
+  ensureStateDir();
   const tmp = `${SETTINGS_PATH}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(current, null, 2)}\n`);
+  writeFileSync(tmp, `${JSON.stringify(current, null, 2)}\n`, { mode: STATE_FILE_MODE });
   renameSync(tmp, SETTINGS_PATH);
   cached = null; // next read re-stats; rename bumps mtime but be explicit
 }

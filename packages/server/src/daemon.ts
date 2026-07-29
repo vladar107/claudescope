@@ -11,7 +11,6 @@
 import { spawn } from 'node:child_process';
 import {
   existsSync,
-  mkdirSync,
   openSync,
   readFileSync,
   renameSync,
@@ -22,7 +21,14 @@ import {
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { HealthResponse } from '@claudescope/shared';
-import { APP_VERSION, CLAUDESCOPE_HOME, PORT as DEFAULT_PORT, autoRestartEnabled } from './config.js';
+import {
+  APP_VERSION,
+  CLAUDESCOPE_HOME,
+  PORT as DEFAULT_PORT,
+  STATE_FILE_MODE,
+  autoRestartEnabled,
+  ensureStateDir,
+} from './config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** The server bundle, a sibling of the CLI in the published package. */
@@ -163,7 +169,7 @@ export function rotateLogIfLarge(): void {
 /** Spawn the server detached (stdio → daemon log) and record it in daemon.json.
  *  Fire-and-forget: callers wait for health themselves. */
 export function spawnDaemon(port: number): void {
-  mkdirSync(CLAUDESCOPE_HOME, { recursive: true });
+  ensureStateDir();
   rotateLogIfLarge();
   const logFd = openSync(LOG_FILE, 'a');
   // Detached + stdio→log + unref: the server keeps running after this CLI exits.
@@ -188,6 +194,7 @@ export function spawnDaemon(port: number): void {
       null,
       2,
     ),
+    { mode: STATE_FILE_MODE },
   );
 }
 
