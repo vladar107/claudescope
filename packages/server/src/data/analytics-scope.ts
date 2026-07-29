@@ -28,6 +28,49 @@ export interface ScopeColumns {
 }
 
 /**
+ * A condition that matches nothing. Used when a project slug resolves to no cwd,
+ * so an unknown param returns empty rather than everything. Standard SQL does not
+ * process backslash escapes inside single quotes, so this is the literal
+ * two-character string `\0` — which no real cwd can be.
+ */
+const NEVER_MATCHES = "'\\0'";
+
+/**
+ * Resolve a project slug id to the `project_cwd` it came from, or `null` when no
+ * indexed session matches.
+ *
+ * Slugs are hashed from the cwd (see `projectIdFromCwd`), so there is no inverse
+ * — the resolution is a scan of the distinct cwds. Cheap: the set is one row per
+ * project, and the alternative (storing the slug) would duplicate derivable state.
+ */
+export async function resolveProjectCwd(
+  conn: DuckDBConnection,
+  projectId: string,
+): Promise<string | null> {
+  const cwds = await queryRows(
+    conn,
+    'SELECT DISTINCT project_cwd FROM sessions WHERE project_cwd IS NOT NULL',
+  );
+  return cwds.map((c) => String(c.project_cwd)).find((c) => projectIdFromCwd(c) === projectId) ?? null;
+}
+
+/**
+ * SQL condition restricting `cwdCol` to one project slug.
+ *
+ * Shared with the routes that filter by project but have no date scope
+ * (/api/sessions, /api/search) — they each had their own copy of the resolution
+ * loop AND of the never-match sentinel, so all three could drift.
+ */
+export async function projectFilter(
+  conn: DuckDBConnection,
+  projectId: string,
+  cwdCol = 'project_cwd',
+): Promise<string> {
+  const match = await resolveProjectCwd(conn, projectId);
+  return `${cwdCol} = ${match ? sqlString(match) : NEVER_MATCHES}`;
+}
+
+/**
  * SQL filter conditions for the scope. The project slug is resolved to its
  * cwd by scanning the distinct `project_cwd` values (same resolution
  * /api/sessions uses); an unknown slug yields a never-matching condition so
@@ -50,16 +93,7 @@ export async function scopeFilters(
   const from = timestampParam(scope.from, 'from');
   const to = timestampParam(scope.to, 'to');
   const filters: string[] = [];
-  if (scope.project) {
-    const cwds = await queryRows(
-      conn,
-      'SELECT DISTINCT project_cwd FROM sessions WHERE project_cwd IS NOT NULL',
-    );
-    const match = cwds
-      .map((c) => String(c.project_cwd))
-      .find((c) => projectIdFromCwd(c) === scope.project);
-    filters.push(`${cwdCol} = ${match ? sqlString(match) : "'\\0'"}`);
-  }
+  if (scope.project) filters.push(await projectFilter(conn, scope.project, cwdCol));
   if (from) filters.push(`${tsCol} >= ${sqlString(from)}::TIMESTAMP`);
   if (to) filters.push(`${tsCol} <= ${sqlString(to)}::TIMESTAMP`);
   return filters;

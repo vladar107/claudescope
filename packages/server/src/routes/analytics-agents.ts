@@ -27,6 +27,7 @@ import type {
 } from '@claudescope/shared';
 import { getConnection, queryRows } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
+import { cacheHitRatio } from '../data/analytics-metrics.js';
 import { scopeFilters } from '../data/analytics-scope.js';
 import { errorSignalsByAgent } from './analytics-errors.js';
 
@@ -60,12 +61,6 @@ const AVAILABILITY_NOTES: Record<string, string> = {
   junie: 'Junie delegates via plain terminal commands, so subagent usage is invisible.',
   grok: 'Grok records usage once per user turn (in updates.jsonl); a session whose updates file is missing or truncated reports zero tokens.',
 };
-
-/** Shared cache-hit denominator (see /api/analytics). */
-function cacheHitRatio(cacheRead: number, cacheWrite: number, input: number): number {
-  const denom = cacheRead + cacheWrite + input;
-  return denom > 0 ? cacheRead / denom : 0;
-}
 
 export async function registerAgentComparisonRoute(app: FastifyInstance): Promise<void> {
   app.get<{

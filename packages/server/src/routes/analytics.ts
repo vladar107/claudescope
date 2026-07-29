@@ -2,9 +2,11 @@
  * GET /api/analytics — token + cost aggregation grouped by project, model, or
  * day, with overall totals and a cache-hit ratio.
  *
- * cacheHitRatio = cache_read / (cache_read + input). Computed both per-row and
- * for the totals. Optional inclusive date bounds `from` / `to` filter on the
- * event timestamp.
+ * cacheHitRatio is the shared formula in `data/analytics-metrics.ts` — computed
+ * both per-row and for the totals. (This header used to document
+ * `cache_read / (cache_read + input)`, which is NOT what the code computed:
+ * `cache_write` belongs in the denominator too.) Optional inclusive date bounds
+ * `from` / `to` filter on the event timestamp.
  *
  * Token/cost SUMs and messageCount filter on `usage_canonical` so one billed API
  * call counts once (Claude Code writes a row per content block and copies usage
@@ -20,6 +22,7 @@ import type {
 } from '@claudescope/shared';
 import { getConnection, queryRows } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
+import { cacheHitRatio } from '../data/analytics-metrics.js';
 import { scopeFilters } from '../data/analytics-scope.js';
 import { projectIdFromCwd } from '../data/project-id.js';
 
@@ -47,17 +50,6 @@ function groupSource(groupBy: AnalyticsGroupBy): { keyExpr: string; fromSql: str
         fromSql: 'FROM events e JOIN sessions s ON e.session_id = s.id',
       };
   }
-}
-
-/**
- * Fraction of prompt tokens served from cache:
- *   cache_read / (cache_read + cache_creation + input)
- * Cache-creation (writes) and uncached input are both freshly processed, so
- * they belong in the denominator — otherwise the ratio pins at ~100%.
- */
-function cacheHitRatio(cacheRead: number, cacheWrite: number, input: number): number {
-  const denom = cacheRead + cacheWrite + input;
-  return denom > 0 ? cacheRead / denom : 0;
 }
 
 export async function registerAnalyticsRoute(app: FastifyInstance): Promise<void> {

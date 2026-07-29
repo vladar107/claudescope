@@ -5,7 +5,7 @@
  * talks to the network.
  */
 
-import type { SearchResponse, SessionDetailResponse } from '@claudescope/shared';
+import type { AnalyticsResponse, SearchResponse, SessionDetailResponse } from '@claudescope/shared';
 import { redactText, threadItemsToMarkdown } from '@claudescope/shared';
 
 /** Default hits/rows returned by the list-shaped tools/commands. */
@@ -18,6 +18,40 @@ export const DEFAULT_TURNS = 20;
 export const fmtCost = (usd: number): string => `$${usd.toFixed(2)}`;
 export const fmtTokens = (n: number): string => n.toLocaleString('en-US');
 export const day = (iso: string): string => iso.slice(0, 10);
+
+/** Windowing params a session request may carry. */
+export interface WindowArgs {
+  offset?: number;
+  limit?: number;
+  around?: string;
+  radius?: number;
+}
+
+/**
+ * Resolve the window for a session request. With no windowing params at all,
+ * default to the first {@link DEFAULT_TURNS} turns so a huge session never dumps
+ * whole into an agent's context (or a terminal); otherwise pass the caller's
+ * params through untouched.
+ *
+ * Shared so the MCP `get_session` tool and `claudescope session` cannot drift —
+ * they had the same block copied, with a comment on one saying "same defaulting
+ * as the MCP get_session tool".
+ */
+export function resolveWindowArgs(args: WindowArgs): WindowArgs {
+  const unwindowed =
+    args.around === undefined && args.offset === undefined && args.limit === undefined;
+  return unwindowed
+    ? { offset: 0, limit: DEFAULT_TURNS }
+    : { offset: args.offset, limit: args.limit, around: args.around, radius: args.radius };
+}
+
+/** The one-line totals summary appended to analytics output. */
+export function analyticsTotalsLine(totals: AnalyticsResponse['totals']): string {
+  return (
+    `Total: ${fmtTokens(totals.totalTokens)} tok · ${fmtCost(totals.costUsd)} · ` +
+    `${totals.messageCount} responses · cache hit ${(totals.cacheHitRatio * 100).toFixed(0)}%`
+  );
+}
 
 /**
  * Search hits as compact text: transcript hits carry the sessionId +

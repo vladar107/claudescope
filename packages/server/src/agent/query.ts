@@ -14,10 +14,11 @@ import type { ApiClient } from './api-client.js';
 import {
   DEFAULT_LIMIT,
   DEFAULT_MAX_TOOL_CHARS,
-  DEFAULT_TURNS,
+  analyticsTotalsLine,
   day,
   fmtCost,
   fmtTokens,
+  resolveWindowArgs,
   shapeSearchResults,
   shapeSessionMarkdown,
 } from './shape.js';
@@ -104,14 +105,8 @@ export interface SessionArgs {
 }
 
 export async function querySession(client: ApiClient, id: string, args: SessionArgs): Promise<string> {
-  // Same defaulting as the MCP get_session tool: no windowing params → the
-  // first DEFAULT_TURNS turns, so a huge session never dumps whole.
-  const windowed =
-    args.around === undefined && args.offset === undefined && args.limit === undefined
-      ? { offset: 0, limit: DEFAULT_TURNS }
-      : { offset: args.offset, limit: args.limit, around: args.around, radius: args.radius };
   const data = await client.session(id, {
-    ...windowed,
+    ...resolveWindowArgs(args),
     maxToolChars: args.maxToolChars ?? DEFAULT_MAX_TOOL_CHARS,
   });
   if (args.json) return json(data);
@@ -148,7 +143,6 @@ export async function queryAnalytics(client: ApiClient, args: AnalyticsArgs): Pr
   const res = await client.analytics({ groupBy: args.groupBy ?? 'project', from: args.from, to: args.to });
   if (args.json) return json(res);
   if (res.rows.length === 0) return 'No usage in range.';
-  const t = res.totals;
   return (
     table(
       ['KEY', 'TOKENS', 'IN', 'OUT', 'COST', 'RESPONSES'],
@@ -162,8 +156,7 @@ export async function queryAnalytics(client: ApiClient, args: AnalyticsArgs): Pr
       ]),
       [false, true, true, true, true, true],
     ) +
-    `\n\nTotal: ${fmtTokens(t.totalTokens)} tok · ${fmtCost(t.costUsd)} · ${t.messageCount} responses · ` +
-    `cache hit ${(t.cacheHitRatio * 100).toFixed(0)}%`
+    `\n\n${analyticsTotalsLine(res.totals)}`
   );
 }
 
