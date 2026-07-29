@@ -1,4 +1,4 @@
-import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
+import { NavLink, Route, Routes, useLocation } from 'react-router';
 import { Cpu, FolderOpen, LineChart, Search, Settings, type LucideIcon } from 'lucide-react';
 import { ErrorBoundary } from './components';
 import { useServerStatus } from './status/StatusProvider.js';

@@ -9,7 +9,7 @@
  * consistently regardless of page. Rows deep-link to the session. The Cache column
  * appears only when "Show cache" is on.
  */
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import type {
   SessionEfficiencyResponse,
   SessionEfficiencyRow,

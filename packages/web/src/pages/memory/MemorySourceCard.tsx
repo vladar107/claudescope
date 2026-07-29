@@ -11,7 +11,7 @@
  */
 
 import { Fragment, useMemo, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import type { MemorySource } from '@claudescope/shared';
 import { Markdown } from '../../components';
 import { anchorId, splitWikiLinks } from './wiki.js';

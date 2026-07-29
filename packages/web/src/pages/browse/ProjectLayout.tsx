@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useOutletContext, useParams } from 'react-router-dom';
+import { Link, NavLink, Outlet, useOutletContext, useParams } from 'react-router';
 import type { ProjectMeta } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
 import { formatCost, formatCount, SummaryStrip } from '../../components';

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router';
 import { ArrowUpRight, GitBranch, GitPullRequest, MessageSquare, RefreshCw, Wrench } from 'lucide-react';
 import type { SessionDetailResponse, SubagentRun } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';

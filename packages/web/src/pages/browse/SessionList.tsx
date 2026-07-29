@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import type { SessionMeta, SessionSort } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
 import { AgentBadge, agentLabel, ErrorBox, formatCost, formatCount, LocalBadge, ModelChips, SearchField, Spinner } from '../../components';

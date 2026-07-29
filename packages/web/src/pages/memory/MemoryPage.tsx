@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import type { MemoryConnectorOverview, MemoryPreview, MemoryResponse } from '@claudescope/shared';
 import { api } from '../../api/client.js';
 import { AgentBadge, ErrorBox, Spinner } from '../../components';
