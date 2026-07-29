@@ -79,3 +79,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0052 | [Indexer durability + state-dir permissions](./0052-indexer-durability-and-state-perms.md) | done |
 | 0053 | [Validate query params before they reach SQL](./0053-validate-query-params.md) | done |
 | 0054 | [Don't SIGTERM a PID we don't own; validate the port](./0054-daemon-pid-ownership-and-port.md) | done |
+| 0055 | [One canonical connector contract instead of sixteen](./0055-canonical-connector-contract.md) | done |

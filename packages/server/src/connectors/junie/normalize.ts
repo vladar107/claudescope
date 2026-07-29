@@ -36,6 +36,8 @@ import type {
 import { junieHome } from '../../settings.js';
 import { resolveImageWithin } from '../safe-image.js';
 import { toolNamesCsv } from '../tool-names.js';
+import type { CanonicalRow } from '../canonical.js';
+import { num, str } from '../json.js';
 
 export interface JunieSession {
   sessionId: string;
@@ -44,8 +46,6 @@ export interface JunieSession {
   events: (UserEvent | AssistantEvent)[];
 }
 
-const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 /** cwd shown for sessions Junie never recorded a directory for. */
 const UNKNOWN_CWD = '(unknown — Junie)';
@@ -415,31 +415,6 @@ export function parseSession(eventsPath: string): JunieSession | null {
   return { sessionId, cwd: cwd || UNKNOWN_CWD, title, events };
 }
 
-/** A canonical index row (matches the events NDJSON the projection reads). */
-export interface CanonicalRow {
-  file_path: string;
-  session_id: string;
-  uuid: string;
-  parent_uuid: string | null;
-  role: string;
-  type: string;
-  ts: string;
-  cwd: string;
-  git_branch: string | null;
-  model: string | null;
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cache_write_tokens: number;
-  service_tier: string | null;
-  is_sidechain: boolean;
-  tool_use_count: number;
-  tool_names: string;
-  tool_error_count: number | null;
-  text_content: string;
-  /** Not a canonical column — read separately by the title aux projection. */
-  title: string;
-}
 
 /** Flatten a parsed session into canonical index rows for one file. */
 export function toCanonicalRows(session: JunieSession, filePath: string): CanonicalRow[] {

@@ -36,6 +36,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { AssistantEvent, ContentBlock, MessageUsage, UserEvent } from '@claudescope/shared';
 import { toolNamesCsv } from '../tool-names.js';
+import type { CanonicalRow } from '../canonical.js';
+import { num, rec, str } from '../json.js';
 
 export interface GrokSession {
   /** Indexing key: the parent's session id for a subagent child, else the own id. */
@@ -50,10 +52,6 @@ export interface GrokSession {
   events: (UserEvent | AssistantEvent)[];
 }
 
-const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
-const rec = (v: unknown): Record<string, unknown> =>
-  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
 /** One raw line of `chat_history.jsonl` (fields we read; others ignored). */
 interface GrokChatLine {
@@ -601,32 +599,6 @@ export function parseGrokSession(path: string): GrokSession | null {
   return { sessionId, ownId, isSidechain, cwd, title: summary.title, events };
 }
 
-/** A canonical index row (matches the events NDJSON the projection reads). */
-export interface CanonicalRow {
-  file_path: string;
-  session_id: string;
-  uuid: string;
-  parent_uuid: string | null;
-  role: string;
-  type: string;
-  ts: string;
-  cwd: string;
-  git_branch: string | null;
-  model: string | null;
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cache_write_tokens: number;
-  service_tier: string | null;
-  is_sidechain: boolean;
-  tool_use_count: number;
-  tool_names: string;
-  /** NULL — Grok tool results carry no error signal, so the count is unknown. */
-  tool_error_count: number | null;
-  text_content: string;
-  /** Session title (read by auxProjections; ignored by the events projection). */
-  title: string;
-}
 
 /** Flatten a parsed session into canonical index rows for one file. */
 export function toCanonicalRows(session: GrokSession, filePath: string): CanonicalRow[] {

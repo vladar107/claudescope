@@ -18,23 +18,16 @@
  * STRICTLY READ-ONLY with respect to ~/.pi — files are only ever read.
  */
 
-import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { CLAUDESCOPE_HOME } from '../../config.js';
 import { piSessionsDir } from '../../settings.js';
-import { sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
+import { canonicalProjectionSql } from '../canonical.js';
+import { ndjsonCache } from '../ndjson-cache.js';
 import { parentSessionFile, parsePiSession, subagentRuns, toCanonicalRows } from './normalize.js';
 
-const CACHE_DIR = join(CLAUDESCOPE_HOME, 'cache', 'pi');
-
-/** Deterministic temp NDJSON path for a given session file. */
-function cachePath(filePath: string): string {
-  const hash = createHash('sha1').update(filePath).digest('hex').slice(0, 16);
-  return join(CACHE_DIR, `${hash}.ndjson`);
-}
+const cache = ndjsonCache('pi');
 
 /**
  * Recursively collect every `*.jsonl` under the pi sessions dir — including
@@ -74,26 +67,12 @@ function discover(): DiscoveredFile[] {
 /** Normalize a session to canonical NDJSON the projection will read. */
 async function prepare(filePath: string): Promise<void> {
   const session = parsePiSession(filePath);
-  mkdirSync(CACHE_DIR, { recursive: true });
   const rows = session ? toCanonicalRows(session, filePath) : [];
-  writeFileSync(cachePath(filePath), rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  cache.write(filePath, rows);
 }
 
 function eventsProjectionSql(filePath: string): string {
-  const path = sqlString(cachePath(filePath));
-  return `
-    SELECT
-      file_path, session_id, uuid, parent_uuid, role, type, ts, cwd, git_branch,
-      model, provider, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-      service_tier, is_sidechain, tool_use_count, tool_names, tool_error_count, text_content,
-      CAST(NULL AS VARCHAR) AS message_id, CAST(NULL AS VARCHAR) AS forked_from_session_id
-    FROM read_ndjson(${path}, format='newline_delimited', maximum_object_size=268435456, ignore_errors=true, columns={
-      file_path:'VARCHAR', session_id:'VARCHAR', uuid:'VARCHAR', parent_uuid:'VARCHAR',
-      role:'VARCHAR', type:'VARCHAR', ts:'TIMESTAMP', cwd:'VARCHAR', git_branch:'VARCHAR',
-      model:'VARCHAR', provider:'VARCHAR', input_tokens:'BIGINT', output_tokens:'BIGINT', cache_read_tokens:'BIGINT',
-      cache_write_tokens:'BIGINT', service_tier:'VARCHAR', is_sidechain:'BOOLEAN',
-      tool_use_count:'INTEGER', tool_names:'VARCHAR', tool_error_count:'INTEGER', text_content:'VARCHAR'
-    })`;
+  return canonicalProjectionSql(cache.path(filePath), { provider: true });
 }
 
 function auxProjections(_filePath: string): AuxProjections {

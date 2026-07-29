@@ -11,25 +11,18 @@
  * STRICTLY READ-ONLY with respect to ~/.junie — files are only ever read.
  */
 
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MemorySource } from '@claudescope/shared';
-import { CLAUDESCOPE_HOME } from '../../config.js';
 import { junieHome, junieSessionsDir } from '../../settings.js';
 import { contractHome } from '../../util/paths.js';
-import { sqlString } from '../../db/duckdb.js';
 import type { SessionData } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
+import { canonicalProjectionSql, titlesProjectionSql } from '../canonical.js';
+import { ndjsonCache } from '../ndjson-cache.js';
 import { parseSession, toCanonicalRows } from './normalize.js';
 
-const CACHE_DIR = join(CLAUDESCOPE_HOME, 'cache', 'junie');
-
-/** Deterministic temp NDJSON path for a given events file. */
-function cachePath(filePath: string): string {
-  const hash = createHash('sha1').update(filePath).digest('hex').slice(0, 16);
-  return join(CACHE_DIR, `${hash}.ndjson`);
-}
+const cache = ndjsonCache('junie');
 
 /**
  * One `DiscoveredFile` per session listed in `index.jsonl`, pointing at that
@@ -73,40 +66,18 @@ function discover(): DiscoveredFile[] {
 /** Normalize a session to canonical NDJSON the projection will read. */
 async function prepare(filePath: string): Promise<void> {
   const session = parseSession(filePath);
-  mkdirSync(CACHE_DIR, { recursive: true });
   const rows = session ? toCanonicalRows(session, filePath) : [];
-  writeFileSync(cachePath(filePath), rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  cache.write(filePath, rows);
 }
 
 function eventsProjectionSql(filePath: string): string {
-  const path = sqlString(cachePath(filePath));
-  return `
-    SELECT
-      file_path, session_id, uuid, parent_uuid, role, type, ts, cwd, git_branch,
-      model, CAST(NULL AS VARCHAR) AS provider, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-      service_tier, is_sidechain, tool_use_count, tool_names, tool_error_count, text_content,
-      CAST(NULL AS VARCHAR) AS message_id, CAST(NULL AS VARCHAR) AS forked_from_session_id
-    FROM read_ndjson(${path}, format='newline_delimited', maximum_object_size=268435456, ignore_errors=true, columns={
-      file_path:'VARCHAR', session_id:'VARCHAR', uuid:'VARCHAR', parent_uuid:'VARCHAR',
-      role:'VARCHAR', type:'VARCHAR', ts:'TIMESTAMP', cwd:'VARCHAR', git_branch:'VARCHAR',
-      model:'VARCHAR', input_tokens:'BIGINT', output_tokens:'BIGINT', cache_read_tokens:'BIGINT',
-      cache_write_tokens:'BIGINT', service_tier:'VARCHAR', is_sidechain:'BOOLEAN',
-      tool_use_count:'INTEGER', tool_names:'VARCHAR', tool_error_count:'INTEGER', text_content:'VARCHAR'
-    })`;
+  return canonicalProjectionSql(cache.path(filePath), { provider: false });
 }
 
 /** Junie has an explicit session title (taskName); no PR links. */
 function auxProjections(filePath: string): AuxProjections {
-  const path = sqlString(cachePath(filePath));
-  if (!existsSync(cachePath(filePath))) return {};
-  return {
-    titles: `
-      SELECT session_id, last(title) AS title
-      FROM read_ndjson(${path}, format='newline_delimited', maximum_object_size=268435456, ignore_errors=true,
-        columns={session_id:'VARCHAR', title:'VARCHAR'})
-      WHERE session_id IS NOT NULL AND title IS NOT NULL AND title <> ''
-      GROUP BY session_id`,
-  };
+  if (!existsSync(cache.path(filePath))) return {};
+  return { titles: titlesProjectionSql(cache.path(filePath)) };
 }
 
 async function loadSession(_sessionId: string, paths: string[]): Promise<SessionData> {
