@@ -43,10 +43,12 @@ None of these are misused; they're listed here so you can verify that.
 - **Writes** only inside its own state dir `~/.claudescope/` (override:
   `$CLAUDESCOPE_HOME`): the DuckDB index (a rebuildable cache), a user-editable
   `pricing.json`, the daemon PID/port file, and logs.
-- **Creates that state dir owner-only** (`0700`, files `0600`) — the index is a
-  searchable copy of every transcript it can read. A directory an older version
-  created with the default umask is tightened at startup; files already written
-  keep their mode, so run `chmod -R go-rwx ~/.claudescope` to tighten those.
+- **Creates that state dir owner-only** (`0700`, files `0600`) — the index, and
+  the normalized per-session copies under `cache/`, hold transcript text verbatim.
+  Those copies are removed automatically once the source session is gone.
+  A directory an older version created with the default umask is tightened at
+  startup; files already written keep their mode, so run
+  `chmod -R go-rwx ~/.claudescope` to tighten those.
 
 ### Network
 

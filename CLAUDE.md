@@ -61,6 +61,11 @@ npm-workspaces monorepo (`packages/*`):
   so global installs survive upgrades — do not move it back into the package.
 - App-owned state is created **owner-only** — always via `ensureStateDir()` from
   `config.ts`, never a bare `mkdirSync`.
+- The normalize cache (`cache/<agent>/*.ndjson`, written by `prepare()`) holds
+  transcript text **verbatim**, so it is pruned every pass once its source file is
+  gone — `ndjsonCache` owns the layout and `pruneNdjsonCaches` the sweep. A
+  connector whose `discover()` threw is excluded, exactly as its indexed sessions
+  are: the absence is transient, not a deletion.
 - The web Settings page's Start/Stop/Restart control the **indexer** (the
   reindex poller — `indexer-lifecycle.ts`), never the HTTP process; stopping
   the server stays terminal-only (`claudescope stop`). The pause flag is
