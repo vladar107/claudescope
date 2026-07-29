@@ -5,8 +5,16 @@
  * exotic token format.
  */
 
-// Home-dir paths -> `~` (drops the username segment too).
-const HOME_RE = /(?:\/Users|\/home|[A-Z]:\\Users)\/[^/\\\s"'`)]+/g;
+/**
+ * Home-dir paths -> `~` (drops the username segment too).
+ *
+ * The separator is a character class, not a literal `/`: the Windows branch
+ * previously required a forward slash after `C:\Users`, so `C:\Users\alice\src`
+ * never matched and the username survived into exported Markdown and MCP output.
+ * Drive letters are matched case-insensitively (`c:\` is as common as `C:\`), and
+ * `C:/Users/...` is covered too since some tools normalize separators.
+ */
+const HOME_RE = /(?:\/Users|\/home|[A-Za-z]:[\\/]Users)[\\/][^/\\\s"'`)]+/g;
 // Conservative, prefix-anchored secret patterns (avoid false positives).
 const SECRET_RES: [RegExp, string][] = [
   [/sk-[A-Za-z0-9_-]{16,}/g, '«redacted-key»'],

@@ -81,3 +81,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0054 | [Don't SIGTERM a PID we don't own; validate the port](./0054-daemon-pid-ownership-and-port.md) | done |
 | 0055 | [One canonical connector contract instead of sixteen](./0055-canonical-connector-contract.md) | done |
 | 0056 | [Prune the normalize cache when its source is gone](./0056-prune-normalize-cache.md) | done |
+| 0057 | [Untrusted-content hardening](./0057-untrusted-content-hardening.md) | done |

@@ -258,3 +258,69 @@ describe('buildSubagentRuns', () => {
     expect(new Set(runs.map((r) => r.toolUseId))).toEqual(new Set(['tu1', 'tu2']));
   });
 });
+
+describe('malformed transcript rows', () => {
+  // Transcripts are read with `JSON.parse(...) as RawEvent` — no shape check —
+  // and the indexer's SQL explicitly tolerates a user/assistant row with no
+  // `message` (`WHEN message IS NULL THEN …`). Such rows therefore reach the
+  // assembler, where dereferencing `message.content` used to throw and 500 the
+  // whole session-detail route: the session listed in Browse but could not be
+  // opened. 0 of 5,687 real rows hit this, so it is a robustness guard, not a
+  // live bug — but one bad line should never cost a whole transcript.
+  const raw = (o: unknown): RawEvent[] => [o] as unknown as RawEvent[];
+
+  it('skips a conversational row with no message object', () => {
+    expect(assembleThread(raw({ type: 'user', uuid: 'a', parentUuid: null }))).toEqual([]);
+  });
+
+  it.each([null, 42, 'x' as unknown, { blocks: [] }])(
+    'skips a row whose message.content is %s',
+    (content) => {
+      const events = raw({
+        type: 'assistant',
+        uuid: 'b',
+        parentUuid: null,
+        message: { role: 'assistant', content },
+      });
+      // A string IS valid content, so only that one produces a turn.
+      expect(assembleThread(events)).toHaveLength(typeof content === 'string' ? 1 : 0);
+    },
+  );
+
+  it('keeps the surrounding good turns when one row is malformed', () => {
+    const events = raw({ type: 'user', uuid: 'bad', parentUuid: null }).concat(
+      [
+        { type: 'user', uuid: 'u1', parentUuid: null, message: { role: 'user', content: 'hello' } },
+        {
+          type: 'assistant',
+          uuid: 'a1',
+          parentUuid: 'u1',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+        },
+      ] as unknown as RawEvent[],
+    );
+    expect(assembleThread(events).map((t) => t.uuid)).toEqual(['u1', 'a1']);
+  });
+
+  it('still pairs a tool_result that arrives alongside a malformed row', () => {
+    const events = [
+      {
+        type: 'assistant',
+        uuid: 'a1',
+        parentUuid: null,
+        message: { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Read', input: {} }] },
+      },
+      { type: 'user', uuid: 'bad', parentUuid: 'a1' },
+      {
+        type: 'user',
+        uuid: 'u2',
+        parentUuid: 'a1',
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'done' }] },
+      },
+    ] as unknown as RawEvent[];
+    const thread = assembleThread(events);
+    const tool = thread[0]?.blocks[0];
+    expect(tool?.kind).toBe('tool');
+    expect(tool?.kind === 'tool' && tool.result?.content).toEqual([{ type: 'text', text: 'done' }]);
+  });
+});
