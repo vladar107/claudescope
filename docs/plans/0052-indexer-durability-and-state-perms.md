@@ -1,8 +1,8 @@
 # 0052 — Indexer durability + state-dir permissions
 
-- **Status:** in-progress <!-- proposed | in-progress | done | superseded | abandoned -->
+- **Status:** in-progress <!-- awaiting review on #72 --> <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-07-29
-- **PR:** <link, once opened>
+- **PR:** https://github.com/vladar107/claudescope/pull/72
 
 ## Context
 
@@ -56,11 +56,16 @@ deterministic for tied cwds.
 
 ## Decisions
 
-- **Wrap `loadFile`'s mutations in a DuckDB transaction** — rather than
-  reordering statements so the interpolation failure happens earlier. Ordering
-  luck is what makes the current behaviour inconsistent; a transaction makes
-  *any* mid-load failure a no-op regardless of which statement throws. Verified
-  `BEGIN`/`ROLLBACK` work through `conn.run` on `@duckdb/node-api`.
+- **Stage the projection into temp tables, then swap** — so every realistic
+  failure happens before a single existing row is touched.
+  A DuckDB transaction around the mutations was tried FIRST and rejected:
+  `index-progress.integration.test.ts` failed deterministically because the
+  indexer shares its connection with every HTTP route, so a `BEGIN` encloses
+  concurrent route queries and aborts them along with a failed load (the test
+  polls `SELECT count(*) FROM sessions` mid-pass precisely to mirror that).
+  Isolating the indexer on its own connection would also work, but that is an
+  architectural change to `db/duckdb.ts` and every `getConnection()` caller —
+  out of scope here. Staging needs no transaction to be non-destructive.
 - **Validate pricing rates in `loadPricing`, don't throw** — an unusable rate is
   dropped so the chain falls through (`models` entry → family → default), which
   is the philosophy `pricing-refresh.ts:mapLiteLLM` already applies to fetched
@@ -71,10 +76,10 @@ deterministic for tied cwds.
   design and `POST /api/reindex` both depend on `reindex()` resolving.
   `IndexerStatus.lastPass` is already `ReindexResponse | null`, so the count
   surfaces on `/api/indexer/*` with no new API surface.
-- **Keep the early return, but gate it on `failed === 0`** — with the
-  transaction in place a failed file changes nothing, so skipping the derived
-  rebuild is now *correct*; the gate is belt-and-braces so a future non-atomic
-  failure path can't silently reintroduce the inconsistency.
+- **Keep the early return, but gate it on `failed === 0`** — with staging in
+  place a failed file changes nothing, so skipping the derived rebuild is now
+  *correct*; the gate is belt-and-braces so a future destructive failure path
+  can't silently reintroduce the inconsistency.
 - **One `ensureDir` helper for the state dir** — the mode has to be right at all
   five `mkdirSync(CLAUDESCOPE_HOME)` sites, and a sixth will be added eventually.
   Existing installs are migrated on boot (`chmod` when the mode is looser).
@@ -119,12 +124,15 @@ deterministic for tied cwds.
 
 ## Risks / open questions
 
-- Per-file transactions add two statements per changed file. Measured cold-build
-  cost is expected to be noise against the ~300 ms/pass baseline; the perf job
-  gates it.
-- `PRAGMA create_fts_index` and `CHECKPOINT` must stay **outside** the
-  transaction. They already run after the per-file loop, so no change — but a
-  future refactor that moves them inside would break.
+- Staging costs one extra materialization per changed file: cold build 4951 →
+  5279 ms (+6.6%) on a 26k-event corpus; incremental passes unchanged. The perf
+  job gates further drift.
+- The staged temp tables use a constant name suffix, which is only safe because
+  one pass runs at a time (`inFlight`) and loads files sequentially. A future
+  parallel loader must key them per file.
+- The residual destructive window is between the deletes and the insert-from-temp
+  — table-to-table copies with no source file or interpolated input, so nothing
+  realistic is left to fail on.
 - Zeroing an invalid `default` field makes affected costs read 0. The warning
   names the field; the alternative (crash) is what this plan removes.
 - The mode migration only tightens `CLAUDESCOPE_HOME` itself, not pre-existing
