@@ -1,5 +1,6 @@
 /**
- * Memory landing (`/memory`) — a folder grid, one card per agent (connector).
+ * Memory landing (`/memory`) — a folder grid, one card per locally detected
+ * agent (connector).
  * Each card previews real content (the latest memory item) so the screen is
  * never just bare counts; agents that keep no memory store are shown explicitly
  * as such rather than hidden (so "no store" reads as a fact, not a bug).

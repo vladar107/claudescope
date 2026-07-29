@@ -6,8 +6,9 @@
  *                                             have any project memory, and a
  *                                             per-connector overview (counts +
  *                                             content preview) for the landing
- *                                             cards — including agents that keep
- *                                             no memory store (`supported: false`).
+ *                                             cards — including detected agents
+ *                                             that keep no memory store
+ *                                             (`supported: false`).
  *   - GET /api/projects/:projectId/memory   → per-agent memory for one project.
  *
  * Attribution (origin-session → project, dir slug fallback) lives in
@@ -17,6 +18,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import type { GlobalMemory, MemoryResponse, MemorySource, ProjectMemoryResponse } from '@claudescope/shared';
+import { detectedConnectors } from '../connectors/registry.js';
 import { buildConnectorOverviews, collectMemory, type AttributedMemory } from '../data/memory.js';
 
 /** Group attributed memory by `projectId` then `connectorId`. */
@@ -70,7 +72,14 @@ export async function registerMemoryRoute(app: FastifyInstance): Promise<void> {
       .sort((a, b) => b.total - a.total || a.displayName.localeCompare(b.displayName))
       .map(({ projectId, displayName, counts }) => ({ projectId, displayName, counts }));
 
-    return { global: [...globalByConnector.values()], projects, connectors: buildConnectorOverviews(items) };
+    return {
+      global: [...globalByConnector.values()],
+      projects,
+      connectors: buildConnectorOverviews(
+        items,
+        detectedConnectors(items.map((item) => item.connectorId)),
+      ),
+    };
   });
 
   app.get<{ Params: { projectId: string } }>(

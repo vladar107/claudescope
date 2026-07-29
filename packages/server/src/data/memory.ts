@@ -151,8 +151,8 @@ function toPreview(it: AttributedMemory): MemoryPreview {
 
 /**
  * Roll up {@link collectMemory} items into one {@link MemoryConnectorOverview}
- * per KNOWN connector (every registered agent, including those with no memory
- * store). Pure given its `items` input — the route passes `collectMemory()`.
+ * per supplied connector. The route supplies the connectors detected on the
+ * current machine, including detected agents with no memory store.
  *
  * Counts mirror the web's prior `summarize()`: `globalFiles` = the connector's
  * global sources; `projectsWithFacts` = distinct projects with ≥1 of its
@@ -161,7 +161,10 @@ function toPreview(it: AttributedMemory): MemoryPreview {
  * project items, omitted when it has none. Sort: supported-with-content first,
  * then supported-empty, then unsupported; ties broken by label.
  */
-export function buildConnectorOverviews(items: AttributedMemory[]): MemoryConnectorOverview[] {
+export function buildConnectorOverviews(
+  items: AttributedMemory[],
+  visibleConnectors: AgentConnector[],
+): MemoryConnectorOverview[] {
   const byConnector = new Map<string, AttributedMemory[]>();
   for (const it of items) {
     const list = byConnector.get(it.connectorId);
@@ -169,7 +172,7 @@ export function buildConnectorOverviews(items: AttributedMemory[]): MemoryConnec
     else byConnector.set(it.connectorId, [it]);
   }
 
-  const overviews = connectors.map((c): MemoryConnectorOverview => {
+  const overviews = visibleConnectors.map((c): MemoryConnectorOverview => {
     const mine = byConnector.get(c.id) ?? [];
     const globalFiles = mine.filter((it) => it.scope === 'global').length;
     const projectItems = mine.filter((it) => it.scope === 'project');
