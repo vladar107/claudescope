@@ -19,6 +19,7 @@ import type { DuckDBConnection } from '@duckdb/node-api';
 import type { IndexingProgress, PricingConfig, ReindexResponse } from '@claudescope/shared';
 import { closeConnection, discardDbFiles, getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { connectors } from '../connectors/registry.js';
+import { pruneNdjsonCaches } from '../connectors/ndjson-cache.js';
 import type { AgentConnector, DiscoveredFile } from '../connectors/types.js';
 import { loadPricing } from './pricing.js';
 import { cleanFallbackTitle } from './title.js';
@@ -561,6 +562,24 @@ async function doReindex(): Promise<ReindexResponse> {
         err,
       );
     }
+  }
+
+  // Drop normalize-cache entries whose source file is gone. These hold the
+  // transcript verbatim, so a deleted session must not leave a plaintext copy
+  // behind (nothing removed them before — not the prune below, not a rebuild).
+  // A connector whose discovery just failed is EXCLUDED, for the same reason its
+  // indexed sessions are: its files are missing transiently, not deleted.
+  // Runs every pass, not just passes with work — it is a handful of readdirs
+  // against small directories, dwarfed by discovery's own stat calls, and that
+  // makes it self-healing for orphans left by older versions.
+  const liveByAgent = new Map<string, string[]>();
+  for (const connector of connectors) {
+    if (!failedConnectors.has(connector.id)) liveByAgent.set(connector.id, []);
+  }
+  for (const { file, connector } of discovered) liveByAgent.get(connector.id)?.push(file.path);
+  const prunedCacheFiles = pruneNdjsonCaches(liveByAgent);
+  if (prunedCacheFiles > 0) {
+    console.warn(`claudescope: pruned ${prunedCacheFiles} stale normalize-cache file(s)`);
   }
 
   // Build a lookup of already-indexed (path -> mtime,size,connector).
