@@ -23,35 +23,14 @@ export interface DiscoveredFile {
 }
 
 /**
- * Canonical inner-column contract that `eventsProjectionSql` must emit, in any
- * order (the indexer selects them by name). Cost is NOT included — it is derived
- * centrally from the token columns × pricing.
+ * The canonical inner-column contract lives in `connectors/canonical.ts` as
+ * {@link CANONICAL_COLUMNS} — a name→DuckDB-type map that GENERATES the row type,
+ * the `read_ndjson` column map, and the projection's SELECT list. It used to be
+ * restated here as a documentation-only array that nothing read, alongside three
+ * hand-written copies per connector.
+ *
+ * Cost is not part of it: it is derived centrally from the token columns.
  */
-export const CANONICAL_EVENT_COLUMNS = [
-  'file_path',
-  'session_id',
-  'uuid',
-  'parent_uuid',
-  'role',
-  'type',
-  'ts',
-  'cwd',
-  'git_branch',
-  'model',
-  // Model provider that served the turn (e.g. 'lmstudio', 'anthropic', 'openai').
-  // Nullable — NULL when the source format records no provider signal (pi/codex/opencode do).
-  'provider',
-  'input_tokens',
-  'output_tokens',
-  'cache_read_tokens',
-  'cache_write_tokens',
-  'service_tier',
-  'is_sidechain',
-  'tool_use_count',
-  'tool_names',
-  'tool_error_count',
-  'text_content',
-] as const;
 
 /**
  * Optional auxiliary, session-keyed projections. Each value is a `SELECT` body
@@ -89,7 +68,7 @@ export interface AgentConnector {
 
   /**
    * A `SELECT` projecting the (possibly {@link prepare}d) file into the canonical
-   * event columns (see {@link CANONICAL_EVENT_COLUMNS}). Executed in DuckDB.
+   * event columns (see `CANONICAL_COLUMNS` in `canonical.ts`). Executed in DuckDB.
    */
   eventsProjectionSql(filePath: string): string;
 

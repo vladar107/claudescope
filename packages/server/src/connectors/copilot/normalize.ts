@@ -51,6 +51,8 @@ import type {
 import { resolveImageWithin } from '../safe-image.js';
 import { toolNamesCsv } from '../tool-names.js';
 import { toolErrorCount } from '../tool-errors.js';
+import type { CanonicalRow } from '../canonical.js';
+import { num, rec, str } from '../json.js';
 
 /** One inline subagent run, segmented out of the parent's event stream. */
 export interface CopilotSubagent {
@@ -73,10 +75,6 @@ export interface CopilotSession {
   subagents: CopilotSubagent[];
 }
 
-const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
-const rec = (v: unknown): Record<string, unknown> =>
-  v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
 
 /** Copilot stores token counts as `{tokenCount: N}` buckets. */
 const tokenCount = (v: unknown): number => num(rec(v).tokenCount);
@@ -465,31 +463,6 @@ export function parseCopilotSession(
   return { sessionId, cwd, branch, title, events: main.events, subagents };
 }
 
-/** A canonical index row (matches the events NDJSON the projection reads). */
-export interface CanonicalRow {
-  file_path: string;
-  session_id: string;
-  uuid: string;
-  parent_uuid: string | null;
-  role: string;
-  type: string;
-  ts: string;
-  cwd: string;
-  git_branch: string | null;
-  model: string | null;
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cache_write_tokens: number;
-  service_tier: string | null;
-  is_sidechain: boolean;
-  tool_use_count: number;
-  tool_names: string;
-  tool_error_count: number | null;
-  text_content: string;
-  /** Session title (read by auxProjections; ignored by the events projection). */
-  title: string;
-}
 
 /** Flatten a parsed session into canonical index rows for one file. Subagent
  *  events are included (same session, `is_sidechain` true) so their text is

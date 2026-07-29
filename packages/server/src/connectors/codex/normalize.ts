@@ -33,6 +33,8 @@ import type {
 import { codexSessionsDir } from '../../settings.js';
 import { toolNamesCsv } from '../tool-names.js';
 import { toolErrorCount } from '../tool-errors.js';
+import type { CanonicalRow } from '../canonical.js';
+import { num, rec, str } from '../json.js';
 
 interface CodexLine {
   type?: string;
@@ -73,12 +75,8 @@ const zeroUsage = (): CodexUsage => ({
   cache_read_input_tokens: 0,
 });
 
-const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 /** Coerce to a record, else `{}` (arrays are not records). */
-const rec = (v: unknown): Record<string, unknown> =>
-  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
 // --- rollout discovery + subagent linkage -------------------------------------
 
@@ -698,30 +696,6 @@ export function parseRollout(path: string): CodexSession | null {
   return { sessionId, indexSessionId, isSidechain, agentRole, cwd, gitBranch, modelProvider, events, spawnedAgents };
 }
 
-/** A canonical index row (matches the events NDJSON the projection reads). */
-export interface CanonicalRow {
-  file_path: string;
-  session_id: string;
-  uuid: string;
-  parent_uuid: string | null;
-  role: string;
-  type: string;
-  ts: string;
-  cwd: string;
-  git_branch: string | null;
-  model: string | null;
-  provider: string | null;
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cache_write_tokens: number;
-  service_tier: string | null;
-  is_sidechain: boolean;
-  tool_use_count: number;
-  tool_names: string;
-  tool_error_count: number | null;
-  text_content: string;
-}
 
 /** Flatten a parsed session into canonical index rows for one file. */
 export function toCanonicalRows(session: CodexSession, filePath: string): CanonicalRow[] {
