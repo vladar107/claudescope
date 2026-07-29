@@ -1,7 +1,19 @@
 import { memo } from 'react';
-import type { ThreadBlock } from '@claudescope/shared';
-import { Markdown, ThinkingBlock, ToolBlock, extractImage } from '../../components';
-import { stripImageMarkers } from './text.js';
+import type { ThreadBlock, ThreadItem } from '@claudescope/shared';
+import {
+  ClampedText,
+  Collapsible,
+  Markdown,
+  ThinkingBlock,
+  ToolBlock,
+  extractImage,
+} from '../../components';
+import {
+  splitCodexSessionContext,
+  stripCodexMemoryCitation,
+  stripImageMarkers,
+  type CodexSessionContext,
+} from './text.js';
 
 /**
  * Render a single parsed thread block by its `kind` discriminator.
@@ -16,15 +28,39 @@ import { stripImageMarkers } from './text.js';
  */
 export const ThreadBlockView = memo(function ThreadBlockView({
   block,
+  role,
   forceOpen = false,
 }: {
   block: ThreadBlock;
+  /** Owning turn role; Codex metadata handling is role-specific. */
+  role: ThreadItem['role'];
   /** Force a collapsible block (thinking/tool) open — used by in-session search. */
   forceOpen?: boolean;
 }) {
   switch (block.kind) {
     case 'text': {
-      const text = stripImageMarkers(block.text);
+      const context = role === 'user' ? splitCodexSessionContext(block.text) : null;
+      if (context) {
+        const prompt = stripImageMarkers(context.remainder);
+        return (
+          <>
+            <CodexContextBlock value={context} forceOpen={forceOpen} />
+            {prompt ? (
+              <Markdown
+                source={context.remainder}
+                toggleable
+                forceExpand={forceOpen}
+                forceSource={forceOpen}
+              >
+                {prompt}
+              </Markdown>
+            ) : null}
+          </>
+        );
+      }
+
+      const renderedText = role === 'assistant' ? stripCodexMemoryCitation(block.text) : block.text;
+      const text = stripImageMarkers(renderedText);
       return text ? (
         <Markdown
           source={block.text}
@@ -44,6 +80,33 @@ export const ThreadBlockView = memo(function ThreadBlockView({
       return <AttachmentView attachment={block.attachment} />;
   }
 });
+
+/** Compact presentation for preserved Codex startup metadata. */
+function CodexContextBlock({
+  value,
+  forceOpen,
+}: {
+  value: CodexSessionContext;
+  forceOpen: boolean;
+}) {
+  const subtitle =
+    value.kind === 'environment'
+      ? 'runtime environment'
+      : value.includesEnvironment
+        ? 'AGENTS.md and runtime environment'
+        : 'AGENTS.md instructions';
+  return (
+    <Collapsible
+      className="tv-collapsible--system"
+      icon="⚙︎"
+      title="Codex session context"
+      subtitle={subtitle}
+      open={forceOpen || undefined}
+    >
+      <ClampedText className="tv-system-turn__pre" text={value.context} />
+    </Collapsible>
+  );
+}
 
 /**
  * Best-effort rendering for attachment blocks. Image blocks (the observed

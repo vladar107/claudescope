@@ -92,7 +92,11 @@ const Turn = memo(function Turn({
               block.kind === 'tool' ? subagentsByToolUseId?.get(block.id) : undefined;
             return (
               <Fragment key={i}>
-                <RevealableBlock blockId={blockRevealId(item.uuid, i)} block={block} />
+                <RevealableBlock
+                  blockId={blockRevealId(item.uuid, i)}
+                  block={block}
+                  role={item.role}
+                />
                 {runs?.map((run) => (
                   <SubagentBlock key={run.agentId} run={run} />
                 ))}
@@ -110,7 +114,15 @@ const Turn = memo(function Turn({
  * finder step re-renders only these wrappers — the memoized ThreadBlockView
  * bails out everywhere except the block whose `forceOpen` actually flipped.
  */
-function RevealableBlock({ blockId, block }: { blockId: string; block: ThreadBlock }) {
+function RevealableBlock({
+  blockId,
+  block,
+  role,
+}: {
+  blockId: string;
+  block: ThreadBlock;
+  role: ThreadItem['role'];
+}) {
   const { blockIds } = useContext(SessionSearchContext);
   return (
     <div className="tv-block" data-block-id={blockId}>
@@ -122,7 +134,7 @@ function RevealableBlock({ blockId, block }: { blockId: string; block: ThreadBlo
         resetKeys={[block]}
         fallback={(error) => <ErrorBox error={error} title="This block failed to render" />}
       >
-        <ThreadBlockView block={block} forceOpen={blockIds.has(blockId)} />
+        <ThreadBlockView block={block} role={role} forceOpen={blockIds.has(blockId)} />
       </ErrorBoundary>
     </div>
   );

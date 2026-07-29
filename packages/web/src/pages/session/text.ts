@@ -15,6 +15,83 @@ export function stripImageMarkers(text: string): string {
   return text.replace(IMAGE_MARKER_RE, '').trim();
 }
 
+/** Reserved metadata Codex appends to assistant prose when memory was used. */
+const CODEX_MEMORY_CITATION_RE =
+  /\s*<oai-mem-citation>\s*<citation_entries>[\s\S]*?<\/citation_entries>\s*<rollout_ids>[\s\S]*?<\/rollout_ids>\s*<\/oai-mem-citation>\s*$/i;
+
+/**
+ * Remove a complete trailing Codex memory-citation envelope for rendered
+ * Markdown. Callers retain the original block as the Source-mode value; an
+ * incomplete envelope or one followed by prose is left untouched.
+ */
+export function stripCodexMemoryCitation(text: string): string {
+  const match = CODEX_MEMORY_CITATION_RE.exec(text);
+  return match ? text.slice(0, match.index).trimEnd() : text;
+}
+
+export interface CodexSessionContext {
+  /** Exact recognized prefix shown inside the collapsed disclosure. */
+  context: string;
+  /** User-authored text following the prefix, if Codex coalesced both. */
+  remainder: string;
+  kind: 'instructions' | 'environment';
+  includesEnvironment: boolean;
+}
+
+/**
+ * Split a complete Codex startup-context prefix from any trailing user prompt.
+ * Both the AGENTS wrapper and a standalone environment wrapper are recognized;
+ * malformed wrappers return null so ordinary user prose is never hidden.
+ */
+export function splitCodexSessionContext(text: string): CodexSessionContext | null {
+  const leadingWhitespace = text.search(/\S|$/);
+  const source = text.slice(leadingWhitespace);
+  const instructionsOpen = '<INSTRUCTIONS>';
+  const instructionsClose = '</INSTRUCTIONS>';
+  const environmentOpen = '<environment_context>';
+  const environmentClose = '</environment_context>';
+
+  let end = 0;
+  let kind: CodexSessionContext['kind'];
+  let includesEnvironment = false;
+
+  if (source.startsWith('# AGENTS.md instructions for ')) {
+    const open = source.indexOf(instructionsOpen);
+    const close = source.indexOf(instructionsClose, open + instructionsOpen.length);
+    if (open < 0 || close < 0) return null;
+    end = close + instructionsClose.length;
+    kind = 'instructions';
+
+    const gap = source.slice(end).match(/^\s*/)?.[0].length ?? 0;
+    const environmentStart = end + gap;
+    if (source.startsWith(environmentOpen, environmentStart)) {
+      const environmentEnd = source.indexOf(
+        environmentClose,
+        environmentStart + environmentOpen.length,
+      );
+      if (environmentEnd < 0) return null;
+      end = environmentEnd + environmentClose.length;
+      includesEnvironment = true;
+    }
+  } else if (source.startsWith(environmentOpen)) {
+    const close = source.indexOf(environmentClose, environmentOpen.length);
+    if (close < 0) return null;
+    end = close + environmentClose.length;
+    kind = 'environment';
+    includesEnvironment = true;
+  } else {
+    return null;
+  }
+
+  const absoluteEnd = leadingWhitespace + end;
+  return {
+    context: text.slice(0, absoluteEnd).trimEnd(),
+    remainder: text.slice(absoluteEnd).trimStart(),
+    kind,
+    includesEnvironment,
+  };
+}
+
 /** Leading tags that mark a user turn as harness/system-injected, not a person. */
 export const SYSTEM_TURN_TAGS: { tag: string; label: string }[] = [
   { tag: '<task-notification>', label: 'Task notification' },
