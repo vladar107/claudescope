@@ -57,10 +57,11 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
   }>('/api/analytics/sessions', async (req): Promise<SessionEfficiencyResponse> => {
     const conn = await getConnection();
 
-    const sort: SessionEfficiencySort =
-      req.query.sort && req.query.sort in SORT_EXPR
-        ? (req.query.sort as SessionEfficiencySort)
-        : 'cost';
+    // Object.hasOwn, NOT `in`: `in` walks Object.prototype, so ?sort=constructor
+    // reached ORDER BY as a Function. Unknown values fall back to the default.
+    const sort: SessionEfficiencySort = Object.hasOwn(SORT_EXPR, req.query.sort ?? '')
+      ? (req.query.sort as SessionEfficiencySort)
+      : 'cost';
     // Whitelisted direction (never interpolate the raw param); default desc.
     const dir = req.query.dir === 'asc' ? 'ASC' : 'DESC';
     const limit = clampInt(req.query.limit, 50, 1, 500);

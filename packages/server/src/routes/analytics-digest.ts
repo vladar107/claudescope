@@ -21,7 +21,8 @@ import type {
   DigestProjectRow,
   DigestResponse,
 } from '@claudescope/shared';
-import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import { getConnection, queryRows } from '../db/duckdb.js';
+import { scopeFilters } from '../data/analytics-scope.js';
 import { readRow } from '../db/row.js';
 import { projectIdFromCwd } from '../data/project-id.js';
 import { errorSignalsByAgent } from './analytics-errors.js';
@@ -45,8 +46,11 @@ export async function registerDigestRoute(app: FastifyInstance): Promise<void> {
     const from = req.query.from || range.from;
     const to = req.query.to || range.to;
 
-    const where = `WHERE started_at >= ${sqlString(from)}::TIMESTAMP AND started_at <= ${sqlString(to)}::TIMESTAMP`;
-    const scopedCte = `WITH scoped AS (SELECT * FROM sessions ${where})`;
+    // Shared (validated) bounds on the session start — a session belongs to the
+    // range its START falls in. Both bounds are always present (defaultRange).
+    const filters = await scopeFilters(conn, { from, to });
+    const whereSql = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+    const scopedCte = `WITH scoped AS (SELECT * FROM sessions ${whereSql})`;
 
     // Totals — session-level sums, plus canonical assistant responses.
     const totalsRaw = await queryRows(

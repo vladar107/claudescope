@@ -111,7 +111,12 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
       );
     }
 
-    const sortKey: SessionSort = (sort as SessionSort) in SORT_SQL ? (sort as SessionSort) : 'recent';
+    // Object.hasOwn, NOT `in`: `in` walks Object.prototype, so ?sort=toString
+    // passed the gate and interpolated a Function into ORDER BY (a 500 quoting
+    // the generated SQL). Unknown values still fall back to the default.
+    const sortKey: SessionSort = Object.hasOwn(SORT_SQL, sort ?? '')
+      ? (sort as SessionSort)
+      : 'recent';
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
     const limitSql = limit !== undefined && limit > 0 ? ` LIMIT ${limit}` : '';

@@ -1,6 +1,6 @@
 # 0052 — Indexer durability + state-dir permissions
 
-- **Status:** in-progress <!-- awaiting review on #72 --> <!-- proposed | in-progress | done | superseded | abandoned -->
+- **Status:** done <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-07-29
 - **PR:** https://github.com/vladar107/claudescope/pull/72
 

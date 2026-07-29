@@ -8,6 +8,7 @@
 
 import type { DuckDBConnection } from '@duckdb/node-api';
 import { queryRows, sqlString } from '../db/duckdb.js';
+import { timestampParam } from '../params.js';
 import { projectIdFromCwd } from './project-id.js';
 
 export interface AnalyticsScope {
@@ -31,6 +32,13 @@ export interface ScopeColumns {
  * cwd by scanning the distinct `project_cwd` values (same resolution
  * /api/sessions uses); an unknown slug yields a never-matching condition so
  * a bad param returns empty rather than everything.
+ *
+ * The date bounds are VALIDATED here rather than at each route. This is the one
+ * chokepoint every bounded endpoint passes through, so validating it covers all
+ * of them — /api/analytics{,/sessions,/agents,/activity,/tools,/impact,/errors,
+ * /digest} — and any future caller by construction. An unusable bound throws
+ * {@link BadRequestError}, which the route layer maps to 400; previously it
+ * reached DuckDB and surfaced as a 500 quoting the generated SQL.
  */
 export async function scopeFilters(
   conn: DuckDBConnection,
@@ -39,6 +47,8 @@ export async function scopeFilters(
 ): Promise<string[]> {
   const cwdCol = cols.cwd ?? 'project_cwd';
   const tsCol = cols.ts ?? 'started_at';
+  const from = timestampParam(scope.from, 'from');
+  const to = timestampParam(scope.to, 'to');
   const filters: string[] = [];
   if (scope.project) {
     const cwds = await queryRows(
@@ -50,7 +60,7 @@ export async function scopeFilters(
       .find((c) => projectIdFromCwd(c) === scope.project);
     filters.push(`${cwdCol} = ${match ? sqlString(match) : "'\\0'"}`);
   }
-  if (scope.from) filters.push(`${tsCol} >= ${sqlString(scope.from)}::TIMESTAMP`);
-  if (scope.to) filters.push(`${tsCol} <= ${sqlString(scope.to)}::TIMESTAMP`);
+  if (from) filters.push(`${tsCol} >= ${sqlString(from)}::TIMESTAMP`);
+  if (to) filters.push(`${tsCol} <= ${sqlString(to)}::TIMESTAMP`);
   return filters;
 }
