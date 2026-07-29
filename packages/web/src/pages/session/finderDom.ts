@@ -28,7 +28,12 @@ function collectRanges(root: HTMLElement, query: string): Range[] {
   const ranges: Range[] = [];
   if (!q) return ranges;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => (n.nodeValue && n.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
+    acceptNode: (n) => {
+      if (n.parentElement?.closest('[data-finder-ignore]')) return NodeFilter.FILTER_REJECT;
+      return n.nodeValue && n.nodeValue.trim()
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_REJECT;
+    },
   });
   let node: Node | null;
   while ((node = walker.nextNode())) {

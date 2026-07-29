@@ -786,6 +786,93 @@ button {
   margin: var(--tv-space-4) 0;
 }
 
+/* In-place transcript Markdown source/rendered control. */
+.tv-markdown-shell {
+  position: relative;
+  min-width: 0;
+}
+.tv-markdown-shell__toolbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.tv-markdown-shell:hover .tv-markdown-shell__toolbar,
+.tv-markdown-shell:focus-within .tv-markdown-shell__toolbar,
+.tv-markdown-shell.is-source .tv-markdown-shell__toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+.tv-markdown-shell.is-source .tv-markdown-shell__toolbar {
+  position: static;
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--tv-space-1);
+}
+.tv-markdown-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px var(--tv-space-2);
+  border: 1px solid var(--tv-border-strong);
+  border-radius: var(--tv-radius-sm);
+  background: var(--tv-bg-elevated);
+  color: var(--tv-fg-muted);
+  font: inherit;
+  font-size: var(--tv-fs-sm);
+  cursor: pointer;
+}
+.tv-markdown-mode:hover:not(:disabled) {
+  color: var(--tv-fg);
+  border-color: var(--tv-accent);
+}
+.tv-markdown-mode:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+@media (hover: none) {
+  .tv-markdown-shell__toolbar {
+    position: static;
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--tv-space-1);
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* Lazy Mermaid fences. SVG is generated locally under strict mode. */
+.tv-mermaid {
+  margin: 0 0 var(--tv-space-3);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+  background: var(--tv-bg-inset);
+  padding: var(--tv-space-3);
+  overflow-x: auto;
+}
+.tv-mermaid--loading {
+  color: var(--tv-fg-faint);
+  font-size: var(--tv-fs-sm);
+}
+.tv-mermaid--failed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-2);
+}
+.tv-mermaid__error {
+  color: var(--tv-danger);
+  font-size: var(--tv-fs-sm);
+}
+.tv-mermaid__svg svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
 /* Plain (non-markdown) preformatted text fallback. */
 .tv-pre {
   font-family: var(--tv-font-mono);

@@ -10,6 +10,9 @@ export const MAX_TEXT_CHARS = 50_000;
  */
 export const MAX_MARKDOWN_CHARS = 100_000;
 
+/** Maximum source size sent to a diagram parser. */
+export const MAX_DIAGRAM_CHARS = 50_000;
+
 /** Where to cut clamped text: the last newline before `limit`, if it isn't
  * pathologically early (single-line blobs cut mid-line at the limit). */
 export function clampCut(text: string, limit: number): number {
