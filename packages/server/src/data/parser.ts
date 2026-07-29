@@ -34,6 +34,24 @@ function isConversational(e: RawEvent): e is UserEvent | AssistantEvent {
   return e.type === 'user' || e.type === 'assistant';
 }
 
+/**
+ * A conversational event's `message.content`, or `null` when the row can't
+ * supply one.
+ *
+ * Transcripts are parsed with `JSON.parse(...) as RawEvent` — no shape
+ * validation — so a `user`/`assistant` row may carry no `message` at all, or a
+ * `content` that is neither a string nor an array. The indexer's SQL already
+ * tolerates exactly this (`WHEN message IS NULL THEN …` in the Claude Code
+ * projection), so such rows DO get indexed; the session then appeared in Browse
+ * and the detail route 500'd on `Cannot read properties of undefined`. Returning
+ * null makes the row produce no blocks, which the assembler already skips.
+ */
+function messageContent(event: UserEvent | AssistantEvent): string | ContentBlock[] | null {
+  const content = (event as { message?: { content?: unknown } }).message?.content;
+  if (typeof content === 'string') return content;
+  return Array.isArray(content) ? (content as ContentBlock[]) : null;
+}
+
 /** Normalize tool_result.content (string | ContentBlock[]) to ContentBlock[]. */
 function normalizeResultContent(content: string | ContentBlock[]): ContentBlock[] {
   if (typeof content === 'string') {
@@ -60,7 +78,7 @@ export function assembleThread(events: RawEvent[]): ThreadItem[] {
     { isError: boolean; content: ContentBlock[] }
   >();
   for (const event of convo) {
-    const content = event.message.content;
+    const content = messageContent(event);
     if (!Array.isArray(content)) continue;
     for (const block of content) {
       if (block.type === 'tool_result') {
@@ -79,6 +97,8 @@ export function assembleThread(events: RawEvent[]): ThreadItem[] {
 
     // Skip turns that contain only tool_result blocks (those are folded into
     // the preceding assistant turn's ToolInteraction) and produced no blocks.
+    // This is also what makes the `event.message.*` reads below safe: a row with
+    // no usable `message` yields no blocks (see messageContent) and exits here.
     if (blocks.length === 0) continue;
 
     const item: ThreadItem = {
@@ -231,12 +251,15 @@ function parseBlocks(
   event: UserEvent | AssistantEvent,
   resultsByToolUseId: Map<string, { isError: boolean; content: ContentBlock[] }>,
 ): ThreadBlock[] {
-  const content = event.message.content;
+  const content = messageContent(event);
 
   // A plain-string message is a single text block.
   if (typeof content === 'string') {
     return content.length > 0 ? [{ kind: 'text', type: 'text', text: content }] : [];
   }
+  // No usable content (no `message`, or a non-array `content`) — no blocks, which
+  // the caller treats as "skip this turn" rather than crashing the whole session.
+  if (content === null) return [];
 
   const blocks: ThreadBlock[] = [];
   for (const block of content) {

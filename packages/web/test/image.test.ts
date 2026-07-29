@@ -28,4 +28,24 @@ describe('extractImage', () => {
     expect(extractImage({ type: 'text', text: 'hi' })).toBeNull();
     expect(extractImage({ type: 'image', source: { type: 'base64' } })).toBeNull();
   });
+
+  it('rejects a base64 source whose media_type is not an image', () => {
+    // Transcript content is untrusted: the base64 branch used to interpolate
+    // media_type verbatim, so a poisoned block yielded `data:text/html;base64,…`.
+    const b64 = (media_type: string) => ({
+      type: 'image',
+      source: { type: 'base64', media_type, data: 'PHNjcmlwdD4x' },
+    });
+    expect(extractImage(b64('text/html'))).toBeNull();
+    expect(extractImage(b64('application/javascript'))).toBeNull();
+    expect(extractImage(b64('image/png; x=<script>'))).toBeNull();
+    expect(extractImage(b64(''))).toBeNull();
+  });
+
+  it('accepts any image/* subtype so valid formats are not dropped', () => {
+    for (const t of ['image/png', 'image/jpeg', 'image/webp', 'image/avif', 'image/svg+xml']) {
+      expect(extractImage({ type: 'image', source: { type: 'base64', media_type: t, data: 'a' } }))
+        .toBe(`data:${t};base64,a`);
+    }
+  });
 });
