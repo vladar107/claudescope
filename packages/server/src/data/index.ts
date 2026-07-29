@@ -412,28 +412,92 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
 
 /**
  * Fill in fallback titles for sessions with no real stored title, by cleaning
- * the first user message in TS (see {@link cleanFallbackTitle}). Runs after the
- * derived `sessions` rebuild, so it only touches rows whose `title` came back
- * empty. Cleaning happens in TS — not SQL — so markup/wrapper-blob stripping can
- * be tested as a pure function and stays deterministic across re-index.
+ * the first genuine user message (see {@link cleanFallbackTitle}). Runs after
+ * the derived `sessions` rebuild, so it only touches rows whose `title` came
+ * back empty.
  *
- * The raw first user turn per untitled session is fetched in one query (capped
- * to a few KB per row — cleaning only needs the head), then each cleaned title
- * is written back with `title_derived = TRUE`.
+ * Codex records its injected AGENTS/environment bootstrap with a user role. The
+ * candidate CTE removes only that complete, leading wrapper before ranking: an
+ * empty bootstrap-only row falls away, while a prompt coalesced into the same
+ * event remains. Other connectors and unfamiliar/malformed Codex shapes pass
+ * through untouched. The selected candidate is capped to a few KB only AFTER
+ * wrapper removal, then cleaned in TS and written with `title_derived = TRUE`.
  */
 async function applyFallbackTitles(conn: DuckDBConnection): Promise<void> {
   const rows = await queryRows(
     conn,
     `
-    SELECT session_id, raw FROM (
+    WITH user_text AS (
       SELECT
         e.session_id,
-        left(e.text_content, 4096) AS raw,
-        row_number() OVER (PARTITION BY e.session_id ORDER BY e.ts ASC NULLS LAST) AS rn
+        e.text_content,
+        ltrim(e.text_content) AS source,
+        e.ts,
+        e.uuid,
+        s.connector_id
       FROM events e
       JOIN sessions s ON s.id = e.session_id AND COALESCE(s.title, '') = ''
       WHERE e.role = 'user' AND e.text_content IS NOT NULL AND length(trim(e.text_content)) > 0
-    ) WHERE rn = 1
+    ), instruction_bounds AS (
+      SELECT
+        *,
+        strpos(source, '<INSTRUCTIONS>') AS instructions_start,
+        strpos(source, '</INSTRUCTIONS>') AS instructions_end
+      FROM user_text
+    ), instruction_remainders AS (
+      SELECT
+        *,
+        CASE
+          WHEN connector_id = 'codex'
+            AND starts_with(source, '# AGENTS.md instructions for ')
+            AND instructions_start > 0
+            AND instructions_end > instructions_start
+          THEN substring(source, instructions_end + length('</INSTRUCTIONS>'))
+          ELSE NULL
+        END AS instructions_remainder
+      FROM instruction_bounds
+    ), candidates AS (
+      SELECT
+        session_id,
+        ts,
+        uuid,
+        CASE
+          WHEN instructions_remainder IS NOT NULL THEN
+            CASE
+              WHEN starts_with(ltrim(instructions_remainder), '<environment_context>') THEN
+                CASE
+                  WHEN strpos(ltrim(instructions_remainder), '</environment_context>')
+                    > length('<environment_context>')
+                  THEN substring(
+                    ltrim(instructions_remainder),
+                    strpos(ltrim(instructions_remainder), '</environment_context>')
+                      + length('</environment_context>')
+                  )
+                  ELSE text_content
+                END
+              ELSE instructions_remainder
+            END
+          WHEN connector_id = 'codex'
+            AND starts_with(source, '<environment_context>')
+            AND strpos(source, '</environment_context>') > length('<environment_context>')
+          THEN substring(
+            source,
+            strpos(source, '</environment_context>') + length('</environment_context>')
+          )
+          ELSE text_content
+        END AS raw
+      FROM instruction_remainders
+    ), ranked AS (
+      SELECT
+        session_id,
+        left(raw, 4096) AS raw,
+        row_number() OVER (
+          PARTITION BY session_id ORDER BY ts ASC NULLS LAST, uuid
+        ) AS rn
+      FROM candidates
+      WHERE length(trim(raw)) > 0
+    )
+    SELECT session_id, raw FROM ranked WHERE rn = 1
     `,
   );
 

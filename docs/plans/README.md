@@ -86,3 +86,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0059 | [Three small cleanups from the review](./0059-small-cleanups.md) | done |
 | 0060 | [Dependabot alerts #13–#19](./0060-dependabot-alerts-13-19.md) | done |
 | 0061 | [Markdown source view and Mermaid rendering](./0061-markdown-mermaid-rendering.md) | done |
+| 0062 | [Codex title and metadata rendering](./0062-codex-title-and-metadata-rendering.md) | done |
