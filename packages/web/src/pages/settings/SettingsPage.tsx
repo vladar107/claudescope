@@ -4,8 +4,9 @@
  * terminal-only), Global Configuration | Appearance side by side, a full-width
  * Path Configuration card, and Advanced Runtime with the danger zone.
  *
- * Edits persist to ~/.claudescope/settings.json; env vars always win and
- * shadowed fields get a warning.
+ * Runtime edits persist to ~/.claudescope/settings.json; env vars always win
+ * and shadowed fields get a warning. Appearance/rendering preferences are
+ * presentation-only and persist in the current browser.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -29,6 +30,7 @@ import type {
 } from '@claudescope/shared';
 import { ApiError, api } from '../../api/client.js';
 import { ConfirmDialog, ErrorBox, Spinner } from '../../components';
+import { useRenderingPreferences } from '../../rendering/RenderingProvider.js';
 import { useServerStatus } from '../../status/StatusProvider.js';
 import { useTheme, type ThemeChoice } from '../../theme/ThemeProvider.js';
 import { SettingRow } from './SettingRow.js';
@@ -115,6 +117,12 @@ export function SettingsPage() {
   const [rebuildBusy, setRebuildBusy] = useState(false);
 
   const { theme, setTheme } = useTheme();
+  const {
+    markdownEnabled,
+    mermaidEnabled,
+    setMarkdownEnabled,
+    setMermaidEnabled,
+  } = useRenderingPreferences();
 
   const seedDraft = useCallback((res: SettingsResponse) => {
     const next: Record<string, SettingValue> = {};
@@ -439,6 +447,43 @@ export function SettingsPage() {
           </div>
           <div className="tv-settings__hints">
             <span className="tv-settings__hint">Stored per browser, not on the server.</span>
+          </div>
+          <div className="tv-settings__appearance-divider" />
+          <span className="tv-settings__label">Transcript Rendering</span>
+          <div
+            className="tv-settings__rendering-options"
+            role="group"
+            aria-label="Transcript rendering"
+          >
+            <label className="tv-settings__toggle">
+              <input
+                type="checkbox"
+                checked={markdownEnabled}
+                onChange={(event) => setMarkdownEnabled(event.target.checked)}
+              />
+              <span>Render Markdown</span>
+            </label>
+            <label
+              className={
+                markdownEnabled
+                  ? 'tv-settings__toggle'
+                  : 'tv-settings__toggle is-disabled'
+              }
+            >
+              <input
+                type="checkbox"
+                checked={mermaidEnabled}
+                disabled={!markdownEnabled}
+                onChange={(event) => setMermaidEnabled(event.target.checked)}
+              />
+              <span>Render Mermaid diagrams</span>
+            </label>
+          </div>
+          <div className="tv-settings__hints">
+            <span className="tv-settings__hint">
+              Applies immediately and is stored per browser. Individual transcript blocks can
+              override the Markdown default.
+            </span>
           </div>
         </section>
       </div>

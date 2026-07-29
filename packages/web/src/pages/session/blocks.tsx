@@ -25,7 +25,16 @@ export const ThreadBlockView = memo(function ThreadBlockView({
   switch (block.kind) {
     case 'text': {
       const text = stripImageMarkers(block.text);
-      return text ? <Markdown forceExpand={forceOpen}>{text}</Markdown> : null;
+      return text ? (
+        <Markdown
+          source={block.text}
+          toggleable
+          forceExpand={forceOpen}
+          forceSource={forceOpen}
+        >
+          {text}
+        </Markdown>
+      ) : null;
     }
     case 'thinking':
       return <ThinkingBlock thinking={block.thinking} forceOpen={forceOpen} />;

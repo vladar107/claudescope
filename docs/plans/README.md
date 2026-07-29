@@ -85,3 +85,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0058 | [Consolidate the analytics duplication](./0058-analytics-duplication.md) | done |
 | 0059 | [Three small cleanups from the review](./0059-small-cleanups.md) | done |
 | 0060 | [Dependabot alerts #13–#19](./0060-dependabot-alerts-13-19.md) | done |
+| 0061 | [Markdown source view and Mermaid rendering](./0061-markdown-mermaid-rendering.md) | done |
