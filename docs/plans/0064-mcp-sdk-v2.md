@@ -1,8 +1,8 @@
 # 0064 — MCP SDK v2 and `2026-07-28` stdio support
 
-- **Status:** in-progress
+- **Status:** ready
 - **Date:** 2026-08-05
-- **PR:** <link, once opened>
+- **PR:** https://github.com/vladar107/claudescope/pull/85
 
 ## Context
 
