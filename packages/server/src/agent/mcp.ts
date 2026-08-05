@@ -14,8 +14,8 @@
  * (`redact: true`): output stays on this machine unless the caller exports it.
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { McpServer } from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { z } from 'zod';
 import type { MemorySource, SessionMeta } from '@claudescope/shared';
 import { truncateText } from '@claudescope/shared';
@@ -106,7 +106,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         'Full-text search (BM25) across all recorded coding-agent transcripts and agent memory. ' +
         'Returns snippet hits with a sessionId + messageUuid — open a hit with ' +
         'get_session {sessionId, around: messageUuid}. Use this to answer "have I seen/solved this before?".',
-      inputSchema: {
+      inputSchema: z.object({
         query: z.string().describe('Search terms'),
         project: z.string().optional().describe('Project id to scope to (from list_projects)'),
         role: z
@@ -118,7 +118,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
           .optional()
           .describe('What to search: transcripts, agent memory, or both (default sessions)'),
         limit: z.number().int().min(1).max(50).optional().describe(`Max hits (default ${DEFAULT_LIMIT})`),
-      },
+      }),
     },
     guarded(async (client, args: { query: string; project?: string; role?: 'user' | 'assistant' | 'all'; scope?: 'sessions' | 'memory' | 'all'; limit?: number }) => {
       const limit = args.limit ?? DEFAULT_LIMIT;
@@ -139,7 +139,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
       description:
         'List recorded sessions (most recent first by default), optionally filtered by project, ' +
         'agent, or a title/text match. Returns compact rows with sessionIds for get_session.',
-      inputSchema: {
+      inputSchema: z.object({
         project: z.string().optional().describe('Project id to scope to (from list_projects)'),
         agent: z
           .string()
@@ -148,7 +148,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         sort: z.enum(['recent', 'oldest', 'tokens', 'cost', 'messages']).optional(),
         q: z.string().optional().describe('Substring filter on the session title'),
         limit: z.number().int().min(1).max(200).optional().describe(`Max rows (default ${DEFAULT_LIMIT})`),
-      },
+      }),
     },
     guarded(async (client, args: { project?: string; agent?: string; sort?: 'recent' | 'oldest' | 'tokens' | 'cost' | 'messages'; q?: string; limit?: number }) => {
       const rows = await client.sessions({ ...args, limit: args.limit ?? DEFAULT_LIMIT });
@@ -165,7 +165,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         `turns (default: first ${DEFAULT_TURNS}) plus the total count — page with offset/limit, or anchor ` +
         'on a search hit with around (a messageUuid) + radius. Tool payloads are truncated to ' +
         `maxToolChars (default ${DEFAULT_MAX_TOOL_CHARS}). Set redact: true to mask home paths and likely secrets.`,
-      inputSchema: {
+      inputSchema: z.object({
         sessionId: z.string().describe('Session id (from list_sessions or search_transcripts)'),
         offset: z.number().int().min(0).optional().describe('0-based index of the first turn'),
         limit: z.number().int().min(1).optional().describe('Turns to return'),
@@ -173,7 +173,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         radius: z.number().int().min(0).optional().describe('Turns on each side of around (default 10)'),
         maxToolChars: z.number().int().min(0).optional().describe('Char cap per tool payload; 0 = uncapped'),
         redact: z.boolean().optional().describe('Mask home paths and likely secrets (default false)'),
-      },
+      }),
     },
     guarded(async (client, args: { sessionId: string; offset?: number; limit?: number; around?: string; radius?: number; maxToolChars?: number; redact?: boolean }) => {
       const data = await client.session(args.sessionId, {
@@ -190,7 +190,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
       description:
         'List all projects (one per working directory) with session counts, tokens, cost, and ' +
         'which agents worked in them. Project ids scope search_transcripts/list_sessions/get_memory.',
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
     guarded(async (client) => {
       const rows = await client.projects();
@@ -211,11 +211,11 @@ export function createMcpServer(deps: McpDeps): McpServer {
       description:
         'Aggregated token/cost usage grouped by project, model, day, or agent, with totals. ' +
         'Cost is a local list-price estimate, not billing. Dates are YYYY-MM-DD.',
-      inputSchema: {
+      inputSchema: z.object({
         groupBy: z.enum(['project', 'model', 'day', 'agent']).optional().describe('Grouping (default project)'),
         from: z.string().optional().describe('Start date (inclusive)'),
         to: z.string().optional().describe('End date (inclusive)'),
-      },
+      }),
     },
     guarded(async (client, args: { groupBy?: 'project' | 'model' | 'day' | 'agent'; from?: string; to?: string }) => {
       const res = await client.analytics({ groupBy: args.groupBy ?? 'project', from: args.from, to: args.to });
@@ -239,9 +239,9 @@ export function createMcpServer(deps: McpDeps): McpServer {
         'Read recorded agent memory (instruction files and distilled facts, e.g. CLAUDE.md and ' +
         'Claude Code memory). Without a project: global memory per agent plus which projects have ' +
         'any. With a project id: that project’s memory per agent. Long bodies are truncated.',
-      inputSchema: {
+      inputSchema: z.object({
         project: z.string().optional().describe('Project id (from list_projects)'),
-      },
+      }),
     },
     guarded(async (client, args: { project?: string }) => {
       if (args.project) {
@@ -288,8 +288,7 @@ export async function runMcpServer(): Promise<void> {
     return clientPromise;
   };
 
-  const server = createMcpServer({ resolveClient });
-  await server.connect(new StdioServerTransport());
-  // The transport owns the process from here: it resolves connect() immediately
-  // and serves requests until stdin closes (the MCP client disconnecting).
+  await serveStdio(() => createMcpServer({ resolveClient }));
+  // The stdio handle owns the process from here and serves either protocol era
+  // until stdin closes (the MCP client disconnecting).
 }
