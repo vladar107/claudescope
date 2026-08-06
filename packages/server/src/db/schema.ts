@@ -32,7 +32,8 @@
 // v11: provider-aware cost — events.provider + sessions.providers; providers
 //      listed in pricing 'providers' zero-rate at index time.
 // v12: Codex fallback titles skip the injected AGENTS/environment bootstrap.
-export const SCHEMA_VERSION = 12;
+// v13: fallback titles skip complete synthetic command/system turns for every connector.
+export const SCHEMA_VERSION = 13;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [

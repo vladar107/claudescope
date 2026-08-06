@@ -89,3 +89,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0062 | [Codex title and metadata rendering](./0062-codex-title-and-metadata-rendering.md) | done |
 | 0063 | [Show detected agents in Memory](./0063-detected-agents-memory.md) | done |
 | 0064 | [MCP SDK v2 and `2026-07-28` stdio support](./0064-mcp-sdk-v2.md) | done |
+| 0065 | [Shared fallback-title selection](./0065-shared-fallback-title-selection.md) | done |
