@@ -22,7 +22,7 @@ import { connectors } from '../connectors/registry.js';
 import { pruneNdjsonCaches } from '../connectors/ndjson-cache.js';
 import type { AgentConnector, DiscoveredFile } from '../connectors/types.js';
 import { loadPricing } from './pricing.js';
-import { cleanFallbackTitle } from './title.js';
+import { cleanFallbackTitleCandidate } from './title.js';
 import { electCanonicalEdits, refreshFileEdits } from './file-edits.js';
 
 /** Tracks whether the initial index build has finished (server readiness). */
@@ -412,100 +412,138 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
 
 /**
  * Fill in fallback titles for sessions with no real stored title, by cleaning
- * the first genuine user message (see {@link cleanFallbackTitle}). Runs after
- * the derived `sessions` rebuild, so it only touches rows whose `title` came
- * back empty.
+ * the first genuine user message (see {@link cleanFallbackTitleCandidate}).
+ * Runs after the derived `sessions` rebuild, so it only touches rows whose
+ * `title` came back empty.
  *
  * Codex records its injected AGENTS/environment bootstrap with a user role. The
- * candidate CTE removes only that complete, leading wrapper before ranking: an
- * empty bootstrap-only row falls away, while a prompt coalesced into the same
- * event remains. Other connectors and unfamiliar/malformed Codex shapes pass
- * through untouched. The selected candidate is capped to a few KB only AFTER
- * wrapper removal, then cleaned in TS and written with `title_derived = TRUE`.
+ * candidate CTE removes only that complete, leading wrapper: an empty
+ * bootstrap-only row falls away, while a prompt coalesced into the same event
+ * remains. Other connectors and unfamiliar/malformed Codex shapes pass through
+ * untouched.
+ *
+ * Candidates are considered in small per-session batches. The shared TS
+ * eligibility rule can therefore reject a complete harness turn (such as
+ * Claude Code's `/clear`) and continue to the next user message without loading
+ * every turn into memory. Candidate text is capped to a few KB only AFTER
+ * Codex wrapper removal, then cleaned and written with `title_derived = TRUE`.
  */
 async function applyFallbackTitles(conn: DuckDBConnection): Promise<void> {
-  const rows = await queryRows(
-    conn,
-    `
-    WITH user_text AS (
-      SELECT
-        e.session_id,
-        e.text_content,
-        ltrim(e.text_content) AS source,
-        e.ts,
-        e.uuid,
-        s.connector_id
-      FROM events e
-      JOIN sessions s ON s.id = e.session_id AND COALESCE(s.title, '') = ''
-      WHERE e.role = 'user' AND e.text_content IS NOT NULL AND length(trim(e.text_content)) > 0
-    ), instruction_bounds AS (
-      SELECT
-        *,
-        strpos(source, '<INSTRUCTIONS>') AS instructions_start,
-        strpos(source, '</INSTRUCTIONS>') AS instructions_end
-      FROM user_text
-    ), instruction_remainders AS (
-      SELECT
-        *,
-        CASE
-          WHEN connector_id = 'codex'
-            AND starts_with(source, '# AGENTS.md instructions for ')
-            AND instructions_start > 0
-            AND instructions_end > instructions_start
-          THEN substring(source, instructions_end + length('</INSTRUCTIONS>'))
-          ELSE NULL
-        END AS instructions_remainder
-      FROM instruction_bounds
-    ), candidates AS (
-      SELECT
-        session_id,
-        ts,
-        uuid,
-        CASE
-          WHEN instructions_remainder IS NOT NULL THEN
-            CASE
-              WHEN starts_with(ltrim(instructions_remainder), '<environment_context>') THEN
-                CASE
-                  WHEN strpos(ltrim(instructions_remainder), '</environment_context>')
-                    > length('<environment_context>')
-                  THEN substring(
-                    ltrim(instructions_remainder),
-                    strpos(ltrim(instructions_remainder), '</environment_context>')
-                      + length('</environment_context>')
-                  )
-                  ELSE text_content
-                END
-              ELSE instructions_remainder
-            END
-          WHEN connector_id = 'codex'
-            AND starts_with(source, '<environment_context>')
-            AND strpos(source, '</environment_context>') > length('<environment_context>')
-          THEN substring(
-            source,
-            strpos(source, '</environment_context>') + length('</environment_context>')
-          )
-          ELSE text_content
-        END AS raw
-      FROM instruction_remainders
-    ), ranked AS (
-      SELECT
-        session_id,
-        left(raw, 4096) AS raw,
-        row_number() OVER (
-          PARTITION BY session_id ORDER BY ts ASC NULLS LAST, uuid
-        ) AS rn
-      FROM candidates
-      WHERE length(trim(raw)) > 0
-    )
-    SELECT session_id, raw FROM ranked WHERE rn = 1
-    `,
-  );
-
   const updates: string[] = [];
-  for (const r of rows) {
-    const title = cleanFallbackTitle(r.raw != null ? String(r.raw) : null);
-    if (title.length === 0) continue;
-    updates.push(`(${sqlString(String(r.session_id))}, ${sqlString(title)})`);
+  const CANDIDATE_BATCH_SIZE = 8;
+  let firstRank = 1;
+  let pendingSessionIds: string[] | null = null;
+
+  while (true) {
+    const sessionFilter = pendingSessionIds
+      ? `AND e.session_id IN (${pendingSessionIds.map(sqlString).join(', ')})`
+      : '';
+    const lastRank = firstRank + CANDIDATE_BATCH_SIZE - 1;
+    const rows = await queryRows(
+      conn,
+      `
+      WITH user_text AS (
+        SELECT
+          e.session_id,
+          e.text_content,
+          ltrim(e.text_content) AS source,
+          e.ts,
+          e.uuid,
+          s.connector_id
+        FROM events e
+        JOIN sessions s ON s.id = e.session_id AND COALESCE(s.title, '') = ''
+        WHERE e.role = 'user'
+          AND e.text_content IS NOT NULL
+          AND length(trim(e.text_content)) > 0
+          ${sessionFilter}
+      ), instruction_bounds AS (
+        SELECT
+          *,
+          strpos(source, '<INSTRUCTIONS>') AS instructions_start,
+          strpos(source, '</INSTRUCTIONS>') AS instructions_end
+        FROM user_text
+      ), instruction_remainders AS (
+        SELECT
+          *,
+          CASE
+            WHEN connector_id = 'codex'
+              AND starts_with(source, '# AGENTS.md instructions for ')
+              AND instructions_start > 0
+              AND instructions_end > instructions_start
+            THEN substring(source, instructions_end + length('</INSTRUCTIONS>'))
+            ELSE NULL
+          END AS instructions_remainder
+        FROM instruction_bounds
+      ), candidates AS (
+        SELECT
+          session_id,
+          ts,
+          uuid,
+          CASE
+            WHEN instructions_remainder IS NOT NULL THEN
+              CASE
+                WHEN starts_with(ltrim(instructions_remainder), '<environment_context>') THEN
+                  CASE
+                    WHEN strpos(ltrim(instructions_remainder), '</environment_context>')
+                      > length('<environment_context>')
+                    THEN substring(
+                      ltrim(instructions_remainder),
+                      strpos(ltrim(instructions_remainder), '</environment_context>')
+                        + length('</environment_context>')
+                    )
+                    ELSE text_content
+                  END
+                ELSE instructions_remainder
+              END
+            WHEN connector_id = 'codex'
+              AND starts_with(source, '<environment_context>')
+              AND strpos(source, '</environment_context>') > length('<environment_context>')
+            THEN substring(
+              source,
+              strpos(source, '</environment_context>') + length('</environment_context>')
+            )
+            ELSE text_content
+          END AS raw
+        FROM instruction_remainders
+      ), ranked AS (
+        SELECT
+          session_id,
+          left(raw, 4096) AS raw,
+          row_number() OVER (
+            PARTITION BY session_id ORDER BY ts ASC NULLS LAST, uuid
+          ) AS candidate_rank
+        FROM candidates
+        WHERE length(trim(raw)) > 0
+      )
+      SELECT session_id, raw
+      FROM ranked
+      WHERE candidate_rank BETWEEN ${firstRank} AND ${lastRank}
+      ORDER BY session_id, candidate_rank
+      `,
+    );
+    if (rows.length === 0) break;
+
+    const candidateCounts = new Map<string, number>();
+    const resolvedSessionIds = new Set<string>();
+    for (const r of rows) {
+      const sessionId = String(r.session_id);
+      candidateCounts.set(sessionId, (candidateCounts.get(sessionId) ?? 0) + 1);
+      if (resolvedSessionIds.has(sessionId)) continue;
+
+      const title = cleanFallbackTitleCandidate(r.raw != null ? String(r.raw) : null);
+      if (title.length === 0) continue;
+      updates.push(`(${sqlString(sessionId)}, ${sqlString(title)})`);
+      resolvedSessionIds.add(sessionId);
+    }
+
+    pendingSessionIds = [...candidateCounts]
+      .filter(
+        ([sessionId, count]) =>
+          !resolvedSessionIds.has(sessionId) && count === CANDIDATE_BATCH_SIZE,
+      )
+      .map(([sessionId]) => sessionId);
+    if (pendingSessionIds.length === 0) break;
+    firstRank += CANDIDATE_BATCH_SIZE;
   }
   if (updates.length === 0) return;
 
