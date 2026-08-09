@@ -1,6 +1,6 @@
 # 0066 — Dependabot Mermaid and DOMPurify remediation
 
-- **Status:** in-progress <!-- proposed | in-progress | done | superseded | abandoned -->
+- **Status:** done <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-08-09
 - **PR:** https://github.com/vladar107/claudescope/pull/87
 
