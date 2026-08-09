@@ -2,7 +2,7 @@
 
 - **Status:** in-progress <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-08-09
-- **PR:** <link, once opened>
+- **PR:** https://github.com/vladar107/claudescope/pull/87
 
 ## Context
 
@@ -63,8 +63,9 @@ unnecessary overrides.
 - `npm run typecheck`
 - `npm run build`
 - `npm run bundle`
-- `nix build .#claudescope --no-link` when Nix is available; otherwise refresh
-  the hash from the CI mismatch and rerun the Nix job.
+- `nix build .#claudescope --no-link` in Linux and macOS CI; the first Linux
+  run supplied `sha256-Spb4aBNAyfdrjZvnC4of2PbKgmkMIt6GpJBIXH6UTNU=` for the
+  updated dependency set.
 
 ## Risks / open questions
 
