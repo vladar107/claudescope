@@ -2,7 +2,7 @@
 
 - **Status:** done
 - **Date:** 2026-08-11
-- **PR:** <link, once opened>
+- **PR:** https://github.com/vladar107/claudescope/pull/88
 
 ## Context
 
@@ -106,8 +106,8 @@ and ready for submission to the public Claude community marketplace.
   version, attribution, and repository metadata.
 - `integrations/claude-code/skills/history/SKILL.md` — model trigger and scoped,
   read-only CLI workflow.
-- `integrations/claude-code/README.md` — installation, usage, development, and
-  marketplace-submission guidance.
+- `integrations/claude-code/README.md` — self-contained installation, usage,
+  privacy, and local-development guidance.
 - `README.md` — user-facing Claude Code plugin installation and positioning.
 - `docs/plans/0067-claude-code-plugin-marketplace.md` — this plan; keep its
   status and PR link current.
