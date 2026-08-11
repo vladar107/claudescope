@@ -205,6 +205,25 @@ payloads truncated), `get_analytics` (token/cost aggregates), and `get_memory`
 agent's context window; pass `redact: true` to mask home paths and likely
 secrets. Everything stays read-only and on localhost.
 
+### Claude Code plugin
+
+For a Claude Code path that needs no MCP registration, install the repository's
+plugin (the `claudescope` CLI must already be on `PATH`):
+
+```text
+/plugin marketplace add vladar107/claudescope
+/plugin install claudescope@claudescope
+/reload-plugins
+```
+
+The model-invocable `/claudescope:history` skill teaches Claude when to use the
+read-only query CLI for prior solutions, decisions, session inspection, usage
+analytics, and dated work digests. It keeps searches and session windows narrow;
+transcript results enter the current Claude context. The plugin is the minimal
+Claude Code setup, while `claudescope mcp` remains the structured, typed option
+for MCP-capable clients. See the [plugin guide](./integrations/claude-code/README.md)
+for usage and local development.
+
 ### Scripting (CLI)
 
 The same lookups work from the terminal — read-only query subcommands that

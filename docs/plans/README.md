@@ -91,3 +91,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0064 | [MCP SDK v2 and `2026-07-28` stdio support](./0064-mcp-sdk-v2.md) | done |
 | 0065 | [Shared fallback-title selection](./0065-shared-fallback-title-selection.md) | done |
 | 0066 | [Dependabot Mermaid and DOMPurify remediation](./0066-dependabot-mermaid-dompurify.md) | done |
+| 0067 | [Claude Code plugin and marketplace](./0067-claude-code-plugin-marketplace.md) | done |
