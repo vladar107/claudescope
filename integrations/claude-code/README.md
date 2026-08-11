@@ -7,8 +7,9 @@ ClaudeScope's existing read-only query CLI.
 ## Requirements
 
 - A current version of Claude Code with plugin support.
-- The `claudescope` CLI on `PATH`. Choose npm, Homebrew, or Nix from the main
-  [Quick start](../../README.md#quick-start). npm requires Node.js 22.12+:
+- The `claudescope` CLI on `PATH`. Choose npm, Homebrew, or Nix from the
+  [ClaudeScope Quick Start](https://github.com/vladar107/claudescope#quick-start).
+  npm requires Node.js 22.12+:
 
   ```bash
   npm install -g @vladar107/claudescope
@@ -61,26 +62,3 @@ claude --plugin-dir ./integrations/claude-code
 
 After editing plugin metadata, restart or run `/reload-plugins`. Claude Code
 watches changes to an existing skill's `SKILL.md` during a session.
-
-## Community marketplace submission
-
-After the repository change is merged and available on the default branch,
-submit the same plugin directory through Anthropic's
-[plugin directory submission form](https://clau.de/plugin-directory-submission).
-Do not open a pull request against the community marketplace mirror.
-
-Submission metadata:
-
-- Name: `claudescope`
-- Repository: `https://github.com/vladar107/claudescope`
-- Plugin directory: `integrations/claude-code`
-- Version: `1.0.0`
-- License: `MIT`
-- Author: `Vladislav Ramazaev`
-- Runtime requirement: the `claudescope` CLI must be installed on `PATH`
-- Capabilities: one model-invocable skill using read-only CLI queries; the
-  plugin declares no hooks, MCP servers, network integrations, or direct
-  transcript-file access
-
-Submission is a maintainer action. Acceptance into the reviewed community
-marketplace is not implied by this self-hosted catalog.
