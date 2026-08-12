@@ -2,14 +2,14 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "claudescope",
   "displayName": "ClaudeScope",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Search and analyze local AI coding-agent transcript history with ClaudeScope's read-only CLI.",
   "author": {
     "name": "Vladislav Ramazaev",
     "email": "vladar107@gmail.com",
     "url": "https://github.com/vladar107"
   },
-  "homepage": "https://github.com/vladar107/claudescope#claude-code-plugin",
+  "homepage": "https://github.com/vladar107/claudescope#claude-code-and-codex-plugin",
   "repository": "https://github.com/vladar107/claudescope",
   "license": "MIT",
   "keywords": [

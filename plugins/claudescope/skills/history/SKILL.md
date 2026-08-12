@@ -1,13 +1,13 @@
 ---
 name: history
 description: Search and analyze local ClaudeScope transcript history. Use when the user asks whether an error or solution happened before, what was previously decided, to find or inspect past coding-agent sessions, list recent or costly sessions and projects, compare token or cost usage, or create a dated work digest.
-argument-hint: [question or topic]
 ---
 
 # ClaudeScope history
 
 Use the installed ClaudeScope CLI to answer the current request. When invoked
-explicitly, treat `$ARGUMENTS` as the history question.
+explicitly, treat the text supplied after the skill name as the history
+question.
 
 1. Check `command -v claudescope >/dev/null 2>&1`. If it is missing, point the
    user to the supported [Quick start](https://github.com/vladar107/claudescope#quick-start)
@@ -17,8 +17,8 @@ explicitly, treat `$ARGUMENTS` as the history question.
    - Prior error, solution, or decision: `claudescope search '<terms>' --limit 5`.
      Add `--project <id>`, `--role user|assistant`, or `--scope sessions|memory|all`
      only when relevant. `claudescope search` snippets are unredacted and enter
-     the current Claude context, so use the fewest distinctive terms and results
-     needed.
+     the current conversation context, so use the fewest distinctive terms and
+     results needed.
    - Search hit context: `claudescope session <session-id> --around <message-uuid>
      --radius 4 --max-tool-chars 1200 --redact`.
    - Recent, expensive, or project/agent-specific sessions: `claudescope sessions
