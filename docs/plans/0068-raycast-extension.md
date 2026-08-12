@@ -3,7 +3,9 @@
 - **Status:** in-progress
 - **Date:** 2026-08-11
 - **PR:** ClaudeScope: https://github.com/vladar107/claudescope/pull/89;
-  Raycast Store: pending
+  Raycast Store: https://github.com/raycast/extensions/pull/30175
+- **Extension repository:** https://github.com/vladar107/claudescope-raycast
+- **Minimum ClaudeScope version:** 0.17.0
 
 ## Context
 
@@ -37,7 +39,7 @@ in the user's running app, including when ClaudeScope uses a non-default port.
 ## Decisions
 
 - **Keep extension code outside the ClaudeScope npm workspaces** — develop a
-  dedicated `raycast-claudescope` package/repository and publish it through the
+  dedicated `claudescope-raycast` package/repository and publish it through the
   Raycast Store workflow. This plan records the cross-repository contract; the
   Store PR owns the extension source once submitted.
 - **Use the CLI, never transcript storage or DuckDB** — invoke documented
@@ -122,8 +124,8 @@ ClaudeScope repository:
   status, versions, and both PR links current.
 - `docs/plans/README.md` — plan index entry.
 
-External `raycast-claudescope` package/repository (exact scaffold names may
-follow the current Raycast generator):
+External [`claudescope-raycast`](https://github.com/vladar107/claudescope-raycast)
+package/repository:
 
 - `package.json` and `package-lock.json` — Raycast manifest, commands,
   preferences, platform, scripts, and locked dependencies.
@@ -161,17 +163,26 @@ follow the current Raycast generator):
 
 ## Implementation status
 
-- The ClaudeScope branch implements and documents lazy root/session/message
-  opening. Existing tests, typecheck, build, bundle, and safe manual checks pass,
-  including validation-before-startup, encoded identifiers, a stopped daemon,
-  and a running daemon on a custom port.
-- The separate Raycast branch implements the three-command MVP, confirmed
-  `vladar107` as the manifest author, reuses ClaudeScope's icon, and passes the
-  current Raycast lint/build checks plus local source import.
-- This plan remains in progress until a ClaudeScope release containing the
-  deep-link contract exists, end-to-end Store screenshots can be captured
-  against that version, and the separately authorized Raycast Store PR is
-  opened. No release or publication action has been taken.
+- ClaudeScope PR [#89](https://github.com/vladar107/claudescope/pull/89) merged,
+  and ClaudeScope 0.17.0 released the lazy root/session/message opening contract.
+  Tests, typecheck, build, bundle, and safe manual checks passed, including
+  validation-before-startup, encoded identifiers, a stopped daemon, and a
+  running daemon on a custom port.
+- The standalone
+  [`vladar107/claudescope-raycast`](https://github.com/vladar107/claudescope-raycast)
+  repository contains the three-command extension, executable discovery and
+  preference override, local-only CLI client, user-facing setup errors,
+  ClaudeScope-aligned agent labels, and project display names. TypeScript,
+  Raycast lint, and production build checks pass, and all three commands were
+  exercised locally against ClaudeScope 0.17.0.
+- Two privacy-safe Store screenshots were captured with synthetic transcript
+  data. The Raycast submission includes a complete description, screenshots,
+  and completed publishing checklist in Store PR
+  [#30175](https://github.com/raycast/extensions/pull/30175).
+- This plan remains in progress only for the Store publication lifecycle. Store
+  PR #30175 is open as a draft and must be marked ready for review. Mark the
+  plan done, update the plan index, and add the live Store URL after Raycast
+  merges the submission and the public installation is verified.
 
 ## Risks / open questions
 
@@ -186,9 +197,10 @@ follow the current Raycast generator):
 - Live search starts a short CLI process after a debounce. Avoid firing on empty
   or very short input and discard stale responses so typing cannot reorder the
   results.
-- Store review may request metadata, screenshots, or implementation changes.
+- Store PR [#30175](https://github.com/raycast/extensions/pull/30175) may receive
+  requests for metadata, screenshots, or implementation changes.
   Keep those changes in the external extension unless they expose a genuine
   ClaudeScope integration-contract problem.
-- ClaudeScope release publication and `npm run publish` for Raycast change
-  external state. Planning and implementation approval do not by themselves
-  authorize either action; pause at both handoff points.
+- The ClaudeScope release and initial Raycast submission are complete. Any
+  review-driven Store update remains an external change and should stay in the
+  standalone extension or Raycast Store PR unless it changes the CLI contract.
