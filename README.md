@@ -164,7 +164,8 @@ claudescope start      # start in the background (idempotent), open the browser
 claudescope stop       # stop the background server
 claudescope restart    # restart it
 claudescope status     # is it running? is an update available?
-claudescope open       # open the running app in your browser
+claudescope open       # start if needed, then open the app in your browser
+claudescope open --session <id> [--around <uuid>]  # open an exact session/message
 claudescope logs -f    # tail the server log
 claudescope update          # upgrade to the latest published version and restart
 claudescope pricing update  # fetch current model prices (LiteLLM) into the local rate table
@@ -234,13 +235,16 @@ start the background server on first use and print tables (or raw JSON with
 claudescope search "duckdb lock" --limit 5      # where did I hit this before?
 claudescope sessions --agent codex --sort cost  # priciest Codex sessions
 claudescope session <id> --around <uuid>        # open a search hit, windowed
+claudescope open --session <id> --around <uuid> # open that hit in the web app
 claudescope analytics --group-by day --json | jq '.rows[] | [.key, .costUsd]'
 claudescope digest --from 2026-06-23 --to 2026-06-29   # week in review, as Markdown
 ```
 
 `session` prints a pageable window of turns as Markdown (`--offset/--limit`,
 `--redact` to mask paths/secrets); `--json` returns the raw API response
-unredacted. See `claudescope help` for the full flag list.
+unredacted. `open` starts the daemon lazily and preserves its configured port;
+session ids and message anchors are URL-encoded before the browser opens. See
+`claudescope help` for the full flag list.
 
 ---
 

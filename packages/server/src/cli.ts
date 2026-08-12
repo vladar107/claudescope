@@ -189,14 +189,30 @@ async function status(): Promise<void> {
   await maybeNotifyUpdate(true);
 }
 
-/** Open the running app, or hint to start it first. */
-function openApp(): void {
-  const d = readDaemon();
-  if (d && isAlive(d.pid)) {
-    openBrowser(d.url);
-  } else {
-    console.log('claudescope is not running. Start it with: claudescope start');
+/** Open the app root or an encoded session/message deep link, starting the
+ *  daemon first when needed. Flag validation happens before daemon startup. */
+async function openApp(session: string | undefined, around: string | undefined): Promise<void> {
+  if (around !== undefined && session === undefined) {
+    throw new UsageError('usage: claudescope open [--session id] [--around uuid]');
   }
+  if (session !== undefined && session.length === 0) {
+    throw new UsageError('--session expects a non-empty session id');
+  }
+  if (around !== undefined && around.length === 0) {
+    throw new UsageError('--around expects a non-empty message uuid');
+  }
+
+  const d = await ensureDaemon();
+  if (!Number.isInteger(d.port) || d.port < 1 || d.port > 65535) {
+    throw new UsageError('claudescope daemon returned an invalid port; run `claudescope restart`');
+  }
+  // daemon.json is local state but not a trusted navigation target. Rebuild the
+  // URL from the ensured, validated port so `open` can only reach loopback.
+  const baseUrl = `http://127.0.0.1:${d.port}`;
+  const url = session
+    ? `${baseUrl}/sessions/${encodeURIComponent(session)}${around ? `#${encodeURIComponent(around)}` : ''}`
+    : baseUrl;
+  openBrowser(url);
 }
 
 /** Last `n` lines of the daemon log, or '' when there is nothing to show.
@@ -388,7 +404,8 @@ Commands:
   stop             Stop the background server
   restart          Restart the background server
   status           Show whether the server is running and if an update exists
-  open             Open the running app in your browser
+  open             Open the app, starting it first if needed
+                   [--session id] [--around uuid]
   logs [-f]        Print the server log (-f / --follow to tail it)
   mcp              Run an MCP stdio server exposing transcript search/reading
                    (register with: claude mcp add claudescope -- claudescope mcp)
@@ -443,6 +460,7 @@ async function main(): Promise<void> {
       q: { type: 'string' },
       limit: { type: 'string' },
       offset: { type: 'string' },
+      session: { type: 'string' },
       around: { type: 'string' },
       radius: { type: 'string' },
       'max-tool-chars': { type: 'string' },
@@ -477,7 +495,7 @@ async function main(): Promise<void> {
       await status();
       break;
     case 'open':
-      openApp();
+      await openApp(values.session, values.around);
       break;
     case 'logs':
       logs(Boolean(values.follow));
