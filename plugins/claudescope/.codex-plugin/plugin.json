@@ -1,0 +1,37 @@
+{
+  "name": "claudescope",
+  "version": "1.1.0",
+  "description": "Search and analyze local AI coding-agent transcript history with ClaudeScope's read-only CLI.",
+  "author": {
+    "name": "Vladislav Ramazaev",
+    "email": "vladar107@gmail.com",
+    "url": "https://github.com/vladar107"
+  },
+  "homepage": "https://github.com/vladar107/claudescope#claude-code-and-codex-plugin",
+  "repository": "https://github.com/vladar107/claudescope",
+  "license": "MIT",
+  "keywords": [
+    "transcripts",
+    "history",
+    "claude-code",
+    "codex",
+    "analytics"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "ClaudeScope",
+    "shortDescription": "Search local coding-agent transcript history.",
+    "longDescription": "Use ClaudeScope's read-only CLI to find prior solutions and decisions, inspect sessions, compare usage, and create dated work digests.",
+    "developerName": "Vladislav Ramazaev",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "websiteURL": "https://github.com/vladar107/claudescope",
+    "defaultPrompt": [
+      "Find whether we solved this error before.",
+      "Show my recent Codex sessions.",
+      "Compare token usage by agent last week."
+    ]
+  }
+}

@@ -206,10 +206,10 @@ payloads truncated), `get_analytics` (token/cost aggregates), and `get_memory`
 agent's context window; pass `redact: true` to mask home paths and likely
 secrets. Everything stays read-only and on localhost.
 
-### Claude Code plugin
+### Claude Code and Codex plugin
 
-For a Claude Code path that needs no MCP registration, install the repository's
-plugin (the `claudescope` CLI must already be on `PATH`):
+For a plugin path that needs no MCP registration, install the repository's
+shared plugin (the `claudescope` CLI must already be on `PATH`). In Claude Code:
 
 ```text
 /plugin marketplace add vladar107/claudescope
@@ -217,13 +217,21 @@ plugin (the `claudescope` CLI must already be on `PATH`):
 /reload-plugins
 ```
 
-The model-invocable `/claudescope:history` skill teaches Claude when to use the
-read-only query CLI for prior solutions, decisions, session inspection, usage
-analytics, and dated work digests. It keeps searches and session windows narrow;
-transcript results enter the current Claude context. The plugin is the minimal
-Claude Code setup, while `claudescope mcp` remains the structured, typed option
-for MCP-capable clients. See the [plugin guide](./integrations/claude-code/README.md)
-for usage and local development.
+In Codex:
+
+```bash
+codex plugin marketplace add vladar107/claudescope
+codex plugin add claudescope@claudescope
+```
+
+The shared `/claudescope:history` (Claude Code) or `$claudescope:history`
+(Codex) skill teaches the model when to use the read-only query CLI for prior
+solutions, decisions, session inspection, usage analytics, and dated work
+digests. It keeps searches and session windows narrow; transcript results enter
+the current conversation context. The plugin is the minimal setup, while
+`claudescope mcp` remains the structured, typed option for MCP-capable clients.
+See the [plugin guide](./plugins/claudescope/README.md) for usage and local
+development.
 
 ### Scripting (CLI)
 
