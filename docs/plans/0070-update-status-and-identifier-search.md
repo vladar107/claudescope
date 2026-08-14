@@ -1,8 +1,8 @@
 # 0070 — Reliable update status and identifier search
 
-- **Status:** in-progress
+- **Status:** done
 - **Date:** 2026-08-14
-- **PR:** pending
+- **PR:** https://github.com/vladar107/claudescope/pull/91
 
 ## Context
 
