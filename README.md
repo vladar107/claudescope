@@ -47,9 +47,10 @@ Claudescope works whether you use one agent or all eight. Adding another is just
 > `~/.copilot`, `~/.gemini`, `~/.grok`, and opencode's database) is treated as strictly read-only. Its only persistent
 > state lives in `~/.claudescope/` — a DuckDB index, a copy of the pricing file, and
 > a cached pricing snapshot (`pricing.fetched.json`), all safe to delete anytime. The
-> sole outbound requests are an optional daily check for a newer published version
-> (`claudescope update`) and an optional daily pricing refresh (`claudescope pricing
-> update`); nothing about your transcripts ever leaves your machine.
+> sole outbound requests are a cached daily check for a newer published version
+> (plus checks you explicitly trigger from Settings or with `claudescope update`)
+> and an optional daily pricing refresh (`claudescope pricing update`); nothing
+> about your transcripts ever leaves your machine.
 
 ---
 

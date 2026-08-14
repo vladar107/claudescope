@@ -33,7 +33,8 @@
 //      listed in pricing 'providers' zero-rate at index time.
 // v12: Codex fallback titles skip the injected AGENTS/environment bootstrap.
 // v13: fallback titles skip complete synthetic command/system turns for every connector.
-export const SCHEMA_VERSION = 13;
+// v14: FTS retains numeric terms for versions, issue keys, and other identifiers.
+export const SCHEMA_VERSION = 14;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [

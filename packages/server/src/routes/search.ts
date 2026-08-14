@@ -39,6 +39,11 @@ async function searchSessions(
   // which is applied once when the connection opens (see db/duckdb.ts) rather than
   // here — it is a connection-level setting, and the connection is shared.
   const conn = await getConnection();
+  const identifierQuery = /\d/.test(q);
+  const matchExpression = `fts_main_events.match_bm25(
+    e.uuid,
+    ${sqlString(q)}${identifierQuery ? ', conjunctive := true' : ''}
+  )`;
 
   const filters: string[] = ['score IS NOT NULL'];
   if (type === 'user' || type === 'assistant') filters.push(`role = ${sqlString(type)}`);
@@ -54,13 +59,18 @@ async function searchSessions(
          e.text_content AS text_content,
          s.project_cwd AS project_cwd,
          s.title AS title,
-         fts_main_events.match_bm25(e.uuid, ${sqlString(q)}) AS score
+         ${
+           identifierQuery
+             ? `contains(lower(e.text_content), ${sqlString(q.toLowerCase())})`
+             : 'FALSE'
+         } AS exact_match,
+         ${matchExpression} AS score
        FROM events e
        JOIN sessions s ON s.id = e.session_id
        WHERE e.text_content IS NOT NULL
      )
      WHERE ${filters.join(' AND ')}
-     ORDER BY score DESC
+     ORDER BY exact_match DESC, score DESC
      LIMIT 50`,
   );
 

@@ -62,7 +62,9 @@ None of these are misused; they're listed here so you can verify that.
 - Shipped code makes exactly **two kinds of outbound request**, both to
   hardcoded trusted endpoints:
   - a version check against `https://registry.npmjs.org` (cached for 24h) to
-    tell you when an update is available (`packages/server/src/cli.ts`);
+    tell you when an update is available; the Settings **Check Update** action
+    and `claudescope update` explicitly bypass that cache
+    (`packages/server/src/update-check.ts`);
   - a daily fetch of model pricing rates from LiteLLM's public table at
     `https://raw.githubusercontent.com/BerriAI/litellm/…/model_prices_and_context_window.json`
     (`packages/server/src/data/pricing-refresh.ts`), validated and written

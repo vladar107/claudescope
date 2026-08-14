@@ -94,3 +94,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0067 | [Claude Code plugin and marketplace](./0067-claude-code-plugin-marketplace.md) | done |
 | 0068 | [Raycast extension and deep-link CLI seam](./0068-raycast-extension.md) | in-progress |
 | 0069 | [Shared Claude Code and Codex plugin](./0069-shared-claude-codex-plugin.md) | done |
+| 0070 | [Reliable update status and identifier search](./0070-update-status-and-identifier-search.md) | done |
