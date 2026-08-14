@@ -67,12 +67,17 @@ export function getCachedLatest(): string | null {
   return cachedLatest;
 }
 
-/** Refresh the daemon-side cache from the (file-cached) registry lookup.
- *  Never throws — offline just leaves the last-known value in place. */
-export async function refreshLatestVersion(): Promise<void> {
+/** Refresh the daemon-side cache from the registry lookup. `force` bypasses the
+ *  24-hour file cache for an explicit user check. Never throws: offline keeps
+ *  the last-known value and reports failure to callers that need to surface it. */
+export async function refreshLatestVersion(force = false): Promise<boolean> {
   try {
-    cachedLatest = (await getLatestVersion(false)) ?? cachedLatest;
+    const latest = await getLatestVersion(force);
+    if (latest === null) return false;
+    cachedLatest = latest;
+    return true;
   } catch {
     /* offline or registry hiccup — keep the last-known value */
+    return false;
   }
 }

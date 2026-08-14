@@ -293,4 +293,9 @@ export const api = {
   systemInfo(signal?: AbortSignal): Promise<SystemInfoResponse> {
     return request<SystemInfoResponse>('/system', { signal });
   },
+
+  /** POST /api/system/update-check — bypass the daily cache and check now. */
+  refreshUpdateCheck(signal?: AbortSignal): Promise<SystemInfoResponse> {
+    return request<SystemInfoResponse>('/system/update-check', { method: 'POST', signal });
+  },
 };

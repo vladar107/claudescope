@@ -15,6 +15,7 @@ import {
   Moon,
   Monitor,
   Play,
+  RefreshCw,
   RotateCcw,
   Square,
   Sun,
@@ -113,6 +114,10 @@ export function SettingsPage() {
   const [pricingBusy, setPricingBusy] = useState(false);
   const [pricingResult, setPricingResult] = useState<string | null>(null);
 
+  const [updateCheckBusy, setUpdateCheckBusy] = useState(false);
+  const [updateCheckedNow, setUpdateCheckedNow] = useState(false);
+  const [updateCheckError, setUpdateCheckError] = useState<string | null>(null);
+
   const [rebuildOpen, setRebuildOpen] = useState(false);
   const [rebuildBusy, setRebuildBusy] = useState(false);
 
@@ -145,6 +150,8 @@ export function SettingsPage() {
   }, [seedDraft]);
 
   const editable = settings?.editable ?? [];
+  const availableVersion =
+    health.updateAvailable ?? (system?.updateAvailable ? system.latestVersion : null);
   const dirtyKeys = useMemo(
     // String-compare: number inputs hold strings mid-edit, so '15000' vs
     // 15000 must not count as dirty when the user reverts an edit.
@@ -164,6 +171,19 @@ export function SettingsPage() {
     setFieldErrors({});
     setNotice(null);
   }, [settings, seedDraft]);
+
+  const checkUpdate = useCallback(async () => {
+    setUpdateCheckBusy(true);
+    setUpdateCheckError(null);
+    try {
+      setSystem(await api.refreshUpdateCheck());
+      setUpdateCheckedNow(true);
+    } catch (err) {
+      setUpdateCheckError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUpdateCheckBusy(false);
+    }
+  }, []);
 
   const save = useCallback(async () => {
     if (!settings || dirtyKeys.length === 0) return;
@@ -366,21 +386,33 @@ export function SettingsPage() {
             busy={pricingBusy}
             onClick={() => void syncPricing()}
           />
+          <ActionTile
+            icon={RefreshCw}
+            label="Check Update"
+            busy={updateCheckBusy}
+            onClick={() => void checkUpdate()}
+          />
         </div>
         <div className="tv-settings__meta">
           {system ? (
             <>
               v{system.version} · up {formatUptime(system.startedAt)}
-              {system.updateAvailable && system.latestVersion ? (
+              {availableVersion ? (
                 <>
                   {' · '}
                   <span className="tv-settings__hint--warn">
-                    v{system.latestVersion} available:{' '}
+                    v{availableVersion} available:{' '}
                     <code className="tv-mono">{system.updateCommand}</code>
                   </span>
                 </>
+              ) : updateCheckError ? (
+                <span className="tv-settings__hint--warn"> · update check failed</span>
+              ) : updateCheckedNow ? (
+                ' · up to date (checked now)'
+              ) : system.latestVersion ? (
+                ' · no update in cached daily check'
               ) : (
-                ' · up to date'
+                ' · update status unavailable'
               )}
             </>
           ) : null}

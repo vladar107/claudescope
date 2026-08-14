@@ -561,9 +561,13 @@ async function applyFallbackTitles(conn: DuckDBConnection): Promise<void> {
 
 /** (Re)build the BM25 full-text index over event text. */
 async function rebuildFtsIndex(conn: DuckDBConnection): Promise<void> {
-  // create_fts_index requires overwrite=1 to replace an existing index.
+  // DuckDB's default ignore expression drops every non-letter, which makes
+  // versions, issue numbers, and other identifiers impossible to find. Keep
+  // digits as terms while punctuation remains a token boundary.
   await conn.run(`
-    PRAGMA create_fts_index('events', 'uuid', 'text_content', overwrite=1)
+    PRAGMA create_fts_index(
+      'events', 'uuid', 'text_content', ignore='[^a-z0-9]+', overwrite=1
+    )
   `);
   // Force a CHECKPOINT so the FTS index DDL is merged into the main DB file
   // instead of lingering in the WAL. DuckDB cannot replay the FTS schema's
