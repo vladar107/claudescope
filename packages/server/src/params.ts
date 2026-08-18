@@ -23,6 +23,24 @@ export class BadRequestError extends Error {
   }
 }
 
+/** `YYYY-MM-DD`, captured so calendar validity can be checked without coercion. */
+const ISO_DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** True only for a real proleptic-Gregorian calendar day. */
+function isCalendarDay(value: string): boolean {
+  const match = ISO_DAY_RE.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1) return false;
+
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= daysInMonth[month - 1]!;
+}
+
 /**
  * Timestamp shapes accepted for a date bound. Covers exactly what the callers
  * send: `YYYY-MM-DD` (the MCP/CLI contract), and a full ISO timestamp with
@@ -38,8 +56,8 @@ const TIMESTAMP_RE =
  *
  * Returns `undefined` for an absent/empty value (the bound is simply not
  * applied) and throws {@link BadRequestError} for anything unusable. The regex
- * checks shape; `Date.parse` then checks the calendar, so `2026-13-45` is
- * rejected here rather than becoming a DuckDB conversion error.
+ * checks shape, {@link isCalendarDay} checks the date without JavaScript's
+ * overflow normalization, and `Date.parse` checks the remaining time/offset.
  *
  * The value is returned unchanged — callers still wrap it in `sqlString` and the
  * cast stays `TIMESTAMP` (not `TIMESTAMPTZ`), so any offset keeps being ignored
@@ -49,16 +67,17 @@ export function timestampParam(raw: string | undefined, field: string): string |
   if (raw === undefined) return undefined;
   const value = raw.trim();
   if (value === '') return undefined;
-  if (!TIMESTAMP_RE.test(value) || Number.isNaN(Date.parse(value))) {
+  if (
+    !TIMESTAMP_RE.test(value) ||
+    !isCalendarDay(value.slice(0, 10)) ||
+    Number.isNaN(Date.parse(value))
+  ) {
     throw new BadRequestError(
       `${field} must be YYYY-MM-DD or an ISO timestamp (got '${value}')`,
     );
   }
   return value;
 }
-
-/** `YYYY-MM-DD` only — the shape the activity punchcard's `today` anchor uses. */
-const ISO_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Validate a calendar-day param. Unlike {@link timestampParam} an unusable value
@@ -68,6 +87,27 @@ const ISO_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 export function isoDayParam(raw: string | undefined): string | undefined {
   if (raw === undefined) return undefined;
   const value = raw.trim();
-  if (!ISO_DAY_RE.test(value) || Number.isNaN(Date.parse(value))) return undefined;
+  if (!isCalendarDay(value)) return undefined;
   return value;
+}
+
+/**
+ * Validate a string-valued enum query param and apply its documented default.
+ * TypeScript's unions disappear at runtime, so public routes must narrow the
+ * arbitrary query string before treating it as one of those values.
+ */
+export function enumParam<const T extends string>(
+  raw: string | undefined,
+  field: string,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  if (raw === undefined) return fallback;
+  const value = raw.trim();
+  if (!allowed.some((candidate) => candidate === value)) {
+    throw new BadRequestError(
+      `${field} must be one of ${allowed.join(', ')} (got '${value}')`,
+    );
+  }
+  return value as T;
 }

@@ -1,5 +1,5 @@
 {
-  description = "Local, read-only viewer for AI coding-agent transcripts (Claude Code, Codex, Junie)";
+  description = "Local, read-only viewer for AI coding-agent transcripts";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

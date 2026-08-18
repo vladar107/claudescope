@@ -2,7 +2,7 @@
   "name": "claudescope",
   "version": "0.17.0",
   "private": true,
-  "description": "Local, read-only web app to browse, read, search, and analyze your AI coding-agent transcripts — Claude Code, OpenAI Codex, and JetBrains Junie.",
+  "description": "Local, read-only web app to browse, read, search, and analyze your AI coding-agent transcripts.",
   "keywords": [
     "claude",
     "claude-code",
@@ -11,6 +11,11 @@
     "openai",
     "junie",
     "jetbrains",
+    "pi",
+    "opencode",
+    "copilot",
+    "antigravity",
+    "grok",
     "transcripts",
     "sessions",
     "viewer",
@@ -46,7 +51,7 @@
     "screenshots": "node scripts/screenshots.mjs"
   },
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.13.0"
   },
   "devDependencies": {
     "concurrently": "^9.2.4",

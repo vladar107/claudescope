@@ -1,10 +1,11 @@
 # Security Policy
 
 Claudescope is a **local, read-only** viewer for your AI coding-agent transcripts
-— Claude Code, OpenAI Codex, JetBrains Junie, pi, opencode, and GitHub Copilot CLI. It runs on your
-machine, binds to loopback only, and is designed to touch as little of your
-system as possible. This document describes exactly what it does so you can audit
-it, and how to report anything that looks wrong.
+— Claude Code, OpenAI Codex, JetBrains Junie, pi, opencode, GitHub Copilot CLI,
+Google Antigravity, and xAI Grok CLI. It runs on your machine, binds to loopback
+only, and is designed to touch as little of your system as possible. This
+document describes exactly what it does so you can audit it, and how to report
+anything that looks wrong.
 
 ## Reporting a vulnerability
 
@@ -37,6 +38,10 @@ None of these are misused; they're listed here so you can verify that.
   - `~/.local/share/opencode/opencode.db` — opencode, a SQLite database opened
     **read-only** via Node's built-in `node:sqlite` (override:
     `$OPENCODE_DATA_DIR` / `$OPENCODE_DB_PATH`)
+  - `~/.gemini/antigravity-cli/brain/**` and `~/.gemini/antigravity/brain/**` —
+    Google Antigravity CLI and desktop (overrides: `$ANTIGRAVITY_CLI_DIR` /
+    `$ANTIGRAVITY_DIR`)
+  - `~/.grok/sessions/**` — xAI Grok CLI (override: `$GROK_SESSIONS_DIR`)
 - **Reads** agent **memory** live (never indexed) from those same read-only home
   dirs — long-lived instruction files and any agent-distilled memory — strictly
   within each agent's own directory, never from your project folders.
@@ -59,8 +64,8 @@ None of these are misused; they're listed here so you can verify that.
   blocks DNS-rebinding attacks, where a malicious site you visit rebinds its own
   hostname to `127.0.0.1` to read your transcripts past the loopback bind. Override
   the allowlist with `CLAUDESCOPE_ALLOWED_HOSTS` for custom local hostnames.
-- Shipped code makes exactly **two kinds of outbound request**, both to
-  hardcoded trusted endpoints:
+- Shipped code makes exactly **two kinds of outbound request**, with these
+  default destinations:
   - a version check against `https://registry.npmjs.org` (cached for 24h) to
     tell you when an update is available; the Settings **Check Update** action
     and `claudescope update` explicitly bypass that cache
@@ -68,8 +73,9 @@ None of these are misused; they're listed here so you can verify that.
   - a daily fetch of model pricing rates from LiteLLM's public table at
     `https://raw.githubusercontent.com/BerriAI/litellm/…/model_prices_and_context_window.json`
     (`packages/server/src/data/pricing-refresh.ts`), validated and written
-    atomically to `~/.claudescope/pricing.fetched.json`. Set
-    `PRICING_REFRESH_INTERVAL_MS=0` to disable it entirely.
+    atomically to `~/.claudescope/pricing.fetched.json`. Override the source
+    with `LITELLM_PRICING_URL`, or set `PRICING_REFRESH_INTERVAL_MS=0` to
+    disable it entirely.
 
   Both are GET requests that **send no data** beyond the request itself.
 - **No telemetry, analytics, or data exfiltration.** Your transcript content
