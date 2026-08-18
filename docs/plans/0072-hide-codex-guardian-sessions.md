@@ -2,7 +2,7 @@
 
 - **Status:** done
 - **Date:** 2026-08-18
-- **PR:** pending
+- **PR:** https://github.com/vladar107/claudescope/pull/93
 
 ## Context
 
