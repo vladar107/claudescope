@@ -96,3 +96,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0069 | [Shared Claude Code and Codex plugin](./0069-shared-claude-codex-plugin.md) | done |
 | 0070 | [Reliable update status and identifier search](./0070-update-status-and-identifier-search.md) | done |
 | 0071 | [Runtime and query validation fixes](./0071-runtime-and-query-validation.md) | done |
+| 0072 | [Hide Codex guardian sessions](./0072-hide-codex-guardian-sessions.md) | done |

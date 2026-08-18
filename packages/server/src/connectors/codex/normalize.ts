@@ -18,7 +18,8 @@
  * its parent via `source.subagent.thread_spawn.parent_thread_id`; it is re-keyed
  * to the ROOT thread id (`is_sidechain: true`) so it folds into the parent
  * session, and the parent's `spawn_agent` call becomes a canonical `Task` block
- * the nested run anchors to.
+ * the nested run anchors to. Internal approval-review rollouts marked as
+ * `source.subagent.other: "guardian"` are omitted entirely.
  */
 
 import { closeSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
@@ -470,6 +471,13 @@ export function parseRollout(path: string): CodexSession | null {
   }
 
   const meta = lines.find((l) => l.type === 'session_meta')?.payload ?? {};
+  const subagentSource = rec(rec(meta.source).subagent);
+  // Guardian rollouts contain Codex's synthetic approval-review transcript,
+  // not a user conversation. They have no thread_spawn linkage and otherwise
+  // fall through as top-level sessions whose history looks like one user turn.
+  if (str(meta.thread_source) === 'subagent' && str(subagentSource.other) === 'guardian') {
+    return null;
+  }
   const sessionId = str(meta.id) || sessionIdFromPath(path);
   const cwd = str(meta.cwd);
   const git = meta.git as Record<string, unknown> | undefined;
@@ -483,7 +491,7 @@ export function parseRollout(path: string): CodexSession | null {
   let isSidechain = false;
   let agentRole: string | undefined;
   if (str(meta.thread_source) === 'subagent') {
-    const spawn = rec(rec(rec(meta.source).subagent).thread_spawn);
+    const spawn = rec(subagentSource.thread_spawn);
     const parentId = str(spawn.parent_thread_id);
     agentRole = str(spawn.agent_role) || undefined;
     if (parentId) {
