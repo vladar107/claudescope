@@ -1,8 +1,8 @@
 # 0071 — Runtime and query validation fixes
 
-- **Status:** in-progress <!-- proposed | in-progress | done | superseded | abandoned -->
+- **Status:** done <!-- proposed | in-progress | done | superseded | abandoned -->
 - **Date:** 2026-08-18
-- **PR:** <link, once opened>
+- **PR:** https://github.com/vladar107/claudescope/pull/92
 
 ## Context
 
