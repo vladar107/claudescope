@@ -13,7 +13,6 @@ import type {
   MemorySearchHit,
   SearchResponse,
   SearchResult,
-  SearchScope,
   SearchType,
   SnippetFormat,
 } from '@claudescope/shared';
@@ -22,10 +21,13 @@ import { readRow } from '../db/row.js';
 import { projectIdFromCwd } from '../data/project-id.js';
 import { projectFilter } from '../data/analytics-scope.js';
 import { collectMemory } from '../data/memory.js';
+import { enumParam } from '../params.js';
 import { makeSnippet } from './snippet.js';
 
 /** Cap on live memory hits returned. */
 const MEMORY_LIMIT = 50;
+const SEARCH_TYPES = ['user', 'assistant', 'all'] as const;
+const SEARCH_SCOPES = ['sessions', 'all', 'memory'] as const;
 
 /** Sessions (BM25) search. Empty unless scope includes sessions. */
 async function searchSessions(
@@ -144,9 +146,9 @@ export async function registerSearchRoute(app: FastifyInstance): Promise<void> {
     if (!q) return { sessions: [], memory: [] };
 
     const terms = q.split(/\s+/).filter(Boolean);
-    const type = (req.query.type as SearchType) ?? 'all';
+    const type = enumParam(req.query.type, 'type', SEARCH_TYPES, 'all');
     const project = req.query.project;
-    const scope = (req.query.scope as SearchScope) ?? 'sessions';
+    const scope = enumParam(req.query.scope, 'scope', SEARCH_SCOPES, 'sessions');
     const format: SnippetFormat = req.query.format === 'plain' ? 'plain' : 'html';
 
     // Each kind is guarded so a failure in one (e.g. an FTS edge case) still

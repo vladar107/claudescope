@@ -12,7 +12,7 @@ question.
 1. Check `command -v claudescope >/dev/null 2>&1`. If it is missing, point the
    user to the supported [Quick start](https://github.com/vladar107/claudescope#quick-start)
    options. Mention `npm install -g @vladar107/claudescope` only with its Node.js
-   22.12+ requirement; Homebrew and Nix are alternatives. Then stop.
+   22.13+ requirement; Homebrew and Nix are alternatives. Then stop.
 2. Choose the narrowest read-only query:
    - Prior error, solution, or decision: `claudescope search '<terms>' --limit 5`.
      Add `--project <id>`, `--role user|assistant`, or `--scope sessions|memory|all`

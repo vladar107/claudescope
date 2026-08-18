@@ -6,7 +6,7 @@ them merged. For architecture and conventions, see [`CLAUDE.md`](./CLAUDE.md)
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org) **22.12 or newer** (`node -v`) — matches the
+- [Node.js](https://nodejs.org) **22.13 or newer** (`node -v`) — matches the
   `engines` field in `package.json`.
 
 ## Setup & dev loop

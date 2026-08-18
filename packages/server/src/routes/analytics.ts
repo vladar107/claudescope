@@ -25,6 +25,9 @@ import { readRow } from '../db/row.js';
 import { cacheHitRatio } from '../data/analytics-metrics.js';
 import { scopeFilters } from '../data/analytics-scope.js';
 import { projectIdFromCwd } from '../data/project-id.js';
+import { enumParam } from '../params.js';
+
+const ANALYTICS_GROUPS = ['project', 'model', 'day', 'agent'] as const;
 
 /**
  * The grouping key expression plus the FROM clause it needs. Project grouping
@@ -57,7 +60,7 @@ export async function registerAnalyticsRoute(app: FastifyInstance): Promise<void
     Querystring: { groupBy?: string; from?: string; to?: string };
   }>('/api/analytics', async (req): Promise<AnalyticsResponse> => {
     const conn = await getConnection();
-    const groupBy = (req.query.groupBy as AnalyticsGroupBy) ?? 'project';
+    const groupBy = enumParam(req.query.groupBy, 'groupBy', ANALYTICS_GROUPS, 'project');
     const { keyExpr, fromSql } = groupSource(groupBy);
 
     // Bounds go through the shared scope helper (which validates them); this

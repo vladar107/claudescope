@@ -30,6 +30,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
+import { isoDayParam } from '../src/params.js';
 
 // --- temp locations (decided before any server module is imported) ----------
 const work = mkdtempSync(join(tmpdir(), 'claudescope-params-'));
@@ -182,9 +183,28 @@ describe('date bounds are validated at every bounded endpoint', () => {
     expect(res.json().error).toMatch(/^to must be/);
   });
 
-  it('rejects a well-shaped but impossible calendar date', async () => {
-    // Passes a naive regex; DuckDB would have raised a conversion error.
-    const res = await get('/api/analytics?from=2026-13-45');
+  it.each(['2026-13-45', '2026-02-29', '2026-02-30', '2026-04-31'])(
+    'rejects the impossible calendar date %s',
+    async (value) => {
+      // These pass or probe beyond a naive shape check; some are normalized by
+      // Date.parse even though DuckDB rejects the original string.
+      const res = await get(`/api/analytics?from=${value}`);
+      expect(res.statusCode).toBe(400);
+    },
+  );
+
+  it('ignores an impossible optional today anchor instead of normalizing it', () => {
+    expect(isoDayParam('2026-02-31')).toBeUndefined();
+  });
+
+  it('accepts a real leap day', async () => {
+    const res = await get('/api/analytics?from=2028-02-29');
+    expect(res.statusCode).toBe(200);
+    expect(isoDayParam('2028-02-29')).toBe('2028-02-29');
+  });
+
+  it('rejects an impossible calendar date inside a full timestamp', async () => {
+    const res = await get('/api/analytics?from=2026-02-31T12:00:00.000Z');
     expect(res.statusCode).toBe(400);
   });
 
@@ -202,6 +222,23 @@ describe('date bounds are validated at every bounded endpoint', () => {
       expect(res.statusCode).toBe(200);
     },
   );
+});
+
+describe('string enum params are validated at the HTTP boundary', () => {
+  it('rejects an unsupported analytics grouping', async () => {
+    const res = await get('/api/analytics?groupBy=garbage');
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/^groupBy must be one of/);
+  });
+
+  it.each([
+    ['type', 'garbage'],
+    ['scope', 'garbage'],
+  ])('rejects unsupported search %s=%s', async (field, value) => {
+    const res = await get(`/api/search?q=day&${field}=${value}`);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(new RegExp(`^${field} must be one of`));
+  });
 });
 
 describe('bound semantics survived the scopeFilters consolidation', () => {

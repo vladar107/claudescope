@@ -132,7 +132,7 @@ your browser. Run it once and forget it; new sessions appear automatically.
 
 ### npm (recommended)
 
-**Prerequisite:** [Node.js](https://nodejs.org) **22.12 or newer** (`node -v`).
+**Prerequisite:** [Node.js](https://nodejs.org) **22.13 or newer** (`node -v`).
 
 ```bash
 npm install -g @vladar107/claudescope
@@ -483,7 +483,7 @@ shell, and self-update behavior — and how to report a vulnerability.
   the banner and set them correctly. Any source can be absent; only the present
   ones are indexed.
 - **`Error: listen EADDRINUSE :4317`** — the port is taken; run `claudescope --port <n>`.
-- **Node version errors** — you need Node ≥ 22.12 (`node -v`).
+- **Node version errors** — you need Node ≥ 22.13 (`node -v`).
 - **Stale or wrong data** — delete `~/.claudescope/index.duckdb*` and
   `claudescope restart` to rebuild the index from scratch.
 - **`@duckdb/node-api` install issues** — it ships prebuilt native binaries;
