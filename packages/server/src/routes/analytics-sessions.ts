@@ -50,6 +50,7 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
       project?: string;
       from?: string;
       to?: string;
+      timeZone?: string;
       sort?: string;
       dir?: string;
       limit?: string;

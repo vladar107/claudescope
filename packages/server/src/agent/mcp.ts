@@ -34,6 +34,7 @@ import {
   shapeSearchResults,
   shapeSessionMarkdown,
 } from './shape.js';
+import { detectedTimeZone } from './query.js';
 
 /** Char cap for memory bodies in `get_memory`. */
 const MEMORY_BODY_CHARS = 2000;
@@ -210,15 +211,25 @@ export function createMcpServer(deps: McpDeps): McpServer {
     {
       description:
         'Aggregated token/cost usage grouped by project, model, day, or agent, with totals. ' +
-        'Cost is a local list-price estimate, not billing. Dates are YYYY-MM-DD.',
+        'Cost is a local list-price estimate, not billing. Date-only bounds are calendar days ' +
+        'in the selected IANA time zone; timestamps with offsets identify exact instants.',
       inputSchema: z.object({
         groupBy: z.enum(['project', 'model', 'day', 'agent']).optional().describe('Grouping (default project)'),
-        from: z.string().optional().describe('Start date (inclusive)'),
-        to: z.string().optional().describe('End date (inclusive)'),
+        from: z.string().optional().describe('Inclusive start date or ISO timestamp'),
+        to: z.string().optional().describe('Inclusive end date or ISO timestamp'),
+        timeZone: z
+          .string()
+          .optional()
+          .describe('IANA time zone for date-only bounds and day grouping (default machine time zone)'),
       }),
     },
-    guarded(async (client, args: { groupBy?: 'project' | 'model' | 'day' | 'agent'; from?: string; to?: string }) => {
-      const res = await client.analytics({ groupBy: args.groupBy ?? 'project', from: args.from, to: args.to });
+    guarded(async (client, args: { groupBy?: 'project' | 'model' | 'day' | 'agent'; from?: string; to?: string; timeZone?: string }) => {
+      const res = await client.analytics({
+        groupBy: args.groupBy ?? 'project',
+        from: args.from,
+        to: args.to,
+        timeZone: args.timeZone ?? detectedTimeZone(),
+      });
       if (res.rows.length === 0) return 'No usage in range.';
       const lines = res.rows.map(
         (row) =>

@@ -14,7 +14,7 @@ import { scopeFilters } from '../data/analytics-scope.js';
 
 export async function registerToolsRoute(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { project?: string; from?: string; to?: string };
+    Querystring: { project?: string; from?: string; to?: string; timeZone?: string };
   }>('/api/analytics/tools', async (req): Promise<ToolUsageResponse> => {
     const conn = await getConnection();
     const filters: string[] = ["e.type = 'assistant'", 'e.usage_canonical', "e.tool_names <> ''"];

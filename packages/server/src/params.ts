@@ -52,16 +52,16 @@ const TIMESTAMP_RE =
   /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}(?::?\d{2})?)?)?$/;
 
 /**
- * Validate an inclusive date-bound param destined for `::TIMESTAMP`.
+ * Validate an inclusive analytics date bound.
  *
  * Returns `undefined` for an absent/empty value (the bound is simply not
  * applied) and throws {@link BadRequestError} for anything unusable. The regex
  * checks shape, {@link isCalendarDay} checks the date without JavaScript's
  * overflow normalization, and `Date.parse` checks the remaining time/offset.
  *
- * The value is returned unchanged — callers still wrap it in `sqlString` and the
- * cast stays `TIMESTAMP` (not `TIMESTAMPTZ`), so any offset keeps being ignored
- * exactly as before. This validates; it does not normalize.
+ * The value is returned unchanged. The analytics scope layer decides whether
+ * it is a calendar day/local wall time or an offset-bearing instant and emits
+ * the corresponding DuckDB cast.
  */
 export function timestampParam(raw: string | undefined, field: string): string | undefined {
   if (raw === undefined) return undefined;

@@ -8,8 +8,9 @@
  */
 
 import type {
-  AnalyticsGroupBy,
+  AnalyticsQuery,
   AnalyticsResponse,
+  DigestQuery,
   DigestResponse,
   HealthResponse,
   MemoryResponse,
@@ -67,11 +68,11 @@ export class ApiClient {
     return this.get(`/api/projects/${encodeURIComponent(projectId)}/memory`);
   }
 
-  analytics(q: { groupBy: AnalyticsGroupBy; from?: string; to?: string }): Promise<AnalyticsResponse> {
-    return this.get('/api/analytics', q);
+  analytics(q: AnalyticsQuery): Promise<AnalyticsResponse> {
+    return this.get('/api/analytics', q as unknown as Params);
   }
 
-  digest(q: { from?: string; to?: string } = {}): Promise<DigestResponse> {
-    return this.get('/api/analytics/digest', q);
+  digest(q: DigestQuery = {}): Promise<DigestResponse> {
+    return this.get('/api/analytics/digest', q as unknown as Params);
   }
 }

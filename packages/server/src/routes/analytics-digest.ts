@@ -10,7 +10,7 @@
  *  - Token/cost sums are session-level (already usage-deduped at derivation) —
  *    they naturally cover only agents that report usage.
  *  - Code impact reads canonical `file_edits` rows (fork-deduped at index time).
- *  - The streak is all-time (UTC days) as of the range end — momentum, not a
+ *  - The streak is all-time (local days) as of the range end — momentum, not a
  *    range-bound stat.
  */
 
@@ -21,34 +21,55 @@ import type {
   DigestProjectRow,
   DigestResponse,
 } from '@claudescope/shared';
-import { getConnection, queryRows } from '../db/duckdb.js';
-import { scopeFilters } from '../data/analytics-scope.js';
+import type { DuckDBConnection } from '@duckdb/node-api';
+import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import {
+  analyticsBoundSql,
+  analyticsTimeZone,
+  localTimestampSql,
+  scopeFilters,
+} from '../data/analytics-scope.js';
 import { readRow } from '../db/row.js';
 import { projectIdFromCwd } from '../data/project-id.js';
 import { errorSignalsByAgent } from './analytics-errors.js';
 import { computeStreaks } from './analytics-activity.js';
+import { timestampParam } from '../params.js';
 
 const TOP_LIMIT = 5;
 
-/** Default range: the last 7 UTC days ending now. */
-function defaultRange(): { from: string; to: string } {
+/** Default range: the last 7 local calendar days ending now. */
+async function defaultRange(
+  conn: DuckDBConnection,
+  timeZone: string,
+): Promise<{ from: string; to: string }> {
   const now = new Date();
-  const fromDay = new Date(now.getTime() - 6 * 86_400_000).toISOString().slice(0, 10);
-  return { from: `${fromDay}T00:00:00.000Z`, to: now.toISOString() };
+  const rows = await queryRows(
+    conn,
+    `SELECT strftime(
+       timezone(${sqlString(timeZone)}, ${sqlString(now.toISOString())}::TIMESTAMPTZ)
+         - INTERVAL 6 DAY,
+       '%Y-%m-%d'
+     ) AS day`,
+  );
+  return {
+    from: readRow(rows[0] ?? {}, 'digest-default-range').str('day'),
+    to: now.toISOString(),
+  };
 }
 
 export async function registerDigestRoute(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { from?: string; to?: string };
+    Querystring: { from?: string; to?: string; timeZone?: string };
   }>('/api/analytics/digest', async (req): Promise<DigestResponse> => {
     const conn = await getConnection();
-    const range = defaultRange();
-    const from = req.query.from || range.from;
-    const to = req.query.to || range.to;
+    const timeZone = await analyticsTimeZone(conn, req.query.timeZone);
+    const range = await defaultRange(conn, timeZone);
+    const from = timestampParam(req.query.from, 'from') ?? range.from;
+    const to = timestampParam(req.query.to, 'to') ?? range.to;
 
     // Shared (validated) bounds on the session start — a session belongs to the
     // range its START falls in. Both bounds are always present (defaultRange).
-    const filters = await scopeFilters(conn, { from, to });
+    const filters = await scopeFilters(conn, { from, to, timeZone });
     const whereSql = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
     const scopedCte = `WITH scoped AS (SELECT * FROM sessions ${whereSql})`;
 
@@ -154,16 +175,23 @@ export async function registerDigestRoute(app: FastifyInstance): Promise<void> {
         })()
       : null;
 
-    // All-time prompt streak (UTC days) as of the range end.
+    // All-time prompt streak (local days) as of the range end.
     const dayRows = await queryRows(
       conn,
-      `SELECT DISTINCT strftime(e.ts, '%Y-%m-%d') AS day
+      `SELECT DISTINCT strftime(${localTimestampSql('e.ts', timeZone)}, '%Y-%m-%d') AS day
        FROM events e
        WHERE e.type = 'user' AND NOT e.is_sidechain AND e.forked_from_session_id IS NULL`,
     );
+    const todayRows = await queryRows(
+      conn,
+      `SELECT strftime(
+         timezone(${sqlString(timeZone)}, ${analyticsBoundSql(to, timeZone)}),
+         '%Y-%m-%d'
+       ) AS day`,
+    );
     const streak = computeStreaks(
       dayRows.map((r) => readRow(r, 'digest-days').str('day')).filter(Boolean),
-      to.slice(0, 10),
+      readRow(todayRows[0] ?? {}, 'digest-today').str('day'),
     );
 
     // Code impact over canonical file_edits (session-atomic, like everything else).
@@ -199,7 +227,7 @@ export async function registerDigestRoute(app: FastifyInstance): Promise<void> {
 
     // Reliability — roll up the shared per-agent aggregation. Agents whose
     // formats carry no error signal are listed, not zero-counted.
-    const signals = await errorSignalsByAgent(conn, { from, to });
+    const signals = await errorSignalsByAgent(conn, { from, to, timeZone });
     const known = signals.filter((s) => s.toolErrors !== null);
     const errors: DigestErrors | null = known.length
       ? {

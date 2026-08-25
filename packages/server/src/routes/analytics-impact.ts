@@ -18,15 +18,19 @@ import type { FastifyInstance } from 'fastify';
 import type { ImpactGroupBy, ImpactResponse, ImpactRow, ImpactTotals } from '@claudescope/shared';
 import { getConnection, queryRows } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
-import { scopeFilters } from '../data/analytics-scope.js';
+import {
+  analyticsTimeZone,
+  localTimestampSql,
+  scopeFilters,
+} from '../data/analytics-scope.js';
 
 /** Cap for `groupBy=file` — the long tail of one-touch files isn't informative. */
 const FILE_ROW_LIMIT = 200;
 
-function keyExpr(groupBy: ImpactGroupBy): string {
+function keyExpr(groupBy: ImpactGroupBy, timeZone: string): string {
   switch (groupBy) {
     case 'day':
-      return "strftime(COALESCE(fe.ts, s.started_at), '%Y-%m-%d')";
+      return `strftime(${localTimestampSql('COALESCE(fe.ts, s.started_at)', timeZone)}, '%Y-%m-%d')`;
     case 'file':
       return 'fe.file_path';
     case 'agent':
@@ -37,9 +41,16 @@ function keyExpr(groupBy: ImpactGroupBy): string {
 
 export async function registerImpactRoute(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { groupBy?: string; project?: string; from?: string; to?: string };
+    Querystring: {
+      groupBy?: string;
+      project?: string;
+      from?: string;
+      to?: string;
+      timeZone?: string;
+    };
   }>('/api/analytics/impact', async (req): Promise<ImpactResponse> => {
     const conn = await getConnection();
+    const timeZone = await analyticsTimeZone(conn, req.query.timeZone);
     const groupBy: ImpactGroupBy = ['agent', 'day', 'file'].includes(req.query.groupBy ?? '')
       ? (req.query.groupBy as ImpactGroupBy)
       : 'agent';
@@ -59,7 +70,7 @@ export async function registerImpactRoute(app: FastifyInstance): Promise<void> {
     const rowsRaw = await queryRows(
       conn,
       `SELECT
-         ${keyExpr(groupBy)} AS group_key,
+         ${keyExpr(groupBy, timeZone)} AS group_key,
          sum(fe.additions) AS additions,
          sum(fe.deletions) AS deletions,
          count(*) AS edits,

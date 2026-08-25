@@ -25,6 +25,15 @@ import {
 
 const json = (v: unknown): string => JSON.stringify(v, null, 2);
 
+/** Machine-local IANA time zone for user-facing analytics, with a stable fallback. */
+export function detectedTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
 /** Cap for free-text columns (titles, cwds) so one long value can't blow up the table. */
 const MAX_CELL = 60;
 
@@ -136,11 +145,17 @@ export interface AnalyticsArgs {
   groupBy?: AnalyticsGroupBy;
   from?: string;
   to?: string;
+  timeZone?: string;
   json?: boolean;
 }
 
 export async function queryAnalytics(client: ApiClient, args: AnalyticsArgs): Promise<string> {
-  const res = await client.analytics({ groupBy: args.groupBy ?? 'project', from: args.from, to: args.to });
+  const res = await client.analytics({
+    groupBy: args.groupBy ?? 'project',
+    from: args.from,
+    to: args.to,
+    timeZone: args.timeZone,
+  });
   if (args.json) return json(res);
   if (res.rows.length === 0) return 'No usage in range.';
   return (
@@ -163,13 +178,14 @@ export async function queryAnalytics(client: ApiClient, args: AnalyticsArgs): Pr
 export interface DigestArgs {
   from?: string;
   to?: string;
+  timeZone?: string;
   json?: boolean;
 }
 
 /** Week-in-review digest — the human output IS the shared Markdown renderer,
  *  so the CLI prints exactly what the web "Copy as Markdown" button copies. */
 export async function queryDigest(client: ApiClient, args: DigestArgs): Promise<string> {
-  const res = await client.digest({ from: args.from, to: args.to });
+  const res = await client.digest({ from: args.from, to: args.to, timeZone: args.timeZone });
   if (args.json) return json(res);
   return digestToMarkdown(res).trimEnd();
 }

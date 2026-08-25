@@ -57,6 +57,32 @@ const SORT_OPTIONS: { value: BreakdownSort; label: string }[] = [
   { value: 'cost', label: 'Cost' },
 ];
 
+function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+const TIME_ZONE = browserTimeZone();
+
+function todayInTimeZone(): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((candidate) => candidate.type === type)?.value ?? '';
+    return `${part('year')}-${part('month')}-${part('day')}`;
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
 /** Fetch state for one analytics query. */
 interface QueryState {
   data: AnalyticsResponse | null;
@@ -117,11 +143,9 @@ export function AnalyticsPage() {
   const [activity, setActivity] = useState<{ data: ActivityResponse | null; loading: boolean; error: unknown }>({ data: null, loading: true, error: null });
   const [tools, setTools] = useState<{ data: ToolUsageResponse | null; loading: boolean; error: unknown }>({ data: null, loading: true, error: null });
 
-  // Convert the date inputs (YYYY-MM-DD, local) into inclusive ISO bounds.
+  // Keep calendar dates intact so the server can interpret them in TIME_ZONE.
   const range = useMemo(() => {
-    const fromIso = from ? new Date(`${from}T00:00:00`).toISOString() : undefined;
-    const toIso = to ? new Date(`${to}T23:59:59.999`).toISOString() : undefined;
-    return { from: fromIso, to: toIso };
+    return { from: from || undefined, to: to || undefined };
   }, [from, to]);
 
   const load = useCallback(() => {
@@ -130,7 +154,7 @@ export function AnalyticsPage() {
     setSeries((s) => ({ ...s, loading: true, error: null }));
 
     api
-      .analytics({ groupBy, from: range.from, to: range.to }, ctrl.signal)
+      .analytics({ groupBy, from: range.from, to: range.to, timeZone: TIME_ZONE }, ctrl.signal)
       .then((data) => setBreakdown({ data, loading: false, error: null }))
       .catch((error) => {
         if (ctrl.signal.aborted) return;
@@ -138,7 +162,10 @@ export function AnalyticsPage() {
       });
 
     api
-      .analytics({ groupBy: 'day', from: range.from, to: range.to }, ctrl.signal)
+      .analytics(
+        { groupBy: 'day', from: range.from, to: range.to, timeZone: TIME_ZONE },
+        ctrl.signal,
+      )
       .then((data) => setSeries({ data, loading: false, error: null }))
       .catch((error) => {
         if (ctrl.signal.aborted) return;
@@ -156,7 +183,15 @@ export function AnalyticsPage() {
     setEff((s) => ({ ...s, loading: true, error: null }));
     api
       .sessionEfficiency(
-        { project: effProject || undefined, from: range.from, to: range.to, sort: effSort, dir: effDir, limit: 50 },
+        {
+          project: effProject || undefined,
+          from: range.from,
+          to: range.to,
+          timeZone: TIME_ZONE,
+          sort: effSort,
+          dir: effDir,
+          limit: 50,
+        },
         ctrl.signal,
       )
       .then((data) => setEff({ data, loading: false, error: null }))
@@ -172,7 +207,15 @@ export function AnalyticsPage() {
     const ctrl = new AbortController();
     setAgents((s) => ({ ...s, loading: true, error: null }));
     api
-      .analyticsAgents({ project: effProject || undefined, from: range.from, to: range.to }, ctrl.signal)
+      .analyticsAgents(
+        {
+          project: effProject || undefined,
+          from: range.from,
+          to: range.to,
+          timeZone: TIME_ZONE,
+        },
+        ctrl.signal,
+      )
       .then((data) => setAgents({ data, loading: false, error: null }))
       .catch((error) => {
         if (ctrl.signal.aborted) return;
@@ -186,7 +229,7 @@ export function AnalyticsPage() {
     const ctrl = new AbortController();
     setDigest((s) => ({ ...s, loading: true, error: null }));
     api
-      .analyticsDigest({ from: range.from, to: range.to }, ctrl.signal)
+      .analyticsDigest({ from: range.from, to: range.to, timeZone: TIME_ZONE }, ctrl.signal)
       .then((data) => setDigest({ data, loading: false, error: null }))
       .catch((error) => {
         if (ctrl.signal.aborted) return;
@@ -198,14 +241,13 @@ export function AnalyticsPage() {
   useEffect(() => {
     if (view !== 'overview') return;
     const ctrl = new AbortController();
-    const tzOffsetMinutes = -new Date().getTimezoneOffset(); // east-of-UTC positive
-    const today = (() => {
-      const d = new Date();
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    })();
+    const today = todayInTimeZone();
     setActivity((s) => ({ ...s, loading: true }));
     api
-      .analyticsActivity({ from: range.from, to: range.to, tzOffsetMinutes, today }, ctrl.signal)
+      .analyticsActivity(
+        { from: range.from, to: range.to, timeZone: TIME_ZONE, today },
+        ctrl.signal,
+      )
       .then((data) => setActivity({ data, loading: false, error: null }))
       .catch((error) => {
         if (ctrl.signal.aborted) return;
@@ -219,7 +261,15 @@ export function AnalyticsPage() {
     const ctrl = new AbortController();
     setTools((s) => ({ ...s, loading: true }));
     api
-      .analyticsTools({ project: effProject || undefined, from: range.from, to: range.to }, ctrl.signal)
+      .analyticsTools(
+        {
+          project: effProject || undefined,
+          from: range.from,
+          to: range.to,
+          timeZone: TIME_ZONE,
+        },
+        ctrl.signal,
+      )
       .then((data) => setTools({ data, loading: false, error: null }))
       .catch((error) => {
         if (ctrl.signal.aborted) return;

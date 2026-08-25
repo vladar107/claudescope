@@ -2,16 +2,20 @@
  * GET /api/analytics/activity — a punchcard of user prompts by local
  * day-of-week × hour, plus an all-time prompt streak.
  *
- * Local time: `events.ts` is stored UTC-naive, so the client sends its current
- * UTC offset in minutes and the server shifts with `to_minutes()`. This avoids a
- * DuckDB ICU dependency; the (DST-imperfect) fixed offset is fine for a
- * "when do I usually work" view. The heatmap honors the `from`/`to` filter; the
- * streak is always all-time (a current streak only means anything vs. today).
+ * Local time: `events.ts` is stored UTC-naive. An IANA `timeZone` localizes
+ * every event with DuckDB/ICU, including historical DST changes. The old fixed
+ * `tzOffsetMinutes` remains a compatibility fallback when no timezone is sent.
+ * The heatmap honors the `from`/`to` filter; the streak is always all-time (a
+ * current streak only means anything vs. today).
  */
 import type { FastifyInstance } from 'fastify';
 import type { ActivityCell, ActivityResponse, StreakInfo } from '@claudescope/shared';
-import { getConnection, queryRows } from '../db/duckdb.js';
-import { scopeFilters } from '../data/analytics-scope.js';
+import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
+import {
+  analyticsTimeZone,
+  localTimestampSql,
+  scopeFilters,
+} from '../data/analytics-scope.js';
 import { isoDayParam } from '../params.js';
 import { readRow } from '../db/row.js';
 
@@ -54,12 +58,35 @@ function clampOffset(raw: string | undefined): number {
 
 export async function registerActivityRoute(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { from?: string; to?: string; tzOffsetMinutes?: string; today?: string };
+    Querystring: {
+      from?: string;
+      to?: string;
+      timeZone?: string;
+      tzOffsetMinutes?: string;
+      today?: string;
+    };
   }>('/api/analytics/activity', async (req): Promise<ActivityResponse> => {
     const conn = await getConnection();
+    const hasTimeZone = Boolean(req.query.timeZone?.trim());
+    const timeZone = hasTimeZone
+      ? await analyticsTimeZone(conn, req.query.timeZone)
+      : undefined;
     const offset = clampOffset(req.query.tzOffsetMinutes);
-    const today = isoDayParam(req.query.today) ?? '';
-    const localTs = `(e.ts + to_minutes(${offset}))`;
+    const localTs = timeZone
+      ? localTimestampSql('e.ts', timeZone)
+      : `(e.ts + to_minutes(${offset}))`;
+    let today = isoDayParam(req.query.today);
+    if (!today) {
+      if (timeZone) {
+        const todayRows = await queryRows(
+          conn,
+          `SELECT strftime(timezone(${sqlString(timeZone)}, current_timestamp), '%Y-%m-%d') AS day`,
+        );
+        today = readRow(todayRows[0] ?? {}, 'activity-today').str('day');
+      } else {
+        today = new Date(Date.now() + offset * 60_000).toISOString().slice(0, 10);
+      }
+    }
 
     // Heatmap: honors the date filter (matches the rest of the page).
     // Exclude sidechain rows (subagent-internal user turns) and fork-copy rows
@@ -70,7 +97,11 @@ export async function registerActivityRoute(app: FastifyInstance): Promise<void>
       'NOT e.is_sidechain',
       'e.forked_from_session_id IS NULL',
       // Shared (validated) bounds, on the event timestamp.
-      ...(await scopeFilters(conn, { from: req.query.from, to: req.query.to }, { ts: 'e.ts' })),
+      ...(await scopeFilters(
+        conn,
+        { from: req.query.from, to: req.query.to, timeZone },
+        { ts: 'e.ts' },
+      )),
     ];
     const heatmapRows = await queryRows(
       conn,

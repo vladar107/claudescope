@@ -41,6 +41,7 @@ export interface ErrorScope {
   project?: string;
   from?: string;
   to?: string;
+  timeZone?: string;
 }
 
 /** Raw per-agent aggregates, before n/a shaping. */
@@ -103,7 +104,7 @@ export async function errorSignalsByAgent(
 
 export async function registerErrorsRoute(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { project?: string; from?: string; to?: string };
+    Querystring: { project?: string; from?: string; to?: string; timeZone?: string };
   }>('/api/analytics/errors', async (req): Promise<ErrorAnalyticsResponse> => {
     const conn = await getConnection();
     const signals = await errorSignalsByAgent(conn, req.query);
