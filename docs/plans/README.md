@@ -98,3 +98,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0071 | [Runtime and query validation fixes](./0071-runtime-and-query-validation.md) | done |
 | 0072 | [Hide Codex guardian sessions](./0072-hide-codex-guardian-sessions.md) | done |
 | 0073 | [Inclusive analytics end date](./0073-inclusive-analytics-end-date.md) | done |
+| 0074 | [Timezone-aware analytics](./0074-timezone-aware-analytics.md) | done |

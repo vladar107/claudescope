@@ -106,12 +106,14 @@ export interface AnalyticsParams {
   groupBy: AnalyticsGroupBy;
   from?: string;
   to?: string;
+  timeZone?: string;
 }
 
 export interface SessionEfficiencyParams {
   project?: string;
   from?: string;
   to?: string;
+  timeZone?: string;
   sort?: SessionEfficiencySort;
   dir?: SortDir;
   limit?: number;
@@ -163,53 +165,83 @@ export const api = {
     );
   },
 
-  /** GET /api/analytics?groupBy=&from=&to= */
+  /** GET /api/analytics?groupBy=&from=&to=&timeZone= */
   analytics(params: AnalyticsParams, signal?: AbortSignal): Promise<AnalyticsResponse> {
     return request<AnalyticsResponse>(
-      `/analytics${qs({ groupBy: params.groupBy, from: params.from, to: params.to })}`,
+      `/analytics${qs({
+        groupBy: params.groupBy,
+        from: params.from,
+        to: params.to,
+        timeZone: params.timeZone,
+      })}`,
       { signal },
     );
   },
 
-  /** GET /api/analytics/activity?from=&to=&tzOffsetMinutes=&today= */
+  /** GET /api/analytics/activity?from=&to=&timeZone=&today= */
   analyticsActivity(
-    params: { from?: string; to?: string; tzOffsetMinutes: number; today: string },
+    params: { from?: string; to?: string; timeZone?: string; today: string },
     signal?: AbortSignal,
   ): Promise<ActivityResponse> {
     return request<ActivityResponse>(
-      `/analytics/activity${qs({ from: params.from, to: params.to, tzOffsetMinutes: params.tzOffsetMinutes, today: params.today })}`,
+      `/analytics/activity${qs({
+        from: params.from,
+        to: params.to,
+        timeZone: params.timeZone,
+        today: params.today,
+      })}`,
       { signal },
     );
   },
 
-  /** GET /api/analytics/tools?from=&to= */
+  /** GET /api/analytics/tools?from=&to=&timeZone= */
   analyticsTools(
-    params: { project?: string; from?: string; to?: string },
+    params: { project?: string; from?: string; to?: string; timeZone?: string },
     signal?: AbortSignal,
   ): Promise<ToolUsageResponse> {
     return request<ToolUsageResponse>(
-      `/analytics/tools${qs({ project: params.project, from: params.from, to: params.to })}`,
+      `/analytics/tools${qs({
+        project: params.project,
+        from: params.from,
+        to: params.to,
+        timeZone: params.timeZone,
+      })}`,
       { signal },
     );
   },
 
-  /** GET /api/analytics/agents?project=&from=&to= */
+  /** GET /api/analytics/agents?project=&from=&to=&timeZone= */
   analyticsAgents(
-    params: { project?: string; from?: string; to?: string } = {},
+    params: { project?: string; from?: string; to?: string; timeZone?: string } = {},
     signal?: AbortSignal,
   ): Promise<AgentComparisonResponse> {
     return request<AgentComparisonResponse>(
-      `/analytics/agents${qs({ project: params.project, from: params.from, to: params.to })}`,
+      `/analytics/agents${qs({
+        project: params.project,
+        from: params.from,
+        to: params.to,
+        timeZone: params.timeZone,
+      })}`,
       { signal },
     );
   },
 
-  /** GET /api/analytics/digest?from=&to= */
-  analyticsDigest(params: { from?: string; to?: string }, signal?: AbortSignal): Promise<DigestResponse> {
-    return request<DigestResponse>(`/analytics/digest${qs({ from: params.from, to: params.to })}`, { signal });
+  /** GET /api/analytics/digest?from=&to=&timeZone= */
+  analyticsDigest(
+    params: { from?: string; to?: string; timeZone?: string },
+    signal?: AbortSignal,
+  ): Promise<DigestResponse> {
+    return request<DigestResponse>(
+      `/analytics/digest${qs({
+        from: params.from,
+        to: params.to,
+        timeZone: params.timeZone,
+      })}`,
+      { signal },
+    );
   },
 
-  /** GET /api/analytics/sessions?from=&to=&sort=&dir=&limit=&minResponses= */
+  /** GET /api/analytics/sessions?from=&to=&timeZone=&sort=&dir=&limit=&minResponses= */
   sessionEfficiency(
     params: SessionEfficiencyParams = {},
     signal?: AbortSignal,
@@ -219,6 +251,7 @@ export const api = {
         project: params.project,
         from: params.from,
         to: params.to,
+        timeZone: params.timeZone,
         sort: params.sort,
         dir: params.dir,
         limit: params.limit,

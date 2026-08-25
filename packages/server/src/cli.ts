@@ -49,6 +49,7 @@ import {
 import { runMcpServer } from './agent/mcp.js';
 import { ApiClient } from './agent/api-client.js';
 import {
+  detectedTimeZone,
   queryAnalytics,
   queryDigest,
   queryProjects,
@@ -423,8 +424,10 @@ Query commands (read-only; start the background server on first use):
                    [--offset N] [--limit N] [--around uuid] [--radius N]
                    [--max-tool-chars N] [--redact]
   projects         List projects
-  analytics        Token/cost aggregates [--group-by project|model|day|agent] [--from date] [--to date]
-  digest           Week-in-review Markdown [--from date] [--to date] (default: last 7 days)
+  analytics        Token/cost aggregates [--group-by project|model|day|agent]
+                   [--from date] [--to date] [--timezone IANA]
+  digest           Week-in-review Markdown [--from date] [--to date] [--timezone IANA]
+                   (default: last 7 calendar days in the machine time zone)
   All query commands accept --json for the raw API response (ignores --redact).
 
 Options:
@@ -469,6 +472,7 @@ async function main(): Promise<void> {
       'group-by': { type: 'string' },
       from: { type: 'string' },
       to: { type: 'string' },
+      timezone: { type: 'string' },
     },
   });
 
@@ -554,7 +558,12 @@ async function main(): Promise<void> {
       break;
     case 'digest':
       await runQuery(() => {
-        const args = { from: values.from, to: values.to, json: values.json };
+        const args = {
+          from: values.from,
+          to: values.to,
+          timeZone: values.timezone ?? detectedTimeZone(),
+          json: values.json,
+        };
         return (client) => queryDigest(client, args);
       });
       break;
@@ -564,6 +573,7 @@ async function main(): Promise<void> {
           groupBy: enumFlag('group-by', values['group-by'], ['project', 'model', 'day', 'agent'] as const),
           from: values.from,
           to: values.to,
+          timeZone: values.timezone ?? detectedTimeZone(),
           json: values.json,
         };
         return (client) => queryAnalytics(client, args);

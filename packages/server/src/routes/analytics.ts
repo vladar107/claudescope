@@ -23,7 +23,11 @@ import type {
 import { getConnection, queryRows } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { cacheHitRatio } from '../data/analytics-metrics.js';
-import { scopeFilters } from '../data/analytics-scope.js';
+import {
+  analyticsTimeZone,
+  localTimestampSql,
+  scopeFilters,
+} from '../data/analytics-scope.js';
 import { projectIdFromCwd } from '../data/project-id.js';
 import { enumParam } from '../params.js';
 
@@ -35,12 +39,18 @@ const ANALYTICS_GROUPS = ['project', 'model', 'day', 'agent'] as const;
  * canonical modal project_cwd — matching the project ids returned by
  * /api/projects — rather than fragmenting across mid-session sub-directory cwds.
  */
-function groupSource(groupBy: AnalyticsGroupBy): { keyExpr: string; fromSql: string } {
+function groupSource(
+  groupBy: AnalyticsGroupBy,
+  timeZone: string,
+): { keyExpr: string; fromSql: string } {
   switch (groupBy) {
     case 'model':
       return { keyExpr: "COALESCE(e.model, 'unknown')", fromSql: 'FROM events e' };
     case 'day':
-      return { keyExpr: "strftime(e.ts, '%Y-%m-%d')", fromSql: 'FROM events e' };
+      return {
+        keyExpr: `strftime(${localTimestampSql('e.ts', timeZone)}, '%Y-%m-%d')`,
+        fromSql: 'FROM events e',
+      };
     case 'agent':
       return {
         keyExpr: "COALESCE(s.connector_id, 'unknown')",
@@ -57,18 +67,23 @@ function groupSource(groupBy: AnalyticsGroupBy): { keyExpr: string; fromSql: str
 
 export async function registerAnalyticsRoute(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { groupBy?: string; from?: string; to?: string };
+    Querystring: { groupBy?: string; from?: string; to?: string; timeZone?: string };
   }>('/api/analytics', async (req): Promise<AnalyticsResponse> => {
     const conn = await getConnection();
     const groupBy = enumParam(req.query.groupBy, 'groupBy', ANALYTICS_GROUPS, 'project');
-    const { keyExpr, fromSql } = groupSource(groupBy);
+    const timeZone = await analyticsTimeZone(conn, req.query.timeZone);
+    const { keyExpr, fromSql } = groupSource(groupBy, timeZone);
 
     // Bounds go through the shared scope helper (which validates them); this
     // route filters the EVENT timestamp, not the session start, hence the `ts`
     // override. No project filter here — only the bounds are shared.
     const filters: string[] = [
       "e.type = 'assistant'",
-      ...(await scopeFilters(conn, { from: req.query.from, to: req.query.to }, { ts: 'e.ts' })),
+      ...(await scopeFilters(
+        conn,
+        { from: req.query.from, to: req.query.to, timeZone },
+        { ts: 'e.ts' },
+      )),
     ];
     const whereSql = `WHERE ${filters.join(' AND ')}`;
 

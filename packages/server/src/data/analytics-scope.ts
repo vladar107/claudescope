@@ -8,7 +8,7 @@
 
 import type { DuckDBConnection } from '@duckdb/node-api';
 import { queryRows, sqlString } from '../db/duckdb.js';
-import { timestampParam } from '../params.js';
+import { BadRequestError, timestampParam } from '../params.js';
 import { projectIdFromCwd } from './project-id.js';
 
 export interface AnalyticsScope {
@@ -17,6 +17,8 @@ export interface AnalyticsScope {
   /** Inclusive ISO bounds on the session start. */
   from?: string;
   to?: string;
+  /** IANA timezone for calendar bounds and local-day analytics. Defaults to UTC. */
+  timeZone?: string;
 }
 
 /** Column names the filters apply to, qualified for the caller's query. */
@@ -34,6 +36,63 @@ export interface ScopeColumns {
  * two-character string `\0` — which no real cwd can be.
  */
 const NEVER_MATCHES = "'\\0'";
+const UTC = 'UTC';
+const OFFSET_SUFFIX_RE = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i;
+const validatedTimeZones = new Map<string, string>([[UTC.toLowerCase(), UTC]]);
+
+/**
+ * Resolve an optional analytics timezone to the canonical name DuckDB knows.
+ * Validation deliberately uses DuckDB's timezone catalogue: those are the
+ * identifiers the SQL conversion functions will accept, so Node and DuckDB
+ * cannot disagree at runtime. Raw HTTP callers remain UTC by default.
+ */
+export async function analyticsTimeZone(
+  conn: DuckDBConnection,
+  raw: string | undefined,
+): Promise<string> {
+  const value = raw?.trim() || UTC;
+  const cached = validatedTimeZones.get(value.toLowerCase());
+  if (cached) return cached;
+
+  const rows = await queryRows(
+    conn,
+    `SELECT name
+     FROM pg_timezone_names()
+     WHERE lower(name) = lower(${sqlString(value)})
+     ORDER BY name
+     LIMIT 1`,
+  );
+  const name = rows[0]?.name;
+  if (typeof name !== 'string' || name === '') {
+    throw new BadRequestError(`timeZone must be a recognized IANA timezone (got '${value}')`);
+  }
+  validatedTimeZones.set(value.toLowerCase(), name);
+  return name;
+}
+
+/** Treat a UTC-naive stored timestamp as the instant it represents. */
+export function utcInstantSql(timestampSql: string): string {
+  return `timezone('UTC', ${timestampSql})`;
+}
+
+/** Convert a UTC-naive stored timestamp into local wall time for grouping. */
+export function localTimestampSql(timestampSql: string, timeZone: string): string {
+  return `timezone(${sqlString(timeZone)}, ${utcInstantSql(timestampSql)})`;
+}
+
+/**
+ * Turn a validated analytics bound into an absolute instant.
+ *
+ * Offset-bearing timestamps already identify an instant. Date-only values and
+ * offset-less timestamps are local wall times in `timeZone`; applying the zone
+ * after the TIMESTAMP cast lets ICU select the correct DST offset for that day.
+ */
+export function analyticsBoundSql(value: string, timeZone: string): string {
+  if (value.length > 10 && OFFSET_SUFFIX_RE.test(value)) {
+    return `${sqlString(value)}::TIMESTAMPTZ`;
+  }
+  return `timezone(${sqlString(timeZone)}, ${sqlString(value)}::TIMESTAMP)`;
+}
 
 /**
  * Resolve a project slug id to the `project_cwd` it came from, or `null` when no
@@ -92,14 +151,15 @@ export async function scopeFilters(
   const tsCol = cols.ts ?? 'started_at';
   const from = timestampParam(scope.from, 'from');
   const to = timestampParam(scope.to, 'to');
+  const timeZone = await analyticsTimeZone(conn, scope.timeZone);
   const filters: string[] = [];
   if (scope.project) filters.push(await projectFilter(conn, scope.project, cwdCol));
-  if (from) filters.push(`${tsCol} >= ${sqlString(from)}::TIMESTAMP`);
+  if (from) filters.push(`${utcInstantSql(tsCol)} >= ${analyticsBoundSql(from, timeZone)}`);
   if (to) {
     filters.push(
       to.length === 10
-        ? `${tsCol} < (${sqlString(to)}::TIMESTAMP + INTERVAL 1 DAY)`
-        : `${tsCol} <= ${sqlString(to)}::TIMESTAMP`,
+        ? `${utcInstantSql(tsCol)} < timezone(${sqlString(timeZone)}, ${sqlString(to)}::TIMESTAMP + INTERVAL 1 DAY)`
+        : `${utcInstantSql(tsCol)} <= ${analyticsBoundSql(to, timeZone)}`,
     );
   }
   return filters;

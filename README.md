@@ -245,8 +245,8 @@ claudescope search "duckdb lock" --limit 5      # where did I hit this before?
 claudescope sessions --agent codex --sort cost  # priciest Codex sessions
 claudescope session <id> --around <uuid>        # open a search hit, windowed
 claudescope open --session <id> --around <uuid> # open that hit in the web app
-claudescope analytics --group-by day --json | jq '.rows[] | [.key, .costUsd]'
-claudescope digest --from 2026-06-23 --to 2026-06-29   # week in review, as Markdown
+claudescope analytics --group-by day --timezone Europe/Amsterdam --json | jq '.rows[] | [.key, .costUsd]'
+claudescope digest --from 2026-06-23 --to 2026-06-29 --timezone Europe/Amsterdam
 ```
 
 `session` prints a pageable window of turns as Markdown (`--offset/--limit`,
@@ -254,6 +254,15 @@ claudescope digest --from 2026-06-23 --to 2026-06-29   # week in review, as Mark
 unredacted. `open` starts the daemon lazily and preserves its configured port;
 session ids and message anchors are URL-encoded before the browser opens. See
 `claudescope help` for the full flag list.
+
+Analytics and digest date-only bounds are inclusive calendar days in the
+selected IANA time zone. The CLI defaults to the machine's time zone (falling
+back to UTC); use `--timezone UTC` or another zone to make a script explicit.
+ISO timestamps with `Z` or an offset always identify exact instants, while the
+time zone still controls day grouping and streaks. The MCP `get_analytics` tool
+accepts the equivalent optional `timeZone` input and has the same local default.
+Claudescope keeps indexed timestamps UTC-normalized; the selected zone changes
+query interpretation, not stored transcript data.
 
 ---
 

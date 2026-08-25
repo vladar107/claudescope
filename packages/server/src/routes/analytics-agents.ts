@@ -64,7 +64,7 @@ const AVAILABILITY_NOTES: Record<string, string> = {
 
 export async function registerAgentComparisonRoute(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { project?: string; from?: string; to?: string };
+    Querystring: { project?: string; from?: string; to?: string; timeZone?: string };
   }>('/api/analytics/agents', async (req): Promise<AgentComparisonResponse> => {
     const conn = await getConnection();
 

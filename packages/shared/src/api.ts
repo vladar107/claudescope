@@ -170,13 +170,29 @@ export interface SearchQuery {
 
 export type AnalyticsGroupBy = 'project' | 'model' | 'day' | 'agent';
 
-export interface AnalyticsQuery {
-  groupBy: AnalyticsGroupBy;
-  /** Inclusive ISO date/time lower bound. */
+/** Shared date-range semantics for every analytics endpoint. */
+export interface AnalyticsDateRangeQuery {
+  /**
+   * Inclusive ISO date/time lower bound. Date-only values are interpreted as
+   * calendar days in `timeZone`; timestamps with an offset identify an instant.
+   */
   from?: string;
-  /** Inclusive ISO date/time upper bound. */
+  /**
+   * Inclusive ISO date/time upper bound. A date-only value includes the whole
+   * calendar day in `timeZone`.
+   */
   to?: string;
+  /** IANA time zone for date-only bounds and local-day grouping (default UTC at the raw HTTP API). */
+  timeZone?: string;
 }
+
+/** GET /api/analytics query parameters; bounds filter event timestamps. */
+export interface AnalyticsQuery extends AnalyticsDateRangeQuery {
+  groupBy: AnalyticsGroupBy;
+}
+
+/** GET /api/analytics/digest query parameters; bounds filter session start timestamps. */
+export type DigestQuery = AnalyticsDateRangeQuery;
 
 // ---------------------------------------------------------------------------
 // Session efficiency (per-session ratios)
@@ -198,11 +214,8 @@ export type SessionEfficiencySort =
 /** Sort direction. */
 export type SortDir = 'asc' | 'desc';
 
-export interface SessionEfficiencyQuery {
-  /** Inclusive ISO lower bound on session START. */
-  from?: string;
-  /** Inclusive ISO upper bound on session START. */
-  to?: string;
+/** GET /api/analytics/sessions query parameters; bounds filter session start timestamps. */
+export interface SessionEfficiencyQuery extends AnalyticsDateRangeQuery {
   /** Sort column (default 'cost'). */
   sort?: SessionEfficiencySort;
   /** Sort direction (default 'desc'). */
@@ -813,7 +826,7 @@ export interface DigestResponse {
   /** Sessions per agent. */
   agents: DigestCountRow[];
   biggestSession: DigestBiggestSession | null;
-  /** All-time prompt streak (UTC days) as of the range end. */
+  /** All-time prompt streak (local days in the selected time zone) as of the range end. */
   streak: StreakInfo;
   impact: DigestImpact;
   /** null when no agent in range records tool errors. */
@@ -888,13 +901,10 @@ export interface PrLinkedStats {
   costPerPrSession: number | null;
 }
 
-export interface AgentComparisonQuery {
+/** GET /api/analytics/agents query parameters; bounds filter session start timestamps. */
+export interface AgentComparisonQuery extends AnalyticsDateRangeQuery {
   /** Project slug id (as returned by /api/projects); omit for the whole corpus. */
   project?: string;
-  /** Inclusive ISO lower bound on session START. */
-  from?: string;
-  /** Inclusive ISO upper bound on session START. */
-  to?: string;
 }
 
 /** GET /api/analytics/agents */
