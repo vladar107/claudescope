@@ -250,11 +250,20 @@ describe('bound semantics survived the scopeFilters consolidation', () => {
     // Two distinct days of assistant events across both sessions.
     expect(all.json().rows.map((r: { key: string }) => r.key).sort()).toEqual([DAY1, DAY2]);
 
-    const day2 = await get(`/api/analytics?groupBy=day&from=${DAY2}`);
+    const day2 = await get(`/api/analytics?groupBy=day&from=${DAY2}&to=${DAY2}`);
+    expect(day2.statusCode).toBe(200);
     expect(day2.json().rows.map((r: { key: string }) => r.key)).toEqual([DAY2]);
     // sOld's DAY2 event is included even though sOld STARTED on DAY1 — that is
     // the event-level semantics this route must keep.
     expect(day2.json().totals.messageCount).toBe(2);
+  });
+
+  it('keeps a full timestamp upper bound inclusive', async () => {
+    const to = encodeURIComponent(`${DAY1}T12:00:00.000Z`);
+    const res = await get(`/api/analytics?groupBy=day&to=${to}`);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().rows.map((r: { key: string }) => r.key)).toEqual([DAY1]);
+    expect(res.json().totals.messageCount).toBe(1);
   });
 
   it('/api/analytics/sessions bounds the SESSION START', async () => {
@@ -287,10 +296,11 @@ describe('bound semantics survived the scopeFilters consolidation', () => {
   });
 
   it('/api/analytics/digest bounds the SESSION START', async () => {
-    const all = await get(`/api/analytics/digest?from=${DAY1}&to=${DAY2}T23:59:59.999Z`);
+    const all = await get(`/api/analytics/digest?from=${DAY1}&to=${DAY2}`);
     expect(all.json().totals.sessions).toBe(2);
 
-    const day2 = await get(`/api/analytics/digest?from=${DAY2}&to=${DAY2}T23:59:59.999Z`);
+    const day2 = await get(`/api/analytics/digest?from=${DAY2}&to=${DAY2}`);
+    expect(day2.statusCode).toBe(200);
     expect(day2.json().totals.sessions).toBe(1);
   });
 });

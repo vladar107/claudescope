@@ -95,6 +95,12 @@ export async function scopeFilters(
   const filters: string[] = [];
   if (scope.project) filters.push(await projectFilter(conn, scope.project, cwdCol));
   if (from) filters.push(`${tsCol} >= ${sqlString(from)}::TIMESTAMP`);
-  if (to) filters.push(`${tsCol} <= ${sqlString(to)}::TIMESTAMP`);
+  if (to) {
+    filters.push(
+      to.length === 10
+        ? `${tsCol} < (${sqlString(to)}::TIMESTAMP + INTERVAL 1 DAY)`
+        : `${tsCol} <= ${sqlString(to)}::TIMESTAMP`,
+    );
+  }
   return filters;
 }
