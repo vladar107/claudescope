@@ -154,10 +154,21 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
 - **Codex subagents & apply_patch** — subagent rollouts are separate files whose
   `session_meta` carries `thread_source: "subagent"` + the parent thread id; they
   re-key under their ROOT thread (`is_sidechain`) and nest via a canonical `Task`
-  synthesized from the parent's `spawn_agent` call. File edits arrive as
-  `custom_tool_call` records (NOT `function_call`) named `apply_patch` → parsed
-  V4A envelopes fan out to canonical `Write`/`MultiEdit` per file so the
-  Files-changed tab works.
+  synthesized from the parent's `spawn_agent` call. Legacy output links by
+  `agent_id`; current output links `task_name` to the child's
+  `thread_spawn.agent_path`, retaining the exact spawning call id. Prefer that
+  readable task name over the possibly opaque prompt for the `Task` label.
+  `function_call_output` / `custom_tool_call_output` may carry either one string
+  or an ordered text-item array; decode the latter before envelope/error parsing
+  and keep unknown structured items visible. Direct `apply_patch` calls arrive as
+  `custom_tool_call` records (NOT `function_call`) → parsed V4A envelopes fan out
+  to canonical `Write`/`MultiEdit` per file; rejected patches demote back to raw
+  calls so the Files-changed tab never reports edits that did not happen.
+- **Claude Code subagent correlation** — prefer direct connector linkage when
+  available, then metadata-backed description/type matching. If sibling metadata
+  is absent or drifted, the shared parser may fall back to an exact full match
+  between the spawning `Agent`/`Task.prompt` and the child's first user prompt.
+  Empty or ambiguous matches stay detached; there is no fuzzy prompt matching.
 - **pi connector** (`connectors/pi/`) — JSONL like Claude/Codex but `cwd` is on
   the `session` line and tool results are separate `toolResult` records, so a
   `prepare()` pass normalizes to canonical NDJSON (Codex pattern). `model` comes
@@ -265,4 +276,3 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   OIDC). See `CONTRIBUTING.md`.
 
 See `CONTRIBUTING.md` for the full workflow and `README.md` for user-facing docs.
-

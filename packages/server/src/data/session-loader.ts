@@ -19,6 +19,10 @@ export interface SubagentSource {
   agentType: string;
   description: string;
   slug?: string;
+  /** Exact id of the Agent/Task call that spawned this run, when known. */
+  toolUseId?: string;
+  /** Full first user prompt, retained for guarded exact-match correlation. */
+  prompt?: string;
   /**
    * Workflow run id (e.g. `wf_…`) when this agent was spawned by a `Workflow`
    * tool call — derived from its `subagents/workflows/<wfId>/` path. Lets the

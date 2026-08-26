@@ -4,7 +4,12 @@ import type { SubagentRun, ThreadBlock, ThreadItem } from '@claudescope/shared';
 import { ClampedText, Collapsible, ErrorBoundary, ErrorBox, TokenChips } from '../../components';
 import { formatDateTime, shortModel } from '../browse/format.js';
 import { ThreadBlockView, hasRenderableContent } from './blocks.js';
-import { classifySystemText, parseCommandTurn, type CommandTurn } from './text.js';
+import {
+  classifySystemText,
+  isInheritedCodexContext,
+  parseCommandTurn,
+  type CommandTurn,
+} from './text.js';
 import { SessionSearchContext } from './SearchContext.js';
 import { blockRevealId } from './search.js';
 
@@ -149,7 +154,14 @@ function turnText(item: ThreadItem): string {
 function classifySystemTurn(item: ThreadItem): string | null {
   // Only plain-text turns (no tools/attachments) qualify.
   if (item.blocks.some((b) => b.kind === 'tool' || b.kind === 'attachment')) return null;
-  return classifySystemText(turnText(item));
+  const text = turnText(item);
+  if (
+    item.blocks.every((block) => block.kind === 'text') &&
+    isInheritedCodexContext(text, item.isSidechain)
+  ) {
+    return 'Inherited parent context';
+  }
+  return classifySystemText(text);
 }
 
 /** Compact, collapsed-by-default rendering for a harness/system user turn. */

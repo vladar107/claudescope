@@ -99,3 +99,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0072 | [Hide Codex guardian sessions](./0072-hide-codex-guardian-sessions.md) | done |
 | 0073 | [Inclusive analytics end date](./0073-inclusive-analytics-end-date.md) | done |
 | 0074 | [Timezone-aware analytics](./0074-timezone-aware-analytics.md) | done |
+| 0075 | [Reliable subagent linkage and Codex transcript rendering](./0075-reliable-subagent-linkage-and-codex-rendering.md) | done |

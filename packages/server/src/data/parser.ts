@@ -138,6 +138,7 @@ interface SpawnPoint {
   spawnUuid: string;
   description?: string;
   subagentType?: string;
+  prompt?: string;
   used: boolean;
 }
 
@@ -181,6 +182,7 @@ export function buildSubagentRuns(
           spawnUuid: item.uuid,
           description: typeof input.description === 'string' ? input.description : undefined,
           subagentType: typeof input.subagent_type === 'string' ? input.subagent_type : undefined,
+          prompt: typeof input.prompt === 'string' ? input.prompt : undefined,
           used: false,
         });
       } else if (block.name === 'Workflow') {
@@ -202,10 +204,16 @@ export function buildSubagentRuns(
     );
     const totalTokens = thread.reduce((n, t) => n + usageTokens(t.usage), 0);
 
-    // Workflow agents: link all of a run's agents to the Workflow tool call
-    // whose result references the run id (a one-to-many spawn; not consumed).
     let match: { toolUseId: string; spawnUuid: string } | undefined;
-    if (src.workflowId) {
+    const directSpawn = src.toolUseId
+      ? spawns.find((s) => !s.used && s.toolUseId === src.toolUseId)
+      : undefined;
+    if (directSpawn) {
+      directSpawn.used = true;
+      match = directSpawn;
+    } else if (src.workflowId) {
+      // Workflow agents: link all of a run's agents to the Workflow tool call
+      // whose result references the run id (a one-to-many spawn; not consumed).
       match = workflowSpawns.find((w) => w.resultText.includes(src.workflowId as string));
     } else {
       // Agent/Task: match description (+ type), earliest unused. Require a
@@ -222,6 +230,25 @@ export function buildSubagentRuns(
         if (sp) {
           sp.used = true;
           match = sp;
+        }
+      }
+
+      // Missing or stale Claude metadata can leave description matching with
+      // no candidate. Fall back only when the complete child prompt identifies
+      // exactly one unused, type-compatible spawn.
+      if (!match && src.prompt && src.prompt.trim().length > 0) {
+        const promptMatches = spawns.filter(
+          (s) =>
+            !s.used &&
+            s.prompt === src.prompt &&
+            (!s.subagentType || !src.agentType || s.subagentType === src.agentType),
+        );
+        if (promptMatches.length === 1) {
+          const [sp] = promptMatches;
+          if (sp) {
+            sp.used = true;
+            match = sp;
+          }
         }
       }
     }

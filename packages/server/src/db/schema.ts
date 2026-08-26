@@ -35,7 +35,9 @@
 // v13: fallback titles skip complete synthetic command/system turns for every connector.
 // v14: FTS retains numeric terms for versions, issue keys, and other identifiers.
 // v15: Codex guardian approval-review rollouts are excluded from persisted events.
-export const SCHEMA_VERSION = 15;
+// v16: Codex current-format subagent linkage and structured tool outputs change
+//      derived tool errors/file edits, so unchanged normalized rows must rebuild.
+export const SCHEMA_VERSION = 16;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [

@@ -92,6 +92,15 @@ export function splitCodexSessionContext(text: string): CodexSessionContext | nu
   };
 }
 
+/**
+ * Whether a sidechain user turn starts with a complete Codex startup envelope
+ * copied from its parent. Top-level and malformed turns fail closed so genuine
+ * user prose keeps its normal presentation.
+ */
+export function isInheritedCodexContext(text: string, isSidechain: boolean): boolean {
+  return isSidechain && splitCodexSessionContext(text) !== null;
+}
+
 /** Leading tags that mark a user turn as harness/system-injected, not a person. */
 export const SYSTEM_TURN_TAGS: { tag: string; label: string }[] = [
   { tag: '<task-notification>', label: 'Task notification' },
