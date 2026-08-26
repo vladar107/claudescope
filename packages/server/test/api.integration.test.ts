@@ -53,7 +53,7 @@ function writeFixtures(): string[] {
       { type: 'ai-title', sessionId: 'sessA', aiTitle: 'Session A' },
       { ...baseA, type: 'user', uuid: 'u1', parentUuid: null, timestamp: '2026-01-01T10:00:00.000Z', isSidechain: false, message: { role: 'user', content: 'please find the needle in this haystack' } },
       { ...baseA, type: 'assistant', uuid: 'a1', parentUuid: 'u1', timestamp: '2026-01-01T10:00:05.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'thinking', thinking: '', signature: 's' }, { type: 'text', text: 'on it' }], usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 10, cache_creation_input_tokens: 5 } } },
-      { ...baseA, type: 'assistant', uuid: 'a2', parentUuid: 'a1', timestamp: '2026-01-01T10:00:10.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'tool_use', id: 'tu_agent', name: 'Agent', input: { description: 'Explore the code', subagent_type: 'Explore' } }], usage: { input_tokens: 20, output_tokens: 10 } } },
+      { ...baseA, type: 'assistant', uuid: 'a2', parentUuid: 'a1', timestamp: '2026-01-01T10:00:10.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'tool_use', id: 'tu_agent', name: 'Agent', input: { description: 'Explore the code', subagent_type: 'Explore', prompt: 'explore please' } }, { type: 'tool_use', id: 'tu_prompt', name: 'Task', input: { description: 'Inspect fallback', subagent_type: 'Explore', prompt: 'inspect through exact prompt\nwith full details' } }], usage: { input_tokens: 20, output_tokens: 10 } } },
       { ...baseA, type: 'user', uuid: 'u2', parentUuid: 'a2', timestamp: '2026-01-01T10:00:30.000Z', isSidechain: false, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_agent', content: 'exploration finished' }] } },
       { ...baseA, type: 'assistant', uuid: 'a3', parentUuid: 'u2', timestamp: '2026-01-01T10:00:35.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'tool_use', id: 'tu_wf', name: 'Workflow', input: { script: '...' } }], usage: { input_tokens: 30, output_tokens: 15 } } },
       { ...baseA, type: 'user', uuid: 'u3', parentUuid: 'a3', timestamp: '2026-01-01T10:02:00.000Z', isSidechain: false, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_wf', content: 'Workflow launched. Run ID: wf_int1 — done.' }] } },
@@ -74,6 +74,13 @@ function writeFixtures(): string[] {
     { ...subBase, type: 'assistant', uuid: 'sa-a1', parentUuid: 'sa-u1', agentId: 'aaaa', timestamp: '2026-01-01T10:00:20.000Z', message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'tool_use', id: 'g1', name: 'Grep', input: {} }], usage: { input_tokens: 40, output_tokens: 20 } } },
   ]));
   writeFileSync(join(subA, 'agent-aaaa.meta.json'), JSON.stringify({ agentType: 'Explore', description: 'Explore the code' }));
+
+  // Missing metadata: correlates by its complete first prompt instead.
+  const agentP = join(subA, 'agent-pppp.jsonl');
+  writeFileSync(agentP, jsonl([
+    { ...subBase, type: 'user', uuid: 'sp-u1', parentUuid: null, agentId: 'pppp', timestamp: '2026-01-01T10:00:13.000Z', message: { role: 'user', content: 'inspect through exact prompt\nwith full details' } },
+    { ...subBase, type: 'assistant', uuid: 'sp-a1', parentUuid: 'sp-u1', agentId: 'pppp', timestamp: '2026-01-01T10:00:21.000Z', message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'text', text: 'inspected' }], usage: { input_tokens: 15, output_tokens: 5 } } },
+  ]));
 
   // Workflow-spawned subagent (correlates by run id, no meta description).
   const agentW = join(wfA, 'agent-wwww.jsonl');
@@ -97,7 +104,7 @@ function writeFixtures(): string[] {
   ];
   writeFileSync(sessB, sessBLines.join('\n') + '\n');
 
-  return [sessA, agentA, join(subA, 'agent-aaaa.meta.json'), agentW, join(wfA, 'agent-wwww.meta.json'), sessB];
+  return [sessA, agentA, join(subA, 'agent-aaaa.meta.json'), agentP, agentW, join(wfA, 'agent-wwww.meta.json'), sessB];
 }
 
 let app: FastifyInstance;
@@ -187,13 +194,17 @@ describe('GET /api/sessions/:id', () => {
     expect(detail.thread.every((t: { isSidechain: boolean }) => !t.isSidechain)).toBe(true);
   });
 
-  it('returns subagents linked to their spawn points (Agent + Workflow)', async () => {
+  it('returns subagents linked to their spawn points (Agent + Task + Workflow)', async () => {
     const detail = (await get('/api/sessions/sessA')).json();
-    expect(detail.subagents).toHaveLength(2);
+    expect(detail.subagents).toHaveLength(3);
 
     const explore = detail.subagents.find((s: { agentType: string }) => s.agentType === 'Explore');
     expect(explore.toolUseId).toBe('tu_agent');
     expect(explore.description).toBe('Explore the code');
+
+    const promptFallback = detail.subagents.find((s: { agentId: string }) => s.agentId === 'pppp');
+    expect(promptFallback.toolUseId).toBe('tu_prompt');
+    expect(promptFallback.description).toBe('inspect through exact prompt');
 
     const wf = detail.subagents.find((s: { agentType: string }) => s.agentType === 'workflow-subagent');
     expect(wf.toolUseId).toBe('tu_wf');
@@ -223,7 +234,7 @@ describe('GET /api/sessions/:id — windowing (agent/CLI consumers)', () => {
   it('no windowing params → full thread and no window object (the web path)', async () => {
     const detail = (await get('/api/sessions/sessA')).json();
     expect(detail.window).toBeUndefined();
-    expect(detail.subagents).toHaveLength(2);
+    expect(detail.subagents).toHaveLength(3);
   });
 
   it('windows around a uuid and keeps only subagents spawned inside the slice', async () => {

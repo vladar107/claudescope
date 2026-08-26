@@ -88,14 +88,33 @@ function writeRollout(): string {
       // Single-file patch: block keeps the bare call_id and the result is the
       // envelope-stripped tool output.
       { type: 'response_item', timestamp: ts(22), payload: { type: 'custom_tool_call', name: 'apply_patch', call_id: 'call_ap2', input: '*** Begin Patch\n*** Update File: /tmp/codexproj/single.ts\n@@\n-a\n+b\n*** End Patch' } },
-      { type: 'response_item', timestamp: ts(23), payload: { type: 'custom_tool_call_output', call_id: 'call_ap2', output: 'Exit code: 0\nWall time: 0.0 seconds\nOutput:\nSuccess. Updated the following files:\nM /tmp/codexproj/single.ts' } },
+      { type: 'response_item', timestamp: ts(23), payload: { type: 'custom_tool_call_output', call_id: 'call_ap2', output: [
+        { type: 'input_text', text: 'Exit code: 0\nWall time: 0.0 seconds\nOutput:\n' },
+        { type: 'input_text', text: 'Success. Updated the following files:\nM /tmp/codexproj/single.ts' },
+      ] } },
       // web_search_call has no call_id and no paired output record.
       { type: 'response_item', timestamp: ts(24), payload: { type: 'web_search_call', status: 'completed', action: { type: 'search', query: 'codex docs' } } },
       // A REJECTED two-file patch (non-zero exit): nothing on disk changed, so the
       // fanned canonical blocks must demote back to raw apply_patch (no file_path)
       // and the real error text must survive on every result.
       { type: 'response_item', timestamp: ts(25), payload: { type: 'custom_tool_call', name: 'apply_patch', call_id: 'call_ap3', input: '*** Begin Patch\n*** Update File: /tmp/codexproj/missing.ts\n@@\n-x\n+y\n*** Update File: /tmp/codexproj/other.ts\n@@\n-p\n+q\n*** End Patch' } },
-      { type: 'response_item', timestamp: ts(26), payload: { type: 'custom_tool_call_output', call_id: 'call_ap3', output: 'Exit code: 1\nWall time: 0.0 seconds\nOutput:\napply_patch: /tmp/codexproj/missing.ts: No such file or directory' } },
+      { type: 'response_item', timestamp: ts(26), payload: { type: 'custom_tool_call_output', call_id: 'call_ap3', output: [
+        { type: 'input_text', text: 'Exit code: 1\nWall time: 0.0 seconds\nOutput:\n' },
+        { type: 'input_text', text: 'apply_patch: /tmp/codexproj/missing.ts: No such file or directory' },
+      ] } },
+      // Current Codex spawn format: task_name is readable while the message may
+      // be opaque; the output's canonical path matches the child's agent_path.
+      { type: 'response_item', timestamp: ts(27), payload: { type: 'function_call', name: 'spawn_agent', namespace: 'collaboration', arguments: '{"agent_type":"context_explorer","fork_turns":"all","message":"encrypted-task-payload","task_name":"locate_analytics_range"}', call_id: 'call_spawn2' } },
+      { type: 'response_item', timestamp: ts(28), payload: { type: 'function_call_output', call_id: 'call_spawn2', output: '{"task_name":"/root/locate_analytics_range"}' } },
+      // Current custom outputs are arrays of ordered input_text items. An exec
+      // result must concatenate them, while an unfamiliar item remains visible.
+      { type: 'response_item', timestamp: ts(29), payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_exec_current', input: 'const result = await tools.exec_command({ cmd: "pwd" }); text(result.output);' } },
+      { type: 'response_item', timestamp: ts(30), payload: { type: 'custom_tool_call_output', call_id: 'call_exec_current', output: [
+        { type: 'input_text', text: 'Script completed\nWall time: 0.1 seconds\nOutput:\n' },
+        { type: 'input_text', text: '/tmp/codexproj\n' },
+      ] } },
+      { type: 'response_item', timestamp: ts(31), payload: { type: 'custom_tool_call', name: 'future_tool', call_id: 'call_unknown_output', input: 'opaque input' } },
+      { type: 'response_item', timestamp: ts(32), payload: { type: 'custom_tool_call_output', call_id: 'call_unknown_output', output: [{ type: 'future_content', value: 'must-not-vanish' }] } },
     ]),
   );
   return file;
@@ -115,6 +134,23 @@ function writeChildRollout(): string {
       { type: 'response_item', timestamp: ts(33), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'zebranugget report from the child' }] } },
       // Child usage folds into the parent session's totals (claude-code precedent).
       { type: 'event_msg', timestamp: ts(34), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 100, cached_input_tokens: 0, output_tokens: 50 } }, rate_limits: {} } },
+    ]),
+  );
+  return file;
+}
+
+/** A current-format child correlated by canonical agent_path, not its thread id. */
+function writeCurrentChildRollout(): string {
+  const dir = join(codexDir, '2026', '01', '01');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'rollout-2026-01-01T10-02-00-019f2222-aaaa-7bbb-8ccc-000000000002.jsonl');
+  writeFileSync(
+    file,
+    jsonl([
+      { type: 'session_meta', timestamp: ts(35), payload: { id: '019f2222-aaaa-7bbb-8ccc-000000000002', cwd: '/tmp/codexproj', thread_source: 'subagent', source: { subagent: { thread_spawn: { parent_thread_id: 'codex-sess-1', depth: 1, agent_path: '/root/locate_analytics_range', agent_nickname: 'Cartographer', agent_role: 'context_explorer' } } }, git: { branch: 'main' } } },
+      { type: 'turn_context', timestamp: ts(36), payload: { model: 'gpt-5.4' } },
+      { type: 'response_item', timestamp: ts(37), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'copied parent context, not the task label' }] } },
+      { type: 'response_item', timestamp: ts(38), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'current-format child report' }] } },
     ]),
   );
   return file;
@@ -170,6 +206,7 @@ beforeAll(async () => {
   mkdirSync(claudeDir, { recursive: true });
   writeRollout();
   writeChildRollout();
+  writeCurrentChildRollout();
   writeOrphanRollout();
   writeLocalRollout();
 
@@ -331,8 +368,10 @@ describe('Codex session detail', () => {
       subagent_type: 'explorer',
     });
 
-    expect(detail.subagents).toHaveLength(1);
-    const run = detail.subagents[0];
+    expect(detail.subagents).toHaveLength(2);
+    const run = detail.subagents.find(
+      (candidate: { agentId: string }) => candidate.agentId === '019f2222-aaaa-7bbb-8ccc-000000000001',
+    );
     expect(run).toMatchObject({
       agentId: '019f2222-aaaa-7bbb-8ccc-000000000001',
       agentType: 'explorer',
@@ -346,6 +385,24 @@ describe('Codex session detail', () => {
     // wait_agent is not a spawn — it stays under its raw name.
     const wait = flat.find((b: Record<string, unknown>) => b.id === 'call_wait1');
     expect(wait.name).toBe('wait_agent');
+
+    // Current format links by output task_name ↔ child agent_path, while the
+    // canonical task path replaces the opaque message as the readable label.
+    const currentTask = flat.find((b: Record<string, unknown>) => b.id === 'call_spawn2');
+    expect(currentTask).toMatchObject({ name: 'Task' });
+    expect(currentTask.input).toMatchObject({
+      description: '/root/locate_analytics_range',
+      subagent_type: 'context_explorer',
+    });
+    const currentRun = detail.subagents.find(
+      (candidate: { agentId: string }) => candidate.agentId === '019f2222-aaaa-7bbb-8ccc-000000000002',
+    );
+    expect(currentRun).toMatchObject({
+      agentType: 'context_explorer',
+      description: '/root/locate_analytics_range',
+      toolUseId: 'call_spawn2',
+    });
+    expect(JSON.stringify(currentRun.thread)).toContain('current-format child report');
   });
 
   it('fans apply_patch out to canonical Write/Edit blocks the changeset keys off', async () => {
@@ -380,6 +437,15 @@ describe('Codex session detail', () => {
     expect(search.result).toBeTruthy();
     const web = flat.find((b: Record<string, unknown>) => b.name === 'web_search');
     expect((web.input as { query: string }).query).toBe('codex docs');
+
+    const currentExec = flat.find((b: Record<string, unknown>) => b.id === 'call_exec_current');
+    expect(currentExec.result.content[0].text).toBe(
+      'Script completed\nWall time: 0.1 seconds\nOutput:\n/tmp/codexproj\n',
+    );
+
+    const unknown = flat.find((b: Record<string, unknown>) => b.id === 'call_unknown_output');
+    expect(unknown.result.content[0].text).toContain('future_content');
+    expect(unknown.result.content[0].text).toContain('must-not-vanish');
   });
 
   it('demotes a REJECTED apply_patch to raw blocks so Files-changed never sees it', async () => {

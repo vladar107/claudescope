@@ -52,15 +52,17 @@ export interface CodexSession {
   isSidechain: boolean;
   /** `thread_spawn.agent_role` for a subagent rollout (fallback agentType). */
   agentRole?: string;
+  /** Current Codex's canonical task path from `thread_spawn.agent_path`. */
+  agentPath?: string;
   cwd: string;
   gitBranch?: string;
   /** `model_provider` from session_meta — session-level, applied to every
    *  assistant row (e.g. 'openai'). */
   modelProvider?: string;
   events: (UserEvent | AssistantEvent)[];
-  /** Spawned child thread id → Task correlation meta, from this rollout's
-   *  `spawn_agent` calls (description must equal the Task block's). */
-  spawnedAgents: Map<string, { description: string; agentType: string }>;
+  /** Legacy child thread id OR current canonical task path → exact Task
+   *  correlation meta, recovered from this rollout's `spawn_agent` calls. */
+  spawnedAgents: Map<string, { description: string; agentType: string; toolUseId: string }>;
 }
 
 /** Mutable per-turn token accumulator (assignable to {@link MessageUsage}). */
@@ -281,21 +283,53 @@ function codexToolUse(name: string, input: unknown, id: string): ToolUseBlock {
   }
   if (name === 'spawn_agent') {
     const args = argsRecord(input);
+    const taskName = str(args.task_name);
     const message = str(args.message);
-    if (message) {
+    if (taskName || message) {
       return {
         type: 'tool_use',
         id,
         name: 'Task',
         input: {
-          description: subagentLabel(message),
+          description: taskName || subagentLabel(message),
           subagent_type: str(args.agent_type),
-          prompt: message,
+          ...(message ? { prompt: message } : {}),
         },
       };
     }
   }
   return { type: 'tool_use', id, name, input };
+}
+
+/**
+ * Decode Codex tool output at the format boundary. Older rollouts store one
+ * string; current rollouts store an ordered array of text items. Preserve text
+ * bytes exactly, while keeping unfamiliar structured items visible as JSON
+ * instead of silently coercing them to an empty string.
+ */
+function toolOutputText(output: unknown): string {
+  if (typeof output === 'string') return output;
+  if (Array.isArray(output)) {
+    return output
+      .map((item) => {
+        const obj = rec(item);
+        const type = str(obj.type);
+        if (['text', 'input_text', 'output_text'].includes(type) && typeof obj.text === 'string') {
+          return obj.text;
+        }
+        try {
+          return JSON.stringify(item, null, 2);
+        } catch {
+          return String(item);
+        }
+      })
+      .join('');
+  }
+  try {
+    return JSON.stringify(output, null, 2) ?? String(output);
+  } catch {
+    return String(output);
+  }
 }
 
 /**
@@ -490,10 +524,12 @@ export function parseRollout(path: string): CodexSession | null {
   let indexSessionId = sessionId;
   let isSidechain = false;
   let agentRole: string | undefined;
+  let agentPath: string | undefined;
   if (str(meta.thread_source) === 'subagent') {
     const spawn = rec(subagentSource.thread_spawn);
     const parentId = str(spawn.parent_thread_id);
     agentRole = str(spawn.agent_role) || undefined;
+    agentPath = str(spawn.agent_path) || undefined;
     if (parentId) {
       isSidechain = true;
       indexSessionId = rootThreadId(parentId, getCodexContext().parents);
@@ -508,8 +544,16 @@ export function parseRollout(path: string): CodexSession | null {
 
   // spawn_agent correlation: call_id → Task meta (set at the call), promoted to
   // spawnedAgents keyed by the child thread id when the output names it.
-  const pendingSpawns = new Map<string, { description: string; agentType: string }>();
-  const spawnedAgents = new Map<string, { description: string; agentType: string }>();
+  const pendingSpawns = new Map<string, {
+    block: ToolUseBlock;
+    description: string;
+    agentType: string;
+  }>();
+  const spawnedAgents = new Map<string, {
+    description: string;
+    agentType: string;
+    toolUseId: string;
+  }>();
   // apply_patch fan-out: call_id → the fanned block REFERENCES (they stay live
   // inside the flushed event), per-file statuses, and the raw patch text — so the
   // (single) custom_tool_call_output can pair a result to every block, or demote
@@ -607,6 +651,7 @@ export function parseRollout(path: string): CodexSession | null {
       if (str(pl.name) === 'spawn_agent' && block.name === 'Task') {
         const taskInput = block.input as { description: string; subagent_type: string };
         pendingSpawns.set(block.id, {
+          block,
           description: taskInput.description,
           agentType: taskInput.subagent_type,
         });
@@ -615,13 +660,24 @@ export function parseRollout(path: string): CodexSession | null {
     } else if (kind === 'function_call_output') {
       open('user', ts);
       const callId = str(pl.call_id);
-      const output = str(pl.output);
+      const output = toolOutputText(pl.output);
       const spawn = pendingSpawns.get(callId);
       if (spawn) {
-        // The output names the spawned child thread: `{"agent_id": …, "nickname": …}`.
+        // Legacy output names the child thread by `agent_id`; current output
+        // returns the canonical task path as `task_name`, which the child stores
+        // in `thread_spawn.agent_path`.
         try {
-          const agentId = str(rec(JSON.parse(output)).agent_id);
-          if (agentId) spawnedAgents.set(agentId, spawn);
+          const result = rec(JSON.parse(output));
+          const agentId = str(result.agent_id);
+          const taskName = str(result.task_name);
+          const description = taskName || spawn.description;
+          if (taskName) {
+            const input = argsRecord(spawn.block.input);
+            spawn.block.input = { ...input, description: taskName };
+          }
+          const linked = { description, agentType: spawn.agentType, toolUseId: callId };
+          if (agentId) spawnedAgents.set(agentId, linked);
+          if (taskName) spawnedAgents.set(taskName, linked);
         } catch {
           /* unparseable spawn output — the child will render detached */
         }
@@ -656,10 +712,11 @@ export function parseRollout(path: string): CodexSession | null {
     } else if (kind === 'custom_tool_call_output') {
       open('user', ts);
       const callId = str(pl.call_id);
-      const output = str(pl.output);
+      const output = toolOutputText(pl.output);
       const fan = patchFanout.get(callId);
       const exit = output.match(CUSTOM_ENVELOPE_RE);
-      if (fan && exit && Number(exit[1]) !== 0) {
+      const isError = pl.is_error === true || (exit !== null && Number(exit[1]) !== 0);
+      if (fan && isError) {
         // The patch was REJECTED — nothing on disk changed. Demote the fanned
         // canonical blocks back to raw apply_patch passthrough (no `file_path`,
         // so the Files-changed tab never lists untouched files — the same
@@ -681,6 +738,7 @@ export function parseRollout(path: string): CodexSession | null {
           type: 'tool_result',
           tool_use_id: callId,
           content: stripCustomEnvelope(output),
+          ...(isError ? { is_error: true } : {}),
         });
       }
     } else if (kind === 'tool_search_call') {
@@ -701,7 +759,18 @@ export function parseRollout(path: string): CodexSession | null {
   }
   flush();
 
-  return { sessionId, indexSessionId, isSidechain, agentRole, cwd, gitBranch, modelProvider, events, spawnedAgents };
+  return {
+    sessionId,
+    indexSessionId,
+    isSidechain,
+    agentRole,
+    agentPath,
+    cwd,
+    gitBranch,
+    modelProvider,
+    events,
+    spawnedAgents,
+  };
 }
 
 

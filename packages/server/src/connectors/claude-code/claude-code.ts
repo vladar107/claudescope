@@ -270,11 +270,8 @@ function workflowIdFromPath(path: string): string | undefined {
   return m ? m[1] : undefined;
 }
 
-/**
- * A readable label for a subagent that lacks a meta description (e.g. workflow
- * agents): the first line of its first user message, truncated.
- */
-function deriveLabel(events: RawEvent[]): string {
+/** Full text of the first non-empty user message, if one is available. */
+function firstUserPrompt(events: RawEvent[]): string | undefined {
   for (const e of events) {
     if (e.type !== 'user') continue;
     const content = (e as { message?: { content?: unknown } }).message?.content;
@@ -287,10 +284,15 @@ function deriveLabel(events: RawEvent[]): string {
       );
       text = first?.text ?? '';
     }
-    const line = text.trim().split('\n')[0]?.trim() ?? '';
-    if (line) return line.length > 80 ? `${line.slice(0, 80)}…` : line;
+    if (text.trim().length > 0) return text;
   }
-  return '';
+  return undefined;
+}
+
+/** A concise display label derived from a subagent's full first prompt. */
+function deriveLabel(prompt: string): string {
+  const line = prompt.trim().split('\n')[0]?.trim() ?? '';
+  return line.length > 80 ? `${line.slice(0, 80)}…` : line;
 }
 
 /**
@@ -316,13 +318,15 @@ async function loadSession(sessionId: string, paths: string[]): Promise<SessionD
     const meta = readSubagentMeta(p);
     const slug = firstSlug(events);
     const workflowId = workflowIdFromPath(p);
+    const prompt = firstUserPrompt(events);
     // Workflow agents have no meta description; fall back to their first prompt.
-    const description = meta.description || deriveLabel(events);
+    const description = meta.description || (prompt ? deriveLabel(prompt) : '');
     subagents.push({
       agentId: agentIdFromPath(p),
       agentType: meta.agentType,
       description,
       ...(slug ? { slug } : {}),
+      ...(prompt ? { prompt } : {}),
       ...(workflowId ? { workflowId } : {}),
       events,
     });

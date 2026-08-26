@@ -53,9 +53,9 @@ function auxProjections(_filePath: string): AuxProjections {
 /**
  * Load a session's events, splitting the resolved rollouts into the main thread
  * (its own thread id equals the session id) and one subagent per re-keyed child
- * rollout. A child's `description`/`agentType` come from the parent's matching
- * `spawn_agent` call (correlated via the spawn output's `agent_id`), so the run
- * anchors to the canonical `Task` block.
+ * rollout. A child's metadata comes from the parent's matching `spawn_agent`
+ * call, correlated by the legacy child `agent_id` or current canonical
+ * `task_name`/`agent_path`, so the run anchors to the exact canonical `Task`.
  */
 async function loadSession(sessionId: string, paths: string[]): Promise<SessionData> {
   const sessions = paths
@@ -65,11 +65,14 @@ async function loadSession(sessionId: string, paths: string[]): Promise<SessionD
   const subagents: SubagentSource[] = [];
   for (const s of sessions) {
     if (s === main) continue;
-    const meta = main?.spawnedAgents.get(s.sessionId);
+    const meta =
+      (s.agentPath ? main?.spawnedAgents.get(s.agentPath) : undefined) ??
+      main?.spawnedAgents.get(s.sessionId);
     subagents.push({
       agentId: s.sessionId,
       agentType: meta?.agentType ?? s.agentRole ?? '',
-      description: meta?.description ?? '',
+      description: meta?.description ?? s.agentPath ?? '',
+      toolUseId: meta?.toolUseId,
       events: s.events,
     });
   }

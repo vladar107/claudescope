@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifySystemText,
+  isInheritedCodexContext,
   parseCommandTurn,
   stripAnsi,
   stripImageMarkers,
@@ -47,6 +48,43 @@ describe('classifySystemText', () => {
   it('returns null for ordinary user text', () => {
     expect(classifySystemText('please fix the bug')).toBeNull();
     expect(classifySystemText('here is some <html> in my message')).toBeNull();
+  });
+});
+
+describe('isInheritedCodexContext', () => {
+  const inheritedTurn = `# AGENTS.md instructions for /repo
+
+<INSTRUCTIONS>
+Parent instructions
+</INSTRUCTIONS>
+<environment_context>
+  <cwd>/repo</cwd>
+</environment_context>
+
+Original parent prompt`;
+
+  it('classifies a complete Codex startup envelope on a sidechain', () => {
+    expect(isInheritedCodexContext(inheritedTurn, true)).toBe(true);
+  });
+
+  it('leaves the same startup envelope unchanged on a top-level turn', () => {
+    expect(isInheritedCodexContext(inheritedTurn, false)).toBe(false);
+  });
+
+  it('leaves ordinary sidechain user prose unchanged', () => {
+    expect(isInheritedCodexContext('Please inspect the parser.', true)).toBe(false);
+  });
+
+  it('fails closed when a startup wrapper is incomplete', () => {
+    expect(
+      isInheritedCodexContext(
+        '# AGENTS.md instructions for /repo\n<INSTRUCTIONS>Parent instructions',
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      isInheritedCodexContext('<environment_context><cwd>/repo</cwd>', true),
+    ).toBe(false);
   });
 });
 

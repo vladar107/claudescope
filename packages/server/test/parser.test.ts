@@ -153,7 +153,11 @@ function mainThreadWithSpawns(): ThreadItem[] {
           kind: 'tool',
           id: 'tu_agent',
           name: 'Agent',
-          input: { description: 'Explore X', subagent_type: 'Explore' },
+          input: {
+            description: 'Explore X',
+            subagent_type: 'Explore',
+            prompt: 'Investigate the complete prompt\nincluding every detail.',
+          },
         },
         {
           kind: 'tool',
@@ -192,6 +196,20 @@ describe('buildSubagentRuns', () => {
     expect(run?.spawnUuid).toBe('m1');
   });
 
+  it('prefers an exact tool id over mismatched description and prompt metadata', () => {
+    const [run] = buildSubagentRuns(mainThreadWithSpawns(), [
+      source({
+        agentId: 'a',
+        agentType: 'Other',
+        description: 'stale description',
+        prompt: 'stale prompt',
+        toolUseId: 'tu_agent',
+      }),
+    ]);
+    expect(run?.toolUseId).toBe('tu_agent');
+    expect(run?.spawnUuid).toBe('m1');
+  });
+
   it('falls back to description-only when type differs', () => {
     const [run] = buildSubagentRuns(mainThreadWithSpawns(), [
       source({ agentId: 'a', agentType: 'general-purpose', description: 'Explore X' }),
@@ -209,6 +227,68 @@ describe('buildSubagentRuns', () => {
   it('does NOT link a run whose description matches nothing', () => {
     const [run] = buildSubagentRuns(mainThreadWithSpawns(), [
       source({ agentId: 'a', description: 'totally different' }),
+    ]);
+    expect(run?.toolUseId).toBeUndefined();
+  });
+
+  it('falls back to a unique exact full prompt when description metadata is stale', () => {
+    const [run] = buildSubagentRuns(mainThreadWithSpawns(), [
+      source({
+        agentId: 'a',
+        agentType: 'Explore',
+        description: 'stale description',
+        prompt: 'Investigate the complete prompt\nincluding every detail.',
+      }),
+    ]);
+    expect(run?.toolUseId).toBe('tu_agent');
+  });
+
+  it('uses subagent type to narrow otherwise-identical prompt matches', () => {
+    const main: ThreadItem[] = [
+      {
+        uuid: 'm1',
+        parentUuid: null,
+        role: 'assistant',
+        timestamp: ts(),
+        isSidechain: false,
+        blocks: [
+          {
+            kind: 'tool',
+            id: 'tu_explore',
+            name: 'Task',
+            input: { prompt: 'same prompt', subagent_type: 'Explore' },
+          },
+          {
+            kind: 'tool',
+            id: 'tu_plan',
+            name: 'Task',
+            input: { prompt: 'same prompt', subagent_type: 'Plan' },
+          },
+        ],
+      },
+    ];
+    const [run] = buildSubagentRuns(main, [
+      source({ agentId: 'a', agentType: 'Plan', prompt: 'same prompt' }),
+    ]);
+    expect(run?.toolUseId).toBe('tu_plan');
+  });
+
+  it('does NOT guess when an exact prompt matches multiple unused spawns', () => {
+    const main: ThreadItem[] = [
+      {
+        uuid: 'm1',
+        parentUuid: null,
+        role: 'assistant',
+        timestamp: ts(),
+        isSidechain: false,
+        blocks: [
+          { kind: 'tool', id: 'tu1', name: 'Task', input: { prompt: 'same prompt' } },
+          { kind: 'tool', id: 'tu2', name: 'Task', input: { prompt: 'same prompt' } },
+        ],
+      },
+    ];
+    const [run] = buildSubagentRuns(main, [
+      source({ agentId: 'a', prompt: 'same prompt' }),
     ]);
     expect(run?.toolUseId).toBeUndefined();
   });
