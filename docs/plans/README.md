@@ -100,3 +100,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0073 | [Inclusive analytics end date](./0073-inclusive-analytics-end-date.md) | done |
 | 0074 | [Timezone-aware analytics](./0074-timezone-aware-analytics.md) | done |
 | 0075 | [Reliable subagent linkage and Codex transcript rendering](./0075-reliable-subagent-linkage-and-codex-rendering.md) | done |
+| 0076 | [Restore Codex session naming](./0076-restore-codex-session-naming.md) | done |

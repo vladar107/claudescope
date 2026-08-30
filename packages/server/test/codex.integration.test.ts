@@ -34,6 +34,15 @@ process.env.REINDEX_INTERVAL_MS = '0';
 
 const jsonl = (events: unknown[]): string => events.map((e) => JSON.stringify(e)).join('\n') + '\n';
 const ts = (s: number) => `2026-01-01T10:00:${String(s).padStart(2, '0')}.000Z`;
+const pathlessBootstrap = [
+  '# AGENTS.md instructions',
+  '<INSTRUCTIONS>',
+  'Follow the repository guide.',
+  '</INSTRUCTIONS>',
+  '<environment_context>',
+  '  <cwd>/tmp/codexproj</cwd>',
+  '</environment_context>',
+].join('\n');
 
 /** Write one synthetic rollout under codex/YYYY/MM/DD/. */
 function writeRollout(): string {
@@ -52,7 +61,7 @@ function writeRollout(): string {
         // redundant `<image …>` placeholder text item that must be dropped.
         { type: 'input_text', text: '<image name=[Image #1] path="/var/tmp/codex-clipboard-xyz.png">' },
         { type: 'input_image', image_url: 'data:image/png;base64,iVBORw0KGgoAAAANS' },
-        { type: 'input_text', text: 'find the needle in this codex haystack' },
+        { type: 'input_text', text: `${pathlessBootstrap}\nfind the needle in this codex haystack` },
       ] } },
       { type: 'response_item', timestamp: ts(3), payload: { type: 'reasoning', summary: [], content: null, encrypted_content: 'enc-abc' } },
       { type: 'response_item', timestamp: ts(4), payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"ls -la"}', call_id: 'call_1' } },
@@ -199,6 +208,63 @@ function writeLocalRollout(): string {
   return file;
 }
 
+/** A pathless bootstrap-only turn followed by the genuine user prompt. */
+function writeBootstrapOnlyRollout(): string {
+  const dir = join(codexDir, '2026', '01', '04');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'rollout-2026-01-04T09-00-00-019f5555-aaaa-7bbb-8ccc-000000000004.jsonl');
+  writeFileSync(
+    file,
+    jsonl([
+      { type: 'session_meta', timestamp: ts(0), payload: { id: 'codex-title-next', cwd: '/tmp/codexproj' } },
+      { type: 'turn_context', timestamp: ts(1), payload: { model: 'gpt-5.4' } },
+      { type: 'response_item', timestamp: ts(2), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: pathlessBootstrap }] } },
+      { type: 'response_item', timestamp: ts(3), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ready' }] } },
+      { type: 'response_item', timestamp: ts(4), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'name this session from the genuine prompt' }] } },
+      { type: 'response_item', timestamp: ts(5), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'done' }] } },
+    ]),
+  );
+  return file;
+}
+
+/** A malformed bootstrap must pass through instead of swallowing source text. */
+function writeMalformedBootstrapRollout(): string {
+  const dir = join(codexDir, '2026', '01', '05');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'rollout-2026-01-05T09-00-00-019f6666-aaaa-7bbb-8ccc-000000000005.jsonl');
+  writeFileSync(
+    file,
+    jsonl([
+      { type: 'session_meta', timestamp: ts(0), payload: { id: 'codex-title-malformed', cwd: '/tmp/codexproj' } },
+      { type: 'turn_context', timestamp: ts(1), payload: { model: 'gpt-5.4' } },
+      { type: 'response_item', timestamp: ts(2), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '# AGENTS.md instructions\n<INSTRUCTIONS>\nKeep this incomplete wrapper visible' }] } },
+      { type: 'response_item', timestamp: ts(2), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'acknowledged' }] } },
+      { type: 'response_item', timestamp: ts(3), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'do not skip to this later prompt' }] } },
+    ]),
+  );
+  return file;
+}
+
+/** Guardian approval reviews are internal regardless of thread-source generation. */
+function writeGuardianRollouts(): void {
+  const dir = join(codexDir, '2026', '01', '06');
+  mkdirSync(dir, { recursive: true });
+  const variants = [
+    ['codex-guardian-legacy', 'subagent'],
+    ['codex-guardian-current', 'guardian_review'],
+  ] as const;
+  for (const [id, threadSource] of variants) {
+    const file = join(dir, `rollout-2026-01-06T09-00-00-${id}.jsonl`);
+    writeFileSync(
+      file,
+      jsonl([
+        { type: 'session_meta', timestamp: ts(0), payload: { id, cwd: '/tmp/codexproj', thread_source: threadSource, source: { subagent: { other: 'guardian' } } } },
+        { type: 'response_item', timestamp: ts(1), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Review this command for approval.' }] } },
+      ]),
+    );
+  }
+}
+
 let app: FastifyInstance;
 let closeConnection: () => Promise<void>;
 
@@ -209,6 +275,9 @@ beforeAll(async () => {
   writeCurrentChildRollout();
   writeOrphanRollout();
   writeLocalRollout();
+  writeBootstrapOnlyRollout();
+  writeMalformedBootstrapRollout();
+  writeGuardianRollouts();
 
   const Fastify = (await import('fastify')).default;
   const { registerRoutes } = await import('../src/routes/index.js');
@@ -234,7 +303,13 @@ describe('Codex session indexing', () => {
     const sessions = (await get('/api/sessions')).json();
     // The child rollout folds into its parent (never its own session); the orphan
     // child indexes under its absent root id `codex-gone`.
-    expect(sessions.map((s: { id: string }) => s.id).sort()).toEqual(['codex-gone', 'codex-local-1', 'codex-sess-1']);
+    expect(sessions.map((s: { id: string }) => s.id).sort()).toEqual([
+      'codex-gone',
+      'codex-local-1',
+      'codex-sess-1',
+      'codex-title-malformed',
+      'codex-title-next',
+    ]);
     const main = sessions.find((s: { id: string }) => s.id === 'codex-sess-1');
     expect(main.models).toContain('gpt-5.4');
     expect(main.connectorId).toBe('codex');
@@ -244,6 +319,29 @@ describe('Codex session indexing', () => {
     expect(main.titleDerived).toBe(true);
     // The re-keyed subagent rollout flips the parent's sidechain flag.
     expect(main.hasSidechain).toBe(true);
+  });
+
+  it('uses the first genuine prompt after a pathless bootstrap-only turn', async () => {
+    const sessions = (await get('/api/sessions')).json();
+    const session = sessions.find((s: { id: string }) => s.id === 'codex-title-next');
+    expect(session.title).toBe('name this session from the genuine prompt');
+    expect(session.titleDerived).toBe(true);
+  });
+
+  it('keeps malformed pathless bootstrap content eligible', async () => {
+    const sessions = (await get('/api/sessions')).json();
+    const session = sessions.find((s: { id: string }) => s.id === 'codex-title-malformed');
+    expect(session.title).toBe('Keep this incomplete wrapper visible');
+  });
+
+  it('filters legacy and current guardian reviews without hiding ordinary sessions', async () => {
+    const sessions = (await get('/api/sessions')).json();
+    const ids = sessions.map((s: { id: string }) => s.id);
+    expect(ids).toContain('codex-sess-1');
+    expect(ids).toContain('codex-gone');
+    expect(ids).not.toContain('codex-guardian-legacy');
+    expect(ids).not.toContain('codex-guardian-current');
+    expect((await get('/api/sessions/codex-guardian-current')).statusCode).toBe(404);
   });
 
   it('tags the project with its agent and groups analytics by agent', async () => {

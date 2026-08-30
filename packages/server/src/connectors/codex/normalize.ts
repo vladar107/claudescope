@@ -506,10 +506,9 @@ export function parseRollout(path: string): CodexSession | null {
 
   const meta = lines.find((l) => l.type === 'session_meta')?.payload ?? {};
   const subagentSource = rec(rec(meta.source).subagent);
-  // Guardian rollouts contain Codex's synthetic approval-review transcript,
-  // not a user conversation. They have no thread_spawn linkage and otherwise
-  // fall through as top-level sessions whose history looks like one user turn.
-  if (str(meta.thread_source) === 'subagent' && str(subagentSource.other) === 'guardian') {
+  // The structural source marker is stable across Codex's legacy `subagent`
+  // and current `guardian_review` thread-source labels.
+  if (str(subagentSource.other) === 'guardian') {
     return null;
   }
   const sessionId = str(meta.id) || sessionIdFromPath(path);

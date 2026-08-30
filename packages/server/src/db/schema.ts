@@ -37,7 +37,9 @@
 // v15: Codex guardian approval-review rollouts are excluded from persisted events.
 // v16: Codex current-format subagent linkage and structured tool outputs change
 //      derived tool errors/file edits, so unchanged normalized rows must rebuild.
-export const SCHEMA_VERSION = 16;
+// v17: Codex pathless bootstrap headings and current guardian-review rollouts
+//      change persisted fallback titles and indexed sessions.
+export const SCHEMA_VERSION = 17;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
