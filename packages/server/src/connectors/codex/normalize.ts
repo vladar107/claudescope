@@ -350,6 +350,7 @@ function stripExecEnvelope(output: string): string {
 /** The `apply_patch`-style custom-tool output envelope (`Exit code: N / Wall
  *  time: … / Output:`) — group 1 is the exit code, group 2 the captured output. */
 const CUSTOM_ENVELOPE_RE = /^Exit code: (-?\d+)\nWall time: [^\n]*\n(?:[^\n]*\n)*?Output:\n?([\s\S]*)$/;
+const SCRIPT_ENVELOPE_RE = /^Script (completed|failed)\nWall time:? [^\n]*\nOutput:\n?([\s\S]*)$/;
 
 /**
  * Strip the custom-tool output envelope down to the captured output on success —
@@ -373,6 +374,193 @@ interface PatchFile {
   op: 'add' | 'update' | 'delete';
   path: string;
   hunks: Hunk[];
+}
+
+interface JsToken {
+  kind: 'identifier' | 'string' | 'punctuation';
+  value: string;
+}
+
+const JS_IDENTIFIER_START = /[A-Za-z_$]/;
+const JS_IDENTIFIER_PART = /[A-Za-z0-9_$]/;
+const HEX = /^[0-9a-f]+$/i;
+
+/** Decode one JavaScript string literal without evaluating rollout code. */
+function readJsString(
+  source: string,
+  start: number,
+): { value: string; end: number } | null {
+  const quote = source[start];
+  if (quote !== '"' && quote !== "'" && quote !== '`') return null;
+
+  let value = '';
+  let i = start + 1;
+  while (i < source.length) {
+    const ch = source[i]!;
+    if (ch === quote) return { value, end: i + 1 };
+    if (quote === '`' && ch === '$' && source[i + 1] === '{') return null;
+    if (ch === '\n' || ch === '\r') {
+      if (quote !== '`') return null;
+      value += ch;
+      i += 1;
+      continue;
+    }
+    if (ch !== '\\') {
+      value += ch;
+      i += 1;
+      continue;
+    }
+
+    i += 1;
+    if (i >= source.length) return null;
+    const escaped = source[i++]!;
+    if (escaped === '\n') continue;
+    if (escaped === '\r') {
+      if (source[i] === '\n') i += 1;
+      continue;
+    }
+    const simple: Record<string, string> = {
+      n: '\n',
+      r: '\r',
+      t: '\t',
+      b: '\b',
+      f: '\f',
+      v: '\v',
+      '\\': '\\',
+      '"': '"',
+      "'": "'",
+      '`': '`',
+    };
+    if (escaped in simple) {
+      value += simple[escaped]!;
+      continue;
+    }
+    if (escaped === '0') {
+      if (/[0-9]/.test(source[i] ?? '')) return null;
+      value += '\0';
+      continue;
+    }
+    if (escaped === 'x') {
+      const digits = source.slice(i, i + 2);
+      if (digits.length !== 2 || !HEX.test(digits)) return null;
+      value += String.fromCharCode(Number.parseInt(digits, 16));
+      i += 2;
+      continue;
+    }
+    if (escaped === 'u') {
+      if (source[i] === '{') {
+        const end = source.indexOf('}', i + 1);
+        if (end < 0) return null;
+        const digits = source.slice(i + 1, end);
+        const point = Number.parseInt(digits, 16);
+        if (!digits || !HEX.test(digits) || point > 0x10ffff) return null;
+        value += String.fromCodePoint(point);
+        i = end + 1;
+      } else {
+        const digits = source.slice(i, i + 4);
+        if (digits.length !== 4 || !HEX.test(digits)) return null;
+        value += String.fromCharCode(Number.parseInt(digits, 16));
+        i += 4;
+      }
+      continue;
+    }
+    // JavaScript treats an unknown escape as the escaped character itself.
+    value += escaped;
+  }
+  return null;
+}
+
+/**
+ * Tokenize only the JavaScript subset needed to recognize a static
+ * `tools.apply_patch` invocation. Regex literals and malformed strings make the
+ * whole program ineligible; falling back to raw `exec` is safer than guessing.
+ */
+function staticJsTokens(source: string): JsToken[] | null {
+  const tokens: JsToken[] = [];
+  let i = 0;
+  let braceDepth = 0;
+  while (i < source.length) {
+    const ch = source[i]!;
+    if (/\s/.test(ch)) {
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && source[i + 1] === '/') {
+      const end = source.indexOf('\n', i + 2);
+      i = end < 0 ? source.length : end + 1;
+      continue;
+    }
+    if (ch === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2);
+      if (end < 0) return null;
+      i = end + 2;
+      continue;
+    }
+    if (ch === '/') return null;
+    if (ch === '"' || ch === "'" || ch === '`') {
+      const parsed = readJsString(source, i);
+      if (!parsed) return null;
+      tokens.push({ kind: 'string', value: parsed.value });
+      i = parsed.end;
+      continue;
+    }
+    if (JS_IDENTIFIER_START.test(ch)) {
+      const start = i++;
+      while (i < source.length && JS_IDENTIFIER_PART.test(source[i]!)) i += 1;
+      tokens.push({
+        kind: 'identifier',
+        value: source.slice(start, i),
+      });
+      continue;
+    }
+    if (ch === '}') {
+      braceDepth -= 1;
+      if (braceDepth < 0) return null;
+    }
+    tokens.push({ kind: 'punctuation', value: ch });
+    if (ch === '{') braceDepth += 1;
+    i += 1;
+  }
+  return braceDepth === 0 ? tokens : null;
+}
+
+/**
+ * Recover exactly one statically expressed nested patch from the current Codex
+ * `exec` wrapper. Only a direct string argument or a preceding top-level
+ * `const name = <string>` binding is eligible; arbitrary JavaScript is never
+ * evaluated.
+ */
+function nestedApplyPatch(source: string): string | null {
+  const tokens = staticJsTokens(source);
+  if (!tokens) return null;
+  const values = tokens.map((token) => token.value);
+
+  // text(await tools.apply_patch("..."));
+  if (
+    tokens.length === 11 &&
+    values.join('\0') ===
+      ['text', '(', 'await', 'tools', '.', 'apply_patch', '(', tokens[7]!.value, ')', ')', ';'].join('\0') &&
+    tokens[7]!.kind === 'string'
+  ) {
+    return tokens[7]!.value;
+  }
+
+  // const patch = "..."; text(await tools.apply_patch(patch));
+  if (
+    tokens.length === 16 &&
+    tokens[1]!.kind === 'identifier' &&
+    tokens[3]!.kind === 'string' &&
+    tokens[12]!.kind === 'identifier' &&
+    tokens[1]!.value === tokens[12]!.value &&
+    values.join('\0') ===
+      [
+        'const', tokens[1]!.value, '=', tokens[3]!.value, ';',
+        'text', '(', 'await', 'tools', '.', 'apply_patch', '(', tokens[12]!.value, ')', ')', ';',
+      ].join('\0')
+  ) {
+    return tokens[3]!.value;
+  }
+  return null;
 }
 
 /**
@@ -553,11 +741,15 @@ export function parseRollout(path: string): CodexSession | null {
     agentType: string;
     toolUseId: string;
   }>();
-  // apply_patch fan-out: call_id → the fanned block REFERENCES (they stay live
-  // inside the flushed event), per-file statuses, and the raw patch text — so the
-  // (single) custom_tool_call_output can pair a result to every block, or demote
-  // the blocks back to raw passthrough when the patch was rejected.
-  const patchFanout = new Map<string, { blocks: ToolUseBlock[]; statuses: string[]; raw: string }>();
+  // apply_patch fan-out: call_id → live block references plus enough original
+  // call data to demote failed/unconfirmed edits back to raw passthrough.
+  const patchFanout = new Map<string, {
+    blocks: ToolUseBlock[];
+    statuses: string[];
+    passthroughName: string;
+    passthroughInput: Record<string, unknown>;
+    requiresExecSuccess: boolean;
+  }>();
 
   // Open turn buffer; flushed when the conversation side flips.
   let side: 'assistant' | 'user' | null = null;
@@ -687,14 +879,15 @@ export function parseRollout(path: string): CodexSession | null {
         content: stripExecEnvelope(output),
       });
     } else if (kind === 'custom_tool_call') {
-      // Freeform tools (arguments arrive as a raw string). `apply_patch` fans out
-      // to one canonical Write/Edit/MultiEdit block per touched file (mirrors the
-      // opencode connector); other custom tools pass through under their raw name.
+      // Direct apply_patch and the current statically recoverable exec wrapper
+      // fan out to canonical edits; all other custom calls stay raw.
       open('assistant', ts);
       const name = str(pl.name);
       const callId = str(pl.call_id);
       const raw = str(pl.input);
-      const patchFiles = name === 'apply_patch' ? parseApplyPatch(raw) : [];
+      const nestedPatch = name === 'exec' ? nestedApplyPatch(raw) : null;
+      const patch = name === 'apply_patch' ? raw : nestedPatch;
+      const patchFiles = patch ? parseApplyPatch(patch) : [];
       if (patchFiles.length > 0) {
         const fanned = patchFiles.map((f, i) =>
           patchFileToolUse(f, patchFiles.length === 1 ? callId : `${callId}#${i}`),
@@ -703,7 +896,9 @@ export function parseRollout(path: string): CodexSession | null {
         patchFanout.set(callId, {
           blocks: fanned,
           statuses: patchFiles.map(patchFileStatus),
-          raw,
+          passthroughName: name,
+          passthroughInput: { input: raw },
+          requiresExecSuccess: nestedPatch !== null,
         });
       } else {
         blocks.push({ type: 'tool_use', id: callId, name, input: { input: raw } });
@@ -714,18 +909,28 @@ export function parseRollout(path: string): CodexSession | null {
       const output = toolOutputText(pl.output);
       const fan = patchFanout.get(callId);
       const exit = output.match(CUSTOM_ENVELOPE_RE);
+      const script = output.match(SCRIPT_ENVELOPE_RE);
       const isError = pl.is_error === true || (exit !== null && Number(exit[1]) !== 0);
-      if (fan && isError) {
+      const execSucceeded = pl.is_error === false || script?.[1] === 'completed';
+      const execFailed = pl.is_error === true || script?.[1] === 'failed';
+      const shouldDemote = fan?.requiresExecSuccess
+        ? execFailed || !execSucceeded
+        : isError;
+      if (fan && shouldDemote) {
         // The patch was REJECTED — nothing on disk changed. Demote the fanned
-        // canonical blocks back to raw apply_patch passthrough (no `file_path`,
+        // canonical blocks back to their original raw passthrough (no `file_path`,
         // so the Files-changed tab never lists untouched files — the same
         // failed-edit convention as the copilot connector) and surface the full
         // error output on each.
         for (const b of fan.blocks) {
-          b.name = 'apply_patch';
-          b.input = { input: fan.raw };
+          b.name = fan.passthroughName;
+          b.input = fan.passthroughInput;
           blocks.push({ type: 'tool_result', tool_use_id: b.id, content: output, is_error: true });
         }
+      } else if (fan?.requiresExecSuccess) {
+        fan.blocks.forEach((b, i) =>
+          blocks.push({ type: 'tool_result', tool_use_id: b.id, content: fan.statuses[i]! }),
+        );
       } else if (fan && fan.blocks.length > 1) {
         // Per-file status, NOT the shared multi-file summary (which would
         // repeat identically on every fanned-out block).
@@ -740,6 +945,7 @@ export function parseRollout(path: string): CodexSession | null {
           ...(isError ? { is_error: true } : {}),
         });
       }
+      patchFanout.delete(callId);
     } else if (kind === 'tool_search_call') {
       open('assistant', ts);
       blocks.push({ type: 'tool_use', id: str(pl.call_id), name: 'tool_search', input: rec(pl.arguments) });
@@ -754,6 +960,15 @@ export function parseRollout(path: string): CodexSession | null {
       // No call_id and no paired output record — render the query/action alone.
       open('assistant', ts);
       blocks.push({ type: 'tool_use', id: `${sessionId}-ws-${wsSeq++}`, name: 'web_search', input: rec(pl.action) });
+    }
+  }
+  // A live/truncated wrapper without a paired result is not confirmed to have
+  // changed disk. Keep it visible as raw exec, but never report its files.
+  for (const fan of patchFanout.values()) {
+    if (!fan.requiresExecSuccess) continue;
+    for (const b of fan.blocks) {
+      b.name = fan.passthroughName;
+      b.input = fan.passthroughInput;
     }
   }
   flush();

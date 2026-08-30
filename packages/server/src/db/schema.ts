@@ -39,7 +39,8 @@
 //      derived tool errors/file edits, so unchanged normalized rows must rebuild.
 // v17: Codex pathless bootstrap headings and current guardian-review rollouts
 //      change persisted fallback titles and indexed sessions.
-export const SCHEMA_VERSION = 17;
+// v18: current Codex exec-wrapped apply_patch calls populate canonical file edits.
+export const SCHEMA_VERSION = 18;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
