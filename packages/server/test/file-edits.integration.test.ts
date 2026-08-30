@@ -48,6 +48,8 @@ process.env.REINDEX_INTERVAL_MS = '0';
 
 const jsonl = (events: unknown[]): string => events.map((e) => JSON.stringify(e)).join('\n') + '\n';
 const ts = (s: number) => `2026-01-01T10:00:${String(s).padStart(2, '0')}.000Z`;
+const execApplyPatch = (patch: string): string =>
+  `const patch = ${JSON.stringify(patch)};\ntext(await tools.apply_patch(patch));`;
 
 const CWD = '/tmp/feditsproj';
 
@@ -145,8 +147,8 @@ function writeFixtures(): void {
   writeFileSync(join(proj, 'sessOrig.jsonl'), jsonl(claudeLines('sessOrig')));
   writeFileSync(join(proj, 'sessFork.jsonl'), jsonl(claudeLines('sessFork', 'sessOrig')));
 
-  // Codex rollout: one apply_patch fanning out to TWO files (Add + Update) and
-  // a second single-file patch — per-file rows with exact counts.
+  // Codex rollout: one current exec-wrapped apply_patch fanning out to TWO files
+  // (Add + Update) and one legacy direct patch — per-file rows with exact counts.
   const dir = join(codexDir, '2026', '01', '01');
   mkdirSync(dir, { recursive: true });
   writeFileSync(
@@ -155,8 +157,11 @@ function writeFixtures(): void {
       { type: 'session_meta', timestamp: ts(0), payload: { id: 'codex-fe-1', cwd: '/tmp/codexfe', cli_version: '0.122.0', model_provider: 'openai', git: { branch: 'main' } } },
       { type: 'turn_context', timestamp: ts(1), payload: { model: 'gpt-5.4', cwd: '/tmp/codexfe' } },
       { type: 'response_item', timestamp: ts(2), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'patch things' }] } },
-      { type: 'response_item', timestamp: ts(3), payload: { type: 'custom_tool_call', name: 'apply_patch', call_id: 'call_ap1', input: '*** Begin Patch\n*** Add File: /tmp/codexfe/notes.md\n+hello\n+world\n*** Update File: /tmp/codexfe/src/app.ts\n@@\n context line\n-old value\n+new value\n*** End Patch' } },
-      { type: 'response_item', timestamp: ts(4), payload: { type: 'custom_tool_call_output', call_id: 'call_ap1', output: 'Done!' } },
+      { type: 'response_item', timestamp: ts(3), payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_ap1', input: execApplyPatch('*** Begin Patch\n*** Add File: /tmp/codexfe/notes.md\n+hello\n+world\n*** Update File: /tmp/codexfe/src/app.ts\n@@\n context line\n-old value\n+new value\n*** End Patch') } },
+      { type: 'response_item', timestamp: ts(4), payload: { type: 'custom_tool_call_output', call_id: 'call_ap1', is_error: false, output: [
+        { type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n' },
+        { type: 'input_text', text: '{}' },
+      ] } },
       { type: 'response_item', timestamp: ts(5), payload: { type: 'custom_tool_call', name: 'apply_patch', call_id: 'call_ap2', input: '*** Begin Patch\n*** Update File: /tmp/codexfe/single.ts\n@@\n-a\n+b\n*** End Patch' } },
       { type: 'response_item', timestamp: ts(6), payload: { type: 'custom_tool_call_output', call_id: 'call_ap2', output: 'Done!' } },
       { type: 'response_item', timestamp: ts(7), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'patched' }] } },
@@ -257,7 +262,7 @@ afterAll(async () => {
 const get = async (url: string) => app.inject({ method: 'GET', url });
 
 describe('file_edits extraction', () => {
-  it('fans Codex apply_patch out to per-file rows with exact LCS counts', async () => {
+  it('indexes exec-wrapped Codex apply_patch with exact per-file LCS counts', async () => {
     const rows = await queryRows(
       conn,
       `SELECT file_path, tool_name, additions, deletions FROM file_edits

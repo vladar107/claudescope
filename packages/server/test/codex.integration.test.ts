@@ -43,12 +43,19 @@ const pathlessBootstrap = [
   '  <cwd>/tmp/codexproj</cwd>',
   '</environment_context>',
 ].join('\n');
+const execApplyPatch = (patch: string, direct = false): string =>
+  direct
+    ? `text(await tools.apply_patch(${JSON.stringify(patch)}));`
+    : `const patch = ${JSON.stringify(patch)};\ntext(await tools.apply_patch(patch));`;
 
 /** Write one synthetic rollout under codex/YYYY/MM/DD/. */
 function writeRollout(): string {
   const dir = join(codexDir, '2026', '01', '01');
   mkdirSync(dir, { recursive: true });
   const file = join(dir, 'rollout-2026-01-01T10-00-00-019db3da-f840-7142-a548-5bd30f5fe572.jsonl');
+  const nestedPatch = '*** Begin Patch\n*** Add File: /tmp/codexproj/wrapped.md\n+wrapped\n*** Update File: /tmp/codexproj/wrapped.ts\n@@\n-old wrapped\n+new wrapped\n*** End Patch';
+  const directNestedPatch = '*** Begin Patch\n*** Update File: /tmp/codexproj/direct-wrapped.ts\n@@\n-before\n+after\n*** End Patch';
+  const rejectedNestedPatch = '*** Begin Patch\n*** Update File: /tmp/codexproj/rejected-wrapped.ts\n@@\n-before\n+after\n*** End Patch';
   writeFileSync(
     file,
     jsonl([
@@ -124,6 +131,37 @@ function writeRollout(): string {
       ] } },
       { type: 'response_item', timestamp: ts(31), payload: { type: 'custom_tool_call', name: 'future_tool', call_id: 'call_unknown_output', input: 'opaque input' } },
       { type: 'response_item', timestamp: ts(32), payload: { type: 'custom_tool_call_output', call_id: 'call_unknown_output', output: [{ type: 'future_content', value: 'must-not-vanish' }] } },
+      // Current Codex wraps apply_patch in a JavaScript `exec` custom tool. A
+      // static const-bound patch and a direct string literal both remain safely
+      // recoverable without evaluating the program.
+      { type: 'response_item', timestamp: ts(33), payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_exec_ap1', input: execApplyPatch(nestedPatch) } },
+      { type: 'response_item', timestamp: ts(34), payload: { type: 'custom_tool_call_output', call_id: 'call_exec_ap1', is_error: false, output: [
+        { type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n' },
+        { type: 'input_text', text: '{}' },
+      ] } },
+      { type: 'response_item', timestamp: ts(35), payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_exec_ap2', input: execApplyPatch(directNestedPatch, true) } },
+      { type: 'response_item', timestamp: ts(36), payload: { type: 'custom_tool_call_output', call_id: 'call_exec_ap2', output: [
+        { type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n' },
+        { type: 'input_text', text: '{}' },
+      ] } },
+      // Failed wrappers demote to raw exec so Files changed never reports them.
+      { type: 'response_item', timestamp: ts(37), payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_exec_ap3', input: execApplyPatch(rejectedNestedPatch) } },
+      { type: 'response_item', timestamp: ts(38), payload: { type: 'custom_tool_call_output', call_id: 'call_exec_ap3', is_error: true, output: [
+        { type: 'input_text', text: 'Script failed\nWall time 0.1 seconds\nOutput:\n' },
+        { type: 'input_text', text: 'apply_patch verification failed' },
+      ] } },
+      // Patch-like text inside a command string, dynamic input, multiple calls,
+      // and an unconfirmed live call all fail closed as ordinary exec blocks.
+      { type: 'response_item', timestamp: ts(39), payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_exec_text_only', input: 'const command = "rg tools.apply_patch(patch) ."; text(await tools.exec_command({ cmd: command }));' } },
+      { type: 'response_item', timestamp: ts(40), payload: { type: 'custom_tool_call_output', call_id: 'call_exec_text_only', is_error: false, output: 'Script completed\nWall time 0.1 seconds\nOutput:\nno matches' } },
+      { type: 'response_item', timestamp: ts(41), payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_exec_dynamic', input: 'const patch = buildPatch(); text(await tools.apply_patch(patch));' } },
+      { type: 'response_item', timestamp: ts(42), payload: { type: 'custom_tool_call_output', call_id: 'call_exec_dynamic', is_error: false, output: 'Script completed\nWall time 0.1 seconds\nOutput:\n{}' } },
+      { type: 'response_item', timestamp: ts(43), payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_exec_multiple', input: `${execApplyPatch(directNestedPatch, true)}\n${execApplyPatch(directNestedPatch, true)}` } },
+      { type: 'response_item', timestamp: ts(44), payload: { type: 'custom_tool_call_output', call_id: 'call_exec_multiple', is_error: false, output: 'Script completed\nWall time 0.1 seconds\nOutput:\n{}' } },
+      { type: 'response_item', timestamp: ts(45), payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_exec_concat', input: `const patch = ${JSON.stringify(directNestedPatch)} + suffix; text(await tools.apply_patch(patch));` } },
+      { type: 'response_item', timestamp: ts(46), payload: { type: 'custom_tool_call_output', call_id: 'call_exec_concat', is_error: false, output: 'Script completed\nWall time 0.1 seconds\nOutput:\n{}' } },
+      { type: 'response_item', timestamp: ts(47), payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_exec_unconfirmed', input: execApplyPatch(directNestedPatch, true) } },
+      { type: 'response_item', timestamp: ts(48), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'waiting for the patch result' }] } },
     ]),
   );
   return file;
@@ -573,6 +611,66 @@ describe('Codex session detail', () => {
     for (const b of canonical) {
       expect((b.input as { file_path: string }).file_path).not.toContain('missing.ts');
       expect((b.input as { file_path: string }).file_path).not.toContain('other.ts');
+    }
+  });
+
+  it('recovers successful nested exec apply_patch calls as canonical edits', async () => {
+    const detail = (await get('/api/sessions/codex-sess-1')).json();
+    const flat = detail.thread.flatMap(
+      (t: { blocks: Record<string, unknown>[] }) => t.blocks,
+    );
+
+    const write = flat.find((b: Record<string, unknown>) => b.id === 'call_exec_ap1#0');
+    expect(write).toMatchObject({ name: 'Write' });
+    expect(write.input).toEqual({ file_path: '/tmp/codexproj/wrapped.md', content: 'wrapped' });
+    expect(write.result.content[0].text).toBe('Created /tmp/codexproj/wrapped.md');
+
+    const edit = flat.find((b: Record<string, unknown>) => b.id === 'call_exec_ap1#1');
+    expect(edit).toMatchObject({ name: 'MultiEdit' });
+    expect(edit.input).toEqual({
+      file_path: '/tmp/codexproj/wrapped.ts',
+      edits: [{ old_string: 'old wrapped', new_string: 'new wrapped' }],
+    });
+    expect(edit.result.content[0].text).toBe('Updated /tmp/codexproj/wrapped.ts');
+
+    const direct = flat.find((b: Record<string, unknown>) => b.id === 'call_exec_ap2');
+    expect(direct).toMatchObject({ name: 'MultiEdit' });
+    expect(direct.input).toEqual({
+      file_path: '/tmp/codexproj/direct-wrapped.ts',
+      edits: [{ old_string: 'before', new_string: 'after' }],
+    });
+    expect(direct.result.content[0].text).toBe('Updated /tmp/codexproj/direct-wrapped.ts');
+  });
+
+  it('fails closed for rejected, dynamic, ambiguous, and unconfirmed exec patches', async () => {
+    const detail = (await get('/api/sessions/codex-sess-1')).json();
+    const flat = detail.thread.flatMap(
+      (t: { blocks: Record<string, unknown>[] }) => t.blocks,
+    );
+
+    const rejected = flat.find((b: Record<string, unknown>) => b.id === 'call_exec_ap3');
+    expect(rejected).toMatchObject({ name: 'exec' });
+    expect((rejected.input as { file_path?: string }).file_path).toBeUndefined();
+    expect(rejected.result.content[0].text).toContain('Script failed');
+    expect(rejected.result.content[0].text).toContain('verification failed');
+
+    for (const id of [
+      'call_exec_text_only',
+      'call_exec_dynamic',
+      'call_exec_multiple',
+      'call_exec_concat',
+      'call_exec_unconfirmed',
+    ]) {
+      const raw = flat.find((b: Record<string, unknown>) => b.id === id);
+      expect(raw).toMatchObject({ name: 'exec' });
+      expect((raw.input as { file_path?: string }).file_path).toBeUndefined();
+    }
+
+    const canonical = flat.filter((b: Record<string, unknown>) =>
+      ['Write', 'Edit', 'MultiEdit'].includes(b.name as string),
+    );
+    for (const block of canonical) {
+      expect((block.input as { file_path: string }).file_path).not.toContain('rejected-wrapped');
     }
   });
 

@@ -161,9 +161,12 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   `function_call_output` / `custom_tool_call_output` may carry either one string
   or an ordered text-item array; decode the latter before envelope/error parsing
   and keep unknown structured items visible. Direct `apply_patch` calls arrive as
-  `custom_tool_call` records (NOT `function_call`) → parsed V4A envelopes fan out
-  to canonical `Write`/`MultiEdit` per file; rejected patches demote back to raw
-  calls so the Files-changed tab never reports edits that did not happen.
+  `custom_tool_call` records (NOT `function_call`); current Codex may instead
+  wrap one static `tools.apply_patch` call in the JavaScript `exec` custom tool.
+  Both forms parse V4A envelopes and fan out to canonical `Write`/`MultiEdit`
+  per file. Dynamic/ambiguous wrappers stay raw, and rejected or unconfirmed
+  patches demote back to raw calls so Files changed never reports edits that did
+  not happen.
 - **Claude Code subagent correlation** — prefer direct connector linkage when
   available, then metadata-backed description/type matching. If sibling metadata
   is absent or drifted, the shared parser may fall back to an exact full match
