@@ -34,6 +34,25 @@ describe('cleanFallbackTitle', () => {
     expect(cleanFallbackTitle(raw)).toBe('Please add a fallback title cleaner');
   });
 
+  it('skips the pathless Codex instructions heading', () => {
+    const raw = [
+      '# AGENTS.md instructions',
+      '<INSTRUCTIONS>',
+      '</INSTRUCTIONS>',
+      'Restore the real session name',
+    ].join('\n');
+    expect(cleanFallbackTitle(raw)).toBe('Restore the real session name');
+  });
+
+  it('does not broadly classify other instruction headings as injected', () => {
+    expect(cleanFallbackTitle('# Project instructions\nKeep this heading visible')).toBe(
+      'Project instructions',
+    );
+    expect(cleanFallbackTitle('# Project instructions for /tmp\nKeep the real prompt')).toBe(
+      'Keep the real prompt',
+    );
+  });
+
   it('skips lone wrapper tag lines and system-reminder preambles', () => {
     const raw = [
       '<system-reminder>',

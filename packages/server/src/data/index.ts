@@ -467,7 +467,10 @@ async function applyFallbackTitles(conn: DuckDBConnection): Promise<void> {
           *,
           CASE
             WHEN connector_id = 'codex'
-              AND starts_with(source, '# AGENTS.md instructions for ')
+              AND regexp_matches(
+                source,
+                '^# AGENTS\\.md instructions(?: for [^\\r\\n]+)?\\r?\\n[\\t\\r\\n ]*<INSTRUCTIONS>'
+              )
               AND instructions_start > 0
               AND instructions_end > instructions_start
             THEN substring(source, instructions_end + length('</INSTRUCTIONS>'))
@@ -482,13 +485,22 @@ async function applyFallbackTitles(conn: DuckDBConnection): Promise<void> {
           CASE
             WHEN instructions_remainder IS NOT NULL THEN
               CASE
-                WHEN starts_with(ltrim(instructions_remainder), '<environment_context>') THEN
+                WHEN starts_with(
+                  ltrim(instructions_remainder, chr(9) || chr(10) || chr(13) || ' '),
+                  '<environment_context>'
+                ) THEN
                   CASE
-                    WHEN strpos(ltrim(instructions_remainder), '</environment_context>')
+                    WHEN strpos(
+                      ltrim(instructions_remainder, chr(9) || chr(10) || chr(13) || ' '),
+                      '</environment_context>'
+                    )
                       > length('<environment_context>')
                     THEN substring(
-                      ltrim(instructions_remainder),
-                      strpos(ltrim(instructions_remainder), '</environment_context>')
+                      ltrim(instructions_remainder, chr(9) || chr(10) || chr(13) || ' '),
+                      strpos(
+                        ltrim(instructions_remainder, chr(9) || chr(10) || chr(13) || ' '),
+                        '</environment_context>'
+                      )
                         + length('</environment_context>')
                     )
                     ELSE text_content

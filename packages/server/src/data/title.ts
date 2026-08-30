@@ -4,7 +4,8 @@
  * Codex and pi sessions store no title (and a Claude session may never have
  * been auto-titled), so the indexer falls back to the session's first eligible
  * user message. That raw message is often markup or a tool-injected blob — a
- * leading `# AGENTS.md instructions for /…` heading, an
+ * leading `# AGENTS.md instructions` heading (optionally followed by
+ * `for /…`), an
  * `<INSTRUCTIONS>…</INSTRUCTIONS>` wrapper, system reminders — which makes an
  * ugly, leaky title.
  *
@@ -51,7 +52,8 @@ function isSyntheticTurn(raw: string): boolean {
  * actually asked, not the harness scaffolding wrapped around it.
  */
 const INJECTED_LINE = [
-  /^#{1,6}\s*\S.*\b(instructions?|guidelines?)\b.*\bfor\b/i, // "# AGENTS.md instructions for /…"
+  /^# AGENTS\.md instructions(?: for .+)?$/i,
+  /^#{1,6}\s*\S.*\b(instructions?|guidelines?)\b.*\bfor\b/i,
   /^<\/?[a-z][\w-]*>?$/i, // a lone XML-ish tag line: <INSTRUCTIONS> or </INSTRUCTIONS>
   /^<(system|system-reminder|instructions?|context|user[_-]instructions?)\b/i, // opening blob tag
   /^(system reminder|caveat|important):/i, // common injected preambles
