@@ -22,6 +22,8 @@ import type {
   SessionDetailResponse,
   SessionMeta,
   SessionsQuery,
+  ToolUsageQuery,
+  ToolUsageResponse,
 } from '@claudescope/shared';
 
 /** Query-param bag: undefined/empty values are omitted from the URL. */
@@ -74,5 +76,9 @@ export class ApiClient {
 
   digest(q: DigestQuery = {}): Promise<DigestResponse> {
     return this.get('/api/analytics/digest', q as unknown as Params);
+  }
+
+  toolUsage(q: ToolUsageQuery): Promise<ToolUsageResponse> {
+    return this.get('/api/analytics/tools', q as unknown as Params);
   }
 }

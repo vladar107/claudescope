@@ -6,7 +6,13 @@
  */
 
 import { isAbsolute, resolve } from 'node:path';
-import type { AnalyticsResponse, SearchResponse, SessionDetailResponse } from '@claudescope/shared';
+import type {
+  AnalyticsResponse,
+  SearchResponse,
+  SessionDetailResponse,
+  ToolUsageKind,
+  ToolUsageResponse,
+} from '@claudescope/shared';
 import { redactText, threadItemsToMarkdown } from '@claudescope/shared';
 import { projectIdFromCwd } from '../data/project-id.js';
 
@@ -20,6 +26,21 @@ export const DEFAULT_TURNS = 20;
 export const fmtCost = (usd: number): string => `$${usd.toFixed(2)}`;
 export const fmtTokens = (n: number): string => n.toLocaleString('en-US');
 export const day = (iso: string): string => iso.slice(0, 10);
+
+/**
+ * Dependency-free aligned table: pad each column to its widest cell (header
+ * included); `right` marks numeric columns for right-alignment. Widths are
+ * code-unit based — good enough for a terminal listing.
+ */
+export function table(headers: string[], rows: string[][], right: boolean[] = []): string {
+  const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? '').length)));
+  const line = (cells: string[]): string =>
+    cells
+      .map((c, i) => (right[i] ? c.padStart(widths[i] ?? 0) : c.padEnd(widths[i] ?? 0)))
+      .join('  ')
+      .trimEnd();
+  return [line(headers), ...rows.map(line)].join('\n');
+}
 
 /** Windowing params a session request may carry. */
 export interface WindowArgs {
@@ -139,4 +160,20 @@ export function shapeSessionMarkdown(data: SessionDetailResponse, redact: boolea
     );
   }
   return parts.join('\n\n');
+}
+
+/**
+ * Tool/skill usage breakdown as a `KEY, AGENT, COUNT` table. Shared by the CLI
+ * `analytics --group-by tool|skill` command and the MCP `get_analytics` tool so
+ * neither can drift from the other's column layout or empty-state wording.
+ */
+export function shapeToolUsage(res: ToolUsageResponse, kind: ToolUsageKind): string {
+  if (res.rows.length === 0) {
+    return kind === 'skill' ? 'No skill calls in range.' : 'No tool calls in range.';
+  }
+  return table(
+    ['KEY', 'AGENT', 'COUNT'],
+    res.rows.map((r) => [r.tool, r.agent, String(r.count)]),
+    [false, false, true],
+  );
 }

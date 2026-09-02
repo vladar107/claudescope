@@ -232,7 +232,7 @@ async function loadFile(
       ${costExpr} AS cost_usd,
       ev.text_content,
       ev.message_id, ev.forked_from_session_id, TRUE AS usage_canonical,
-      ev.tool_error_count
+      ev.tool_error_count, ev.tool_error_text, ev.skill_names
     FROM (
       ${connector.eventsProjectionSql(file.path)}
     ) AS ev

@@ -47,6 +47,8 @@ export const CANONICAL_COLUMNS = {
   tool_use_count: 'INTEGER',
   tool_names: 'VARCHAR',
   tool_error_count: 'INTEGER',
+  tool_error_text: 'VARCHAR',
+  skill_names: 'VARCHAR',
   text_content: 'VARCHAR',
 } as const;
 
@@ -81,6 +83,9 @@ export interface CanonicalRow {
   tool_names: string;
   /** NULL when the source format carries no error signal — distinct from 0. */
   tool_error_count: number | null;
+  /** Failed tool_result bodies, newline-joined; NULL when the row has none. */
+  tool_error_text: string | null;
+  skill_names: string;
   text_content: string;
   /** Session title; read by the aux projection, ignored by the events one. */
   title?: string;

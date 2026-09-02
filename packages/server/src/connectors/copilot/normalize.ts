@@ -50,7 +50,8 @@ import type {
 } from '@claudescope/shared';
 import { resolveImageWithin } from '../safe-image.js';
 import { toolNamesCsv } from '../tool-names.js';
-import { toolErrorCount } from '../tool-errors.js';
+import { skillNamesCsv } from '../skill-names.js';
+import { toolErrorCount, toolErrorText } from '../tool-errors.js';
 import type { CanonicalRow } from '../canonical.js';
 import { num, rec, str } from '../json.js';
 
@@ -497,6 +498,8 @@ export function toCanonicalRows(session: CopilotSession, filePath: string): Cano
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(content),
       tool_error_count: toolErrorCount(content),
+      tool_error_text: toolErrorText(content),
+      skill_names: skillNamesCsv(content),
       text_content: text,
       title: session.title,
     };

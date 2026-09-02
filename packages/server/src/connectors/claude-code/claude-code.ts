@@ -17,6 +17,7 @@ import { claudeProjectsDir } from '../../settings.js';
 import { sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
+import { MAX_TOOL_ERROR_TEXT } from '../tool-errors.js';
 import { globalMemory, projectMemory } from './memory.js';
 
 /**
@@ -29,14 +30,36 @@ import { globalMemory, projectMemory } from './memory.js';
 const READ_OPTS = `union_by_name=true, format='newline_delimited', maximum_object_size=268435456, ignore_errors=true`;
 
 /**
+ * One failed tool_result's body. `content` is either a plain string or an array
+ * of blocks (a tool returning an image alongside its message), and DuckDB
+ * reports those as json_type 'VARCHAR' and 'ARRAY' respectively; the array form
+ * keeps its text items only. Any other shape yields NULL, which `string_agg`
+ * then skips.
+ */
+const ERROR_BODY = `
+        CASE json_type(b.value, '$.content')
+          WHEN 'VARCHAR' THEN json_extract_string(b.value, '$.content')
+          WHEN 'ARRAY' THEN array_to_string(
+            list_filter(
+              list_transform(
+                CAST(json_extract(b.value, '$.content') AS JSON[]),
+                x -> CASE WHEN json_extract_string(x, '$.type') = 'text'
+                          THEN json_extract_string(x, '$.text') END
+              ),
+              t -> t IS NOT NULL
+            ), chr(10))
+        END`;
+
+/**
  * One shared pass over a message's content blocks, as a LATERAL join: plain
- * text (text/thinking bodies for FTS), tool_use count + names, and the count
- * of tool_results flagged `is_error` — four aggregates from a single
- * `json_each` scan per row (correlated subqueries would re-scan the array per
- * aggregate, which measurably slows cold indexing). For a plain-string
- * `content` the scan yields scalar rows no block filter matches, so every
- * aggregate comes back empty and the CASEs in the SELECT keep the original
- * per-shape semantics (string content → its text, zero tools).
+ * text (text/thinking bodies for FTS), tool_use count + names, the skill
+ * argument of `Skill` calls, and the count and bodies of tool_results flagged
+ * `is_error` — six aggregates from a single `json_each` scan per row
+ * (correlated subqueries would re-scan the array per aggregate, which
+ * measurably slows cold indexing). For a plain-string `content` the scan yields
+ * scalar rows no block filter matches, so every aggregate comes back empty and
+ * the CASEs in the SELECT keep the original per-shape semantics (string
+ * content → its text, zero tools).
  */
 const BLOCK_AGG_LATERAL = `
   LEFT JOIN LATERAL (
@@ -52,6 +75,16 @@ const BLOCK_AGG_LATERAL = `
         WHERE json_extract_string(b.value, '$.type') = 'tool_result'
           AND json_extract_string(b.value, '$.is_error') = 'true'
       ) AS tool_error_count,
+      string_agg(${ERROR_BODY}, chr(10)) FILTER (
+        WHERE json_extract_string(b.value, '$.type') = 'tool_result'
+          AND json_extract_string(b.value, '$.is_error') = 'true'
+      ) AS tool_error_text,
+      string_agg(json_extract_string(b.value, '$.input.skill'), ',') FILTER (
+        WHERE json_extract_string(b.value, '$.type') = 'tool_use'
+          AND json_extract_string(b.value, '$.name') = 'Skill'
+          AND json_type(b.value, '$.input.skill') = 'VARCHAR'
+          AND json_extract_string(b.value, '$.input.skill') <> ''
+      ) AS skill_names,
       string_agg(
         coalesce(
           json_extract_string(b.value, '$.text'),
@@ -101,6 +134,24 @@ const TOOL_NAMES_EXPR = `
   CASE
     WHEN message IS NULL OR ${STRING_CONTENT} THEN ''
     ELSE COALESCE(blocks.tool_names, '')
+  END`;
+
+/**
+ * Newline-joined bodies of the failed tool_results, capped per event so a single
+ * multi-megabyte failure (a truncated build log) can't bloat the index. NULL
+ * when the row has no failed result — this is search material, not a count.
+ */
+const TOOL_ERROR_TEXT_EXPR = `
+  CASE
+    WHEN message IS NULL OR ${STRING_CONTENT} THEN NULL
+    ELSE left(blocks.tool_error_text, ${MAX_TOOL_ERROR_TEXT})
+  END`;
+
+/** Comma-joined `$.input.skill` of `Skill` tool_use blocks ('' when none). */
+const SKILL_NAMES_EXPR = `
+  CASE
+    WHEN message IS NULL OR ${STRING_CONTENT} THEN ''
+    ELSE COALESCE(blocks.skill_names, '')
   END`;
 
 /**
@@ -168,6 +219,8 @@ function eventsProjectionSql(filePath: string): string {
       ${TOOL_USE_COUNT_EXPR} AS tool_use_count,
       ${TOOL_NAMES_EXPR} AS tool_names,
       ${TOOL_ERROR_COUNT_EXPR} AS tool_error_count,
+      ${TOOL_ERROR_TEXT_EXPR} AS tool_error_text,
+      ${SKILL_NAMES_EXPR} AS skill_names,
       ${TEXT_CONTENT_EXPR} AS text_content,
       json_extract_string(message, '$.id') AS message_id,
       json_extract_string(forkedFrom, '$.sessionId') AS forked_from_session_id

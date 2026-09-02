@@ -36,7 +36,8 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import type { AssistantEvent, ContentBlock, MessageUsage, UserEvent } from '@claudescope/shared';
 import { toolNamesCsv } from '../tool-names.js';
-import { toolErrorCount } from '../tool-errors.js';
+import { skillNamesCsv } from '../skill-names.js';
+import { toolErrorCount, toolErrorText } from '../tool-errors.js';
 import type { CanonicalRow } from '../canonical.js';
 import { num, rec, str } from '../json.js';
 
@@ -487,6 +488,8 @@ export function toCanonicalRows(session: PiSession, filePath: string): Canonical
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(content),
       tool_error_count: toolErrorCount(content),
+      tool_error_text: toolErrorText(content),
+      skill_names: skillNamesCsv(content),
       text_content: text,
     };
   });

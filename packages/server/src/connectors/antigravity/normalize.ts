@@ -40,6 +40,7 @@ import type {
 } from '@claudescope/shared';
 import { resolveImageWithin } from '../safe-image.js';
 import { toolNamesCsv } from '../tool-names.js';
+import { skillNamesCsv } from '../skill-names.js';
 import type { CanonicalRow } from '../canonical.js';
 import { rec, str } from '../json.js';
 
@@ -616,6 +617,8 @@ export function toCanonicalRows(session: AntigravitySession, filePath: string): 
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(content),
       tool_error_count: null, // Antigravity's typed result records carry no error signal
+      tool_error_text: null,
+      skill_names: skillNamesCsv(content),
       text_content: text,
     };
   });

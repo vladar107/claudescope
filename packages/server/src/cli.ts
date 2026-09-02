@@ -422,14 +422,16 @@ Commands:
 Query commands (read-only; start the background server on first use):
   search "<query>" Full-text search across transcripts and agent memory
                    [--project id] [--role user|assistant] [--scope sessions|memory|all] [--limit N]
+                   [--literal] (exact substring, for errors/identifiers)
   sessions         List sessions [--project id] [--cwd path] [--agent id] [--branch name]
                    [--sort recent|oldest|tokens|cost|messages] [--q substr] [--limit N]
   session <id>     One session as Markdown — a window of turns, pageable
                    [--offset N] [--limit N] [--around uuid] [--radius N] [--tail N]
                    [--max-tool-chars N] [--redact]
   projects         List projects
-  analytics        Token/cost aggregates [--group-by project|model|day|agent]
+  analytics        Token/cost aggregates [--group-by project|model|day|agent|tool|skill]
                    [--from date] [--to date] [--timezone IANA]
+                   (tool|skill accept --project too; count calls, not tokens/cost)
   digest           Week-in-review Markdown [--from date] [--to date] [--timezone IANA]
                    (default: last 7 calendar days in the machine time zone)
   All query commands accept --json for the raw API response (ignores --redact).
@@ -465,6 +467,7 @@ async function main(): Promise<void> {
       branch: { type: 'string' },
       role: { type: 'string' },
       scope: { type: 'string' },
+      literal: { type: 'boolean' },
       sort: { type: 'string' },
       q: { type: 'string' },
       limit: { type: 'string' },
@@ -519,12 +522,13 @@ async function main(): Promise<void> {
     case 'search':
       await runQuery(() => {
         const query = positionals[1];
-        if (!query) throw new UsageError('usage: claudescope search "<query>" [--project id] [--role user|assistant] [--scope sessions|memory|all] [--limit N] [--json]');
+        if (!query) throw new UsageError('usage: claudescope search "<query>" [--project id] [--role user|assistant] [--scope sessions|memory|all] [--literal] [--limit N] [--json]');
         const args = {
           query,
           project: values.project,
           role: enumFlag('role', values.role, ['user', 'assistant', 'all'] as const),
           scope: enumFlag('scope', values.scope, ['sessions', 'memory', 'all'] as const),
+          literal: values.literal,
           limit: intFlag('limit', values.limit),
           json: values.json,
         };
@@ -596,7 +600,8 @@ async function main(): Promise<void> {
     case 'analytics':
       await runQuery(() => {
         const args = {
-          groupBy: enumFlag('group-by', values['group-by'], ['project', 'model', 'day', 'agent'] as const),
+          groupBy: enumFlag('group-by', values['group-by'], ['project', 'model', 'day', 'agent', 'tool', 'skill'] as const),
+          project: values.project,
           from: values.from,
           to: values.to,
           timeZone: values.timezone ?? detectedTimeZone(),
