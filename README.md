@@ -202,10 +202,10 @@ claude mcp add claudescope -- claudescope mcp
 first use if it isn't already running. Tools: `search_transcripts` (full-text
 search with snippet hits), `list_sessions` / `list_projects` (compact listings),
 `get_session` (a windowed Markdown slice of one session — pageable, tool
-payloads truncated), `get_analytics` (token/cost aggregates), and `get_memory`
-(instruction files + distilled agent memory). Output is plain text sized for an
-agent's context window; pass `redact: true` to mask home paths and likely
-secrets. Everything stays read-only and on localhost.
+payloads truncated), `get_analytics` (token/cost aggregates, or tool/skill call
+counts), and `get_memory` (instruction files + distilled agent memory). Output is
+plain text sized for an agent's context window; pass `redact: true` to mask home
+paths and likely secrets. Everything stays read-only and on localhost.
 
 ### Claude Code and Codex plugin
 
@@ -244,6 +244,7 @@ start the background server on first use and print tables (or raw JSON with
 
 ```bash
 claudescope search "duckdb lock" --limit 5      # where did I hit this before?
+claudescope search --literal "ENOENT: no such file" --limit 5  # exact string, no ranking
 claudescope sessions --agent codex --sort cost  # priciest Codex sessions
 claudescope sessions --cwd "$PWD" --branch "$(git rev-parse --abbrev-ref HEAD)" # this project + branch
 claudescope session <id> --around <uuid>        # open a search hit, windowed
@@ -252,6 +253,10 @@ claudescope open --session <id> --around <uuid> # open that hit in the web app
 claudescope analytics --group-by day --timezone Europe/Amsterdam --json | jq '.rows[] | [.key, .costUsd]'
 claudescope digest --from 2026-06-23 --to 2026-06-29 --timezone Europe/Amsterdam
 ```
+
+`--literal` matches the query as one case-insensitive substring over transcript
+text, failed tool-result bodies, tool names and skill names (newest first, no
+ranking) — the way to find an error message the agent never restated in prose.
 
 `sessions --cwd <path>` resolves to the project for that working directory
 locally, without a separate `projects` lookup, and is exclusive with

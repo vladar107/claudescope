@@ -34,6 +34,7 @@ import {
   resolveWindowArgs,
   shapeSearchResults,
   shapeSessionMarkdown,
+  shapeToolUsage,
 } from './shape.js';
 import { detectedTimeZone } from './query.js';
 
@@ -119,10 +120,17 @@ export function createMcpServer(deps: McpDeps): McpServer {
           .enum(['sessions', 'memory', 'all'])
           .optional()
           .describe('What to search: transcripts, agent memory, or both (default sessions)'),
+        literal: z
+          .boolean()
+          .optional()
+          .describe(
+            'Match the query as an exact case-insensitive substring instead of ranked full-text; ' +
+              'use for error messages, identifiers, tool or skill names',
+          ),
         limit: z.number().int().min(1).max(50).optional().describe(`Max hits (default ${DEFAULT_LIMIT})`),
       }),
     },
-    guarded(async (client, args: { query: string; project?: string; role?: 'user' | 'assistant' | 'all'; scope?: 'sessions' | 'memory' | 'all'; limit?: number }) => {
+    guarded(async (client, args: { query: string; project?: string; role?: 'user' | 'assistant' | 'all'; scope?: 'sessions' | 'memory' | 'all'; literal?: boolean; limit?: number }) => {
       const limit = args.limit ?? DEFAULT_LIMIT;
       const res = await client.search({
         q: args.query,
@@ -130,6 +138,7 @@ export function createMcpServer(deps: McpDeps): McpServer {
         type: args.role ?? 'all',
         scope: args.scope ?? 'sessions',
         format: 'plain',
+        literal: args.literal,
       });
       return shapeSearchResults(res, limit);
     }),
@@ -237,11 +246,17 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'get_analytics',
     {
       description:
-        'Aggregated token/cost usage grouped by project, model, day, or agent, with totals. ' +
-        'Cost is a local list-price estimate, not billing. Date-only bounds are calendar days ' +
-        'in the selected IANA time zone; timestamps with offsets identify exact instants.',
+        'Aggregated token/cost usage grouped by project, model, day, or agent, with totals; ' +
+        'or (tool/skill) a call-count breakdown of canonical tool calls or the skills they ' +
+        'invoked, which accepts an optional project filter instead of totals. Cost is a local ' +
+        'list-price estimate, not billing. Date-only bounds are calendar days in the selected ' +
+        'IANA time zone; timestamps with offsets identify exact instants.',
       inputSchema: z.object({
-        groupBy: z.enum(['project', 'model', 'day', 'agent']).optional().describe('Grouping (default project)'),
+        groupBy: z
+          .enum(['project', 'model', 'day', 'agent', 'tool', 'skill'])
+          .optional()
+          .describe('Grouping (default project)'),
+        project: z.string().optional().describe('Project id (from list_projects); only used by tool/skill grouping'),
         from: z.string().optional().describe('Inclusive start date or ISO timestamp'),
         to: z.string().optional().describe('Inclusive end date or ISO timestamp'),
         timeZone: z
@@ -250,24 +265,47 @@ export function createMcpServer(deps: McpDeps): McpServer {
           .describe('IANA time zone for date-only bounds and day grouping (default machine time zone)'),
       }),
     },
-    guarded(async (client, args: { groupBy?: 'project' | 'model' | 'day' | 'agent'; from?: string; to?: string; timeZone?: string }) => {
-      const res = await client.analytics({
-        groupBy: args.groupBy ?? 'project',
-        from: args.from,
-        to: args.to,
-        timeZone: args.timeZone ?? detectedTimeZone(),
-      });
-      if (res.rows.length === 0) return 'No usage in range.';
-      const lines = res.rows.map(
-        (row) =>
-          `- ${row.key}: ${fmtTokens(row.totalTokens)} tok ` +
-          `(in ${fmtTokens(row.inputTokens)}, out ${fmtTokens(row.outputTokens)}, ` +
-          `cache r/w ${fmtTokens(row.cacheReadTokens)}/${fmtTokens(row.cacheCreationTokens)}) · ` +
-          `${fmtCost(row.costUsd)} · ${row.messageCount} responses`,
-      );
-      lines.push(analyticsTotalsLine(res.totals));
-      return lines.join('\n');
-    }),
+    guarded(
+      async (
+        client,
+        args: {
+          groupBy?: 'project' | 'model' | 'day' | 'agent' | 'tool' | 'skill';
+          project?: string;
+          from?: string;
+          to?: string;
+          timeZone?: string;
+        },
+      ) => {
+        const groupBy = args.groupBy ?? 'project';
+        if (groupBy === 'tool' || groupBy === 'skill') {
+          const res = await client.toolUsage({
+            kind: groupBy,
+            project: args.project,
+            from: args.from,
+            to: args.to,
+            timeZone: args.timeZone ?? detectedTimeZone(),
+          });
+          return shapeToolUsage(res, groupBy);
+        }
+
+        const res = await client.analytics({
+          groupBy,
+          from: args.from,
+          to: args.to,
+          timeZone: args.timeZone ?? detectedTimeZone(),
+        });
+        if (res.rows.length === 0) return 'No usage in range.';
+        const lines = res.rows.map(
+          (row) =>
+            `- ${row.key}: ${fmtTokens(row.totalTokens)} tok ` +
+            `(in ${fmtTokens(row.inputTokens)}, out ${fmtTokens(row.outputTokens)}, ` +
+            `cache r/w ${fmtTokens(row.cacheReadTokens)}/${fmtTokens(row.cacheCreationTokens)}) · ` +
+            `${fmtCost(row.costUsd)} · ${row.messageCount} responses`,
+        );
+        lines.push(analyticsTotalsLine(res.totals));
+        return lines.join('\n');
+      },
+    ),
   );
 
   server.registerTool(

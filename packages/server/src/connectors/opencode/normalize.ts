@@ -34,7 +34,8 @@ import type {
 } from '@claudescope/shared';
 import type { OpencodeRawSession } from './db.js';
 import { toolNamesCsv } from '../tool-names.js';
-import { toolErrorCount } from '../tool-errors.js';
+import { skillNamesCsv } from '../skill-names.js';
+import { toolErrorCount, toolErrorText } from '../tool-errors.js';
 import type { CanonicalRow } from '../canonical.js';
 import { num, str } from '../json.js';
 
@@ -416,6 +417,8 @@ export function toCanonicalRows(session: OpencodeRawSession, filePath: string): 
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(content),
       tool_error_count: toolErrorCount(content),
+      tool_error_text: toolErrorText(content),
+      skill_names: skillNamesCsv(content),
       text_content: text,
       // A child's title must not clobber the parent's via the titles projection
       // (both files now share one session_id) — emit none for sidechain rows.

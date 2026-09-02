@@ -22,6 +22,8 @@ import {
   resolveWindowArgs,
   shapeSearchResults,
   shapeSessionMarkdown,
+  shapeToolUsage,
+  table,
 } from './shape.js';
 
 const json = (v: unknown): string => JSON.stringify(v, null, 2);
@@ -40,26 +42,12 @@ const MAX_CELL = 60;
 
 const clip = (s: string): string => (s.length > MAX_CELL ? `${s.slice(0, MAX_CELL - 1)}…` : s);
 
-/**
- * Dependency-free aligned table: pad each column to its widest cell (header
- * included); `right` marks numeric columns for right-alignment. Widths are
- * code-unit based — good enough for a terminal listing.
- */
-export function table(headers: string[], rows: string[][], right: boolean[] = []): string {
-  const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? '').length)));
-  const line = (cells: string[]): string =>
-    cells
-      .map((c, i) => (right[i] ? c.padStart(widths[i] ?? 0) : c.padEnd(widths[i] ?? 0)))
-      .join('  ')
-      .trimEnd();
-  return [line(headers), ...rows.map(line)].join('\n');
-}
-
 export interface SearchArgs {
   query: string;
   project?: string;
   role?: SearchType;
   scope?: SearchScope;
+  literal?: boolean;
   limit?: number;
   json?: boolean;
 }
@@ -71,6 +59,7 @@ export async function querySearch(client: ApiClient, args: SearchArgs): Promise<
     type: args.role ?? 'all',
     scope: args.scope ?? 'sessions',
     format: 'plain',
+    literal: args.literal,
   });
   if (args.json) return json(res);
   return shapeSearchResults(res, args.limit ?? DEFAULT_LIMIT);
@@ -156,7 +145,8 @@ export async function queryProjects(client: ApiClient, args: { json?: boolean })
 }
 
 export interface AnalyticsArgs {
-  groupBy?: AnalyticsGroupBy;
+  groupBy?: AnalyticsGroupBy | 'tool' | 'skill';
+  project?: string;
   from?: string;
   to?: string;
   timeZone?: string;
@@ -164,8 +154,21 @@ export interface AnalyticsArgs {
 }
 
 export async function queryAnalytics(client: ApiClient, args: AnalyticsArgs): Promise<string> {
+  const groupBy = args.groupBy ?? 'project';
+  if (groupBy === 'tool' || groupBy === 'skill') {
+    const res = await client.toolUsage({
+      kind: groupBy,
+      project: args.project,
+      from: args.from,
+      to: args.to,
+      timeZone: args.timeZone,
+    });
+    if (args.json) return json(res);
+    return shapeToolUsage(res, groupBy);
+  }
+
   const res = await client.analytics({
-    groupBy: args.groupBy ?? 'project',
+    groupBy,
     from: args.from,
     to: args.to,
     timeZone: args.timeZone,

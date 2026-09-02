@@ -103,6 +103,12 @@ export function enumParam<const T extends string>(
   fallback: T,
 ): T {
   if (raw === undefined) return fallback;
+  // A repeated query param (`?kind=a&kind=b`) arrives as an array, which the
+  // route's `string | undefined` typing does not admit — reject it here rather
+  // than let `trim()` throw a 500.
+  if (typeof raw !== 'string') {
+    throw new BadRequestError(`${field} must be a single value (got '${String(raw)}')`);
+  }
   const value = raw.trim();
   if (!allowed.some((candidate) => candidate === value)) {
     throw new BadRequestError(

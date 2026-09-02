@@ -36,6 +36,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { AssistantEvent, ContentBlock, MessageUsage, UserEvent } from '@claudescope/shared';
 import { toolNamesCsv } from '../tool-names.js';
+import { skillNamesCsv } from '../skill-names.js';
 import type { CanonicalRow } from '../canonical.js';
 import { num, rec, str } from '../json.js';
 
@@ -630,6 +631,8 @@ export function toCanonicalRows(session: GrokSession, filePath: string): Canonic
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(content),
       tool_error_count: null,
+      tool_error_text: null,
+      skill_names: skillNamesCsv(content),
       text_content: text,
       // A sidechain file's rows carry the PARENT's session_id — emitting the
       // child's own title there would overwrite the parent's in the titles

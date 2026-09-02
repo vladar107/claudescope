@@ -40,7 +40,9 @@
 // v17: Codex pathless bootstrap headings and current guardian-review rollouts
 //      change persisted fallback titles and indexed sessions.
 // v18: current Codex exec-wrapped apply_patch calls populate canonical file edits.
-export const SCHEMA_VERSION = 18;
+// v19: per-event tool_error_text (failed tool_result bodies) and skill_names,
+//      indexed for literal search and the skill-usage breakdown.
+export const SCHEMA_VERSION = 19;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -87,7 +89,14 @@ export const SCHEMA_DDL: readonly string[] = [
      usage_canonical BOOLEAN DEFAULT TRUE,
      -- Failed tool calls on the row (tool_result blocks with is_error). NULL when
      -- the source format has no error signal (Junie, Antigravity) — not 0.
-     tool_error_count INTEGER
+     tool_error_count INTEGER,
+     -- Bodies of those failed tool_results, newline-joined and capped per event.
+     -- Indexed so a literal search finds an error the assistant never restated;
+     -- NULL when the row carries no failed result.
+     tool_error_text VARCHAR,
+     -- Comma-joined skill argument of canonical Skill tool calls, shaped like
+     -- tool_names, which on its own only ever says "Skill".
+     skill_names     VARCHAR DEFAULT ''
    )`,
 
   `CREATE TABLE IF NOT EXISTS sessions (

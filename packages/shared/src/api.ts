@@ -77,7 +77,7 @@ export interface SearchResult {
   title: string;
   /** Snippet with matched terms highlighted (HTML `<mark>`), or raw text with `format=plain`. */
   snippet: string;
-  /** BM25 relevance score. */
+  /** BM25 relevance score; 0 for `literal` hits, which are ordered by recency. */
   score: number;
   messageUuid: string;
   role: string;
@@ -170,6 +170,13 @@ export interface SearchQuery {
   type?: SearchType;
   scope?: SearchScope;
   format?: SnippetFormat;
+  /**
+   * Exact mode: a case-insensitive substring match of the whole query over
+   * transcript text, failed tool-result text, tool names and skill names,
+   * newest first. No BM25 ranking — for error messages and identifiers that
+   * tokenized search dilutes, and for the columns FTS doesn't index.
+   */
+  literal?: boolean;
 }
 
 export type AnalyticsGroupBy = 'project' | 'model' | 'day' | 'agent';
@@ -718,6 +725,18 @@ export interface StreakInfo {
 export interface ActivityResponse {
   heatmap: ActivityCell[];
   streak: StreakInfo;
+}
+
+/** Which breakdown `/api/analytics/tools` computes: raw tool calls, or (`skill`)
+ *  canonical `Skill` tool_use calls counted by the skill they invoked. */
+export type ToolUsageKind = 'tool' | 'skill';
+
+/** GET /api/analytics/tools query parameters; bounds filter event timestamps. */
+export interface ToolUsageQuery extends AnalyticsDateRangeQuery {
+  /** Which breakdown to compute (default 'tool'). */
+  kind?: ToolUsageKind;
+  /** Project slug id (as returned by /api/projects); omit for the whole corpus. */
+  project?: string;
 }
 
 /** One bar of the tool-usage breakdown: a raw (pre-categorization) tool name,

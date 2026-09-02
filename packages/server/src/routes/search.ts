@@ -6,6 +6,10 @@
  * which: `sessions` (default), `all` (both), or `memory` (memory only). Both
  * kinds carry a snippet with matched terms highlighted via `<mark>`. Optional
  * filters: `project` (slug) and `type` (user|assistant|all; sessions only).
+ *
+ * `literal=true` swaps the transcript half for an exact substring match over
+ * text, failed tool-result bodies, tool names and skill names (newest first);
+ * memory search is unaffected.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -92,6 +96,85 @@ async function searchSessions(
   });
 }
 
+/**
+ * Sessions (literal) search: the whole query as one case-insensitive substring,
+ * newest first, no ranking. It also reaches the columns FTS does not index —
+ * failed tool-result bodies, tool names and skill names — so an error the
+ * assistant never restated in prose, or a tool/skill invocation, is findable.
+ */
+async function searchLiteral(
+  q: string,
+  type: SearchType,
+  project: string | undefined,
+  format: SnippetFormat,
+): Promise<SearchResult[]> {
+  const conn = await getConnection();
+  // Case-fold in ONE engine: DuckDB's `lower()` and JavaScript's `toLowerCase()`
+  // disagree on dozens of code points (U+0130 `İ`, final sigma, …), so a needle
+  // lowered here could miss rows the SQL filter matches — and vice versa.
+  const lit = `lower(${sqlString(q)})`;
+
+  const filters: string[] = [
+    `(contains(lower(coalesce(e.text_content, '')), ${lit})
+      OR contains(lower(coalesce(e.tool_error_text, '')), ${lit})
+      OR contains(lower(e.tool_names), ${lit})
+      OR contains(lower(e.skill_names), ${lit}))`,
+  ];
+  if (type === 'user' || type === 'assistant') filters.push(`e.role = ${sqlString(type)}`);
+  if (project) filters.push(await projectFilter(conn, project, 's.project_cwd'));
+
+  const rows = await queryRows(
+    conn,
+    `SELECT
+       e.uuid AS message_uuid,
+       e.session_id AS session_id,
+       e.role AS role,
+       e.text_content AS text_content,
+       e.tool_error_text AS tool_error_text,
+       e.tool_names AS tool_names,
+       e.skill_names AS skill_names,
+       s.project_cwd AS project_cwd,
+       s.title AS title,
+       CASE
+         WHEN contains(lower(coalesce(e.text_content, '')), ${lit}) THEN 'text'
+         WHEN contains(lower(coalesce(e.tool_error_text, '')), ${lit}) THEN 'error'
+         WHEN contains(lower(e.skill_names), ${lit}) THEN 'skill'
+         ELSE 'tool'
+       END AS matched
+     FROM events e
+     JOIN sessions s ON s.id = e.session_id
+     WHERE ${filters.join(' AND ')}
+     ORDER BY e.ts DESC NULLS LAST
+     LIMIT 50`,
+  );
+
+  return rows.map((r): SearchResult => {
+    const rd = readRow(r, 'search-literal');
+    const cwd = rd.str('project_cwd');
+    // Which column matched is decided by the same SQL that filtered, never
+    // re-tested here. The match may live in a column with no prose to quote, so
+    // those synthesize a line that still shows what it matched.
+    const matched = rd.str('matched');
+    const source =
+      matched === 'text'
+        ? rd.str('text_content')
+        : matched === 'error'
+          ? rd.str('tool_error_text')
+          : matched === 'skill'
+            ? `Skills: ${rd.str('skill_names')}`
+            : `Tools: ${rd.str('tool_names')}`;
+    return {
+      sessionId: rd.str('session_id'),
+      projectId: cwd ? projectIdFromCwd(cwd) : '',
+      title: rd.str('title'),
+      snippet: makeSnippet(source, [q], format),
+      score: 0,
+      messageUuid: rd.str('message_uuid'),
+      role: rd.str('role'),
+    };
+  });
+}
+
 /** Live memory search. Empty unless scope includes memory. */
 async function searchMemory(
   terms: string[],
@@ -140,7 +223,14 @@ async function searchMemory(
 
 export async function registerSearchRoute(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { q?: string; project?: string; type?: string; scope?: string; format?: string };
+    Querystring: {
+      q?: string;
+      project?: string;
+      type?: string;
+      scope?: string;
+      format?: string;
+      literal?: string;
+    };
   }>('/api/search', async (req): Promise<SearchResponse> => {
     const q = (req.query.q ?? '').trim();
     if (!q) return { sessions: [], memory: [] };
@@ -150,13 +240,17 @@ export async function registerSearchRoute(app: FastifyInstance): Promise<void> {
     const project = req.query.project;
     const scope = enumParam(req.query.scope, 'scope', SEARCH_SCOPES, 'sessions');
     const format: SnippetFormat = req.query.format === 'plain' ? 'plain' : 'html';
+    const literal = req.query.literal === 'true' || req.query.literal === '1';
 
     // Each kind is guarded so a failure in one (e.g. an FTS edge case) still
     // returns the other rather than 500-ing the whole request.
     const sessions =
       scope === 'memory'
         ? []
-        : await searchSessions(q, terms, type, project, format).catch((err) => {
+        : await (literal
+            ? searchLiteral(q, type, project, format)
+            : searchSessions(q, terms, type, project, format)
+          ).catch((err) => {
             // Don't 500 the whole request, but don't let a real FTS regression
             // silently look like "no results" either — leave a trace.
             req.log.warn({ err }, 'session search failed');

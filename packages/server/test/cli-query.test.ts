@@ -59,7 +59,7 @@ function writeFixtures(): void {
     jsonl([
       { type: 'ai-title', sessionId: 'sessQ2', aiTitle: '🚀 déjà-vu — fix résumé parsing' },
       { ...base2, type: 'user', uuid: 'q2u1', parentUuid: null, timestamp: '2026-01-03T09:00:00.000Z', isSidechain: false, message: { role: 'user', content: 'unrelated haystack chatter' } },
-      { ...base2, type: 'assistant', uuid: 'q2a1', parentUuid: 'q2u1', timestamp: '2026-01-03T09:00:04.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'text', text: 'ok' }], usage } },
+      { ...base2, type: 'assistant', uuid: 'q2a1', parentUuid: 'q2u1', timestamp: '2026-01-03T09:00:04.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'text', text: 'ok' }, { type: 'tool_use', id: 't1', name: 'Bash', input: {} }], usage } },
     ]),
   );
 }
@@ -131,6 +131,13 @@ describe('cli query subcommands', () => {
     expect(miss).toBe('No matches.');
   });
 
+  it('search --literal survives the boolean→query-param hop', async () => {
+    const hit = await query.querySearch(client, { query: 'secret/needle.txt', literal: true });
+    expect(hit).toContain('sessQ1');
+    const miss = await query.querySearch(client, { query: 'zzz-none', literal: true });
+    expect(miss).toBe('No matches.');
+  });
+
   it('session --redact masks home paths in Markdown, while --json stays raw', async () => {
     const plain = await query.querySession(client, 'sessQ1', {});
     expect(plain).toContain('/Users/testuser/secret/needle.txt');
@@ -150,5 +157,12 @@ describe('cli query subcommands', () => {
     const out = await query.queryAnalytics(client, { groupBy: 'agent' });
     expect(out).toContain('claude-code');
     expect(out).toMatch(/Total: [\d,]+ tok · \$\d/u);
+  });
+
+  it('analytics --group-by tool renders a KEY/AGENT/COUNT table, no totals line', async () => {
+    const out = await query.queryAnalytics(client, { groupBy: 'tool' });
+    expect(out).toMatch(/^KEY\s+AGENT\s+COUNT$/mu);
+    expect(out).toContain('claude-code');
+    expect(out).not.toContain('Total:');
   });
 });

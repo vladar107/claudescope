@@ -36,6 +36,7 @@ import type {
 import { junieHome } from '../../settings.js';
 import { resolveImageWithin } from '../safe-image.js';
 import { toolNamesCsv } from '../tool-names.js';
+import { skillNamesCsv } from '../skill-names.js';
 import type { CanonicalRow } from '../canonical.js';
 import { num, str } from '../json.js';
 
@@ -453,6 +454,8 @@ export function toCanonicalRows(session: JunieSession, filePath: string): Canoni
       tool_use_count: arr.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(arr),
       tool_error_count: null, // Junie results are 'modified: path' strings — no error signal
+      tool_error_text: null,
+      skill_names: skillNamesCsv(arr),
       text_content: text,
       title: session.title,
     };
