@@ -98,9 +98,9 @@ function writeFixtures(): string[] {
   const sessB = join(projB, 'sessB.jsonl');
   const sessBLines = [
     JSON.stringify({ type: 'ai-title', sessionId: 'sessB', aiTitle: 'Session B' }),
-    JSON.stringify({ type: 'user', sessionId: 'sessB', uuid: 'b-u1', parentUuid: null, cwd: '/tmp/projB', timestamp: '2026-01-02T09:00:00.000Z', isSidechain: false, message: { role: 'user', content: 'hello from project B' } }),
+    JSON.stringify({ type: 'user', sessionId: 'sessB', uuid: 'b-u1', parentUuid: null, cwd: '/tmp/projB', gitBranch: 'feat/other', timestamp: '2026-01-02T09:00:00.000Z', isSidechain: false, message: { role: 'user', content: 'hello from project B' } }),
     '{"type":"assistant","sessionId":"sessB","message":{"role":"assistant","content":"C:\\path\\to"}}',
-    JSON.stringify({ type: 'assistant', sessionId: 'sessB', uuid: 'b-a1', parentUuid: 'b-u1', cwd: '/tmp/projB', timestamp: '2026-01-02T09:00:05.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-7', content: [{ type: 'text', text: 'hi B' }], usage: { input_tokens: 200, output_tokens: 100 } } }),
+    JSON.stringify({ type: 'assistant', sessionId: 'sessB', uuid: 'b-a1', parentUuid: 'b-u1', cwd: '/tmp/projB', gitBranch: 'feat/other', timestamp: '2026-01-02T09:00:05.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-7', content: [{ type: 'text', text: 'hi B' }], usage: { input_tokens: 200, output_tokens: 100 } } }),
   ];
   writeFileSync(sessB, sessBLines.join('\n') + '\n');
 
@@ -169,6 +169,16 @@ describe('GET /api/sessions', () => {
   it('filters by project id', async () => {
     const sessions = (await get(`/api/sessions?project=${projBId}`)).json();
     expect(sessions.map((s: { id: string }) => s.id)).toEqual(['sessB']);
+  });
+
+  it('filters by exact git branch', async () => {
+    const feat = (await get('/api/sessions?branch=feat%2Fother')).json();
+    expect(feat.map((s: { id: string }) => s.id)).toEqual(['sessB']);
+    const main = (await get('/api/sessions?branch=main')).json();
+    expect(main.map((s: { id: string }) => s.id)).toEqual(['sessA']);
+    // Exact, not a prefix or substring match.
+    expect((await get('/api/sessions?branch=feat')).json()).toHaveLength(0);
+    expect((await get('/api/sessions?branch=nope')).json()).toHaveLength(0);
   });
 
   it('caps the list with limit; a bogus limit is ignored', async () => {
@@ -264,6 +274,24 @@ describe('GET /api/sessions/:id — windowing (agent/CLI consumers)', () => {
     expect(detail.thread.map((t: { uuid: string }) => t.uuid)).toEqual(
       full.thread.slice(1, 3).map((t: { uuid: string }) => t.uuid),
     );
+  });
+
+  it('tail returns the last N turns', async () => {
+    const full = (await get('/api/sessions/sessA')).json();
+    const total = full.thread.length;
+    const detail = (await get('/api/sessions/sessA?tail=2')).json();
+    expect(detail.window).toEqual({ offset: total - 2, limit: 2, total });
+    expect(detail.thread.map((t: { uuid: string }) => t.uuid)).toEqual(
+      full.thread.slice(-2).map((t: { uuid: string }) => t.uuid),
+    );
+  });
+
+  it('tail combined with offset/limit/around is a 400', async () => {
+    expect((await get('/api/sessions/sessA?tail=1&offset=0')).statusCode).toBe(400);
+    expect((await get('/api/sessions/sessA?tail=1&limit=2')).statusCode).toBe(400);
+    expect((await get('/api/sessions/sessA?tail=1&around=a1')).statusCode).toBe(400);
+    // Rejected before the session is resolved, so an unknown id is still a 400.
+    expect((await get('/api/sessions/does-not-exist?tail=1&offset=0')).statusCode).toBe(400);
   });
 
   it('maxToolChars truncates tool payloads without adding a window', async () => {

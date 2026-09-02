@@ -1,6 +1,6 @@
 {
   "name": "claudescope",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Search and analyze local AI coding-agent transcript history with ClaudeScope's read-only CLI.",
   "author": {
     "name": "Vladislav Ramazaev",
@@ -29,6 +29,7 @@
     ],
     "websiteURL": "https://github.com/vladar107/claudescope",
     "defaultPrompt": [
+      "Where did we stop on this branch?",
       "Find whether we solved this error before.",
       "Show my recent Codex sessions.",
       "Compare token usage by agent last week."

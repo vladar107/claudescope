@@ -102,3 +102,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0075 | [Reliable subagent linkage and Codex transcript rendering](./0075-reliable-subagent-linkage-and-codex-rendering.md) | done |
 | 0076 | [Restore Codex session naming](./0076-restore-codex-session-naming.md) | done |
 | 0077 | [Restore Codex file-change detection](./0077-restore-codex-file-change-detection.md) | done |
+| 0078 | [Proactive history context](./0078-proactive-history-context.md) | done |

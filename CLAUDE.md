@@ -275,6 +275,15 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   failure while projecting (unreadable source, a bad rate reaching the
   interpolated cost expression) can't destroy already-indexed events. A
   transaction is not an option here — see the shared-connection note above.
+- **`claudescope hook session-start` answers from stdin only** — it fires
+  after a context compaction and prints the recovery pointer for that session.
+  It must never touch the daemon (`ensureDaemon()` spawns and waits up to
+  30 s), git, or the network: anything that blocks or exits non-zero shows up
+  after every compaction in both harnesses. Recent sessions are deliberately
+  NOT injected at session start (untrusted titles in every context, and
+  `clear` asks for a fresh one) — that is the history skill's job, on demand.
+  `plugins/claudescope/hooks/hooks.json` is shared by Claude Code and Codex:
+  matcher `compact` only, no plugin-root variables, always exit 0.
 - **Release is maintainer-only** and tag-triggered (npm Trusted Publishing /
   OIDC). See `CONTRIBUTING.md`.
 

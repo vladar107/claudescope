@@ -98,15 +98,22 @@ describe('cli query subcommands', () => {
   it('sessions renders an aligned table, clipping long titles and keeping non-ASCII rows', async () => {
     const out = await query.querySessions(client, {});
     const lines = out.split('\n');
-    expect(lines[0]).toMatch(/^ID\s+AGENT\s+TITLE\s+DATE\s+MSGS\s+TOKENS\s+COST$/u);
+    expect(lines[0]).toMatch(/^ID\s+AGENT\s+BRANCH\s+TITLE\s+DATE\s+MSGS\s+TOKENS\s+COST$/u);
     // Every row's AGENT column starts where the header's does (pad-aligned).
     const agentCol = lines[0]!.indexOf('AGENT');
-    for (const row of lines.slice(1)) expect(row.slice(agentCol)).toMatch(/^claude-code\s/u);
+    for (const row of lines.slice(1)) expect(row.slice(agentCol)).toMatch(/^claude-code\s+main\s/u);
     // The long title is clipped with an ellipsis, never dumped whole.
     expect(out).toContain('…');
     expect(out).not.toContain(LONG_TITLE);
     // The emoji title survives as a row.
     expect(out).toContain('🚀 déjà-vu');
+  });
+
+  it('sessions --cwd resolves the working directory to the fixture project', async () => {
+    const hit = await query.querySessions(client, { cwd: '/tmp/projQ/', json: true });
+    expect((JSON.parse(hit) as SessionMeta[]).map((r) => r.id).sort()).toEqual(['sessQ1', 'sessQ2']);
+    const miss = await query.querySessions(client, { cwd: '/tmp/nowhere' });
+    expect(miss).toBe('No sessions match.');
   });
 
   it('sessions --json returns the raw rows', async () => {

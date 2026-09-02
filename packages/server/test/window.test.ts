@@ -53,6 +53,17 @@ describe('resolveWindow', () => {
     });
   });
 
+  it('tail clamps past the start and around still wins over it', () => {
+    expect(resolveWindow(thread, [], { tail: 2 })).toEqual({ offset: 4, limit: 2, total: 6 });
+    // More turns requested than exist: the whole thread, never a negative offset.
+    expect(resolveWindow(thread, [], { tail: 99 })).toEqual({ offset: 0, limit: 6, total: 6 });
+    // Degenerate but well-defined: an empty window pinned at the end.
+    expect(resolveWindow(thread, [], { tail: 0 })).toEqual({ offset: 6, limit: 0, total: 6 });
+    expect(resolveWindow(thread, [], { around: 'm1', radius: 0, tail: 3 })).toEqual({
+      offset: 1, limit: 1, total: 6, anchorFound: true,
+    });
+  });
+
   it('around wins over offset/limit, and offset clamps past the end', () => {
     expect(resolveWindow(thread, [], { around: 'm4', radius: 0, offset: 0, limit: 99 })).toEqual({
       offset: 4, limit: 1, total: 6, anchorFound: true,

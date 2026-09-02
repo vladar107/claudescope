@@ -231,8 +231,10 @@ solutions, decisions, session inspection, usage analytics, and dated work
 digests. It keeps searches and session windows narrow; transcript results enter
 the current conversation context. The plugin is the minimal setup, while
 `claudescope mcp` remains the structured, typed option for MCP-capable clients.
-See the [plugin guide](./plugins/claudescope/README.md) for usage and local
-development.
+The plugin also ships a small `SessionStart` hook that fires only after a
+context compaction and injects the command to read the pre-compaction
+transcript; see the [plugin guide](./plugins/claudescope/README.md) for its
+behavior, opt-out, and local development.
 
 ### Scripting (CLI)
 
@@ -243,16 +245,22 @@ start the background server on first use and print tables (or raw JSON with
 ```bash
 claudescope search "duckdb lock" --limit 5      # where did I hit this before?
 claudescope sessions --agent codex --sort cost  # priciest Codex sessions
+claudescope sessions --cwd "$PWD" --branch "$(git rev-parse --abbrev-ref HEAD)" # this project + branch
 claudescope session <id> --around <uuid>        # open a search hit, windowed
+claudescope session <id> --tail 20              # last 20 turns
 claudescope open --session <id> --around <uuid> # open that hit in the web app
 claudescope analytics --group-by day --timezone Europe/Amsterdam --json | jq '.rows[] | [.key, .costUsd]'
 claudescope digest --from 2026-06-23 --to 2026-06-29 --timezone Europe/Amsterdam
 ```
 
-`session` prints a pageable window of turns as Markdown (`--offset/--limit`,
-`--redact` to mask paths/secrets); `--json` returns the raw API response
-unredacted. `open` starts the daemon lazily and preserves its configured port;
-session ids and message anchors are URL-encoded before the browser opens. See
+`sessions --cwd <path>` resolves to the project for that working directory
+locally, without a separate `projects` lookup, and is exclusive with
+`--project`; `--branch <name>` filters to that git branch. `session` prints a
+pageable window of turns as Markdown (`--offset/--limit`, `--redact` to mask
+paths/secrets); `--tail N` prints only the last N turns and is exclusive with
+`--offset/--limit/--around`. `--json` returns the raw API response unredacted.
+`open` starts the daemon lazily and preserves its configured port; session ids
+and message anchors are URL-encoded before the browser opens. See
 `claudescope help` for the full flag list.
 
 Analytics and digest date-only bounds are inclusive calendar days in the

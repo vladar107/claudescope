@@ -19,6 +19,7 @@ export interface WindowParams {
   limit?: number;
   around?: string;
   radius?: number;
+  tail?: number;
 }
 
 /** Default items on each side of an `around` anchor. */
@@ -27,11 +28,14 @@ export const DEFAULT_RADIUS = 10;
 /**
  * Resolve the requested window to a [start, end) slice of `thread`.
  *
- * `around` takes precedence over `offset`/`limit`: the window is centered on
- * the item with that uuid. A uuid living inside a subagent thread resolves to
- * the main-thread turn that spawned the run (`spawnUuid`); a uuid that can't
- * be located at all falls back to the start of the thread with
- * `anchorFound: false` so the caller can tell the anchor missed.
+ * Precedence is `around` > `tail` > `offset`/`limit`.
+ *
+ * `around` centers the window on the item with that uuid. A uuid living inside
+ * a subagent thread resolves to the main-thread turn that spawned the run
+ * (`spawnUuid`); a uuid that can't be located at all falls back to the start of
+ * the thread with `anchorFound: false` so the caller can tell the anchor missed.
+ *
+ * `tail` returns the last N items, clamped to the thread.
  */
 export function resolveWindow(
   thread: ThreadItem[],
@@ -55,6 +59,11 @@ export function resolveWindow(
     const start = anchorFound ? Math.max(0, idx - radius) : 0;
     const end = anchorFound ? Math.min(total, idx + radius + 1) : Math.min(total, radius * 2 + 1);
     return { offset: start, limit: end - start, total, anchorFound };
+  }
+
+  if (params.tail !== undefined) {
+    const start = Math.max(total - params.tail, 0);
+    return { offset: start, limit: total - start, total };
   }
 
   const start = Math.min(Math.max(params.offset ?? 0, 0), total);

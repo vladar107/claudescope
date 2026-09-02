@@ -16,7 +16,9 @@ ClaudeScope's existing read-only query CLI.
   ```
 
 ClaudeScope starts its local daemon on the first query. The plugin does not read
-agent transcript files itself and contains no hooks or bundled MCP server.
+agent transcript files itself; it contains no bundled MCP server, but it does
+ship an optional `SessionStart` hook (see below) that runs the same read-only
+CLI.
 
 ## Install in Claude Code
 
@@ -57,6 +59,41 @@ worked on yesterday”. `claudescope search` snippets are unredacted and enter t
 current conversation context, so the skill keeps searches minimal. Follow-up
 windows use `claudescope session --redact` by default, but its path and secret
 masking is best-effort rather than a guarantee.
+
+## Compaction hook
+
+The plugin ships one `SessionStart` hook (`hooks/hooks.json`), matched to
+`compact` only. Right after a context compaction it injects a single line: the
+pre-compaction transcript is still indexed locally, and the command to read its
+end (`claudescope session <id> --tail 20 --redact`). It answers from the
+harness payload alone — no daemon, git, or network access, so it cannot block a
+session — and prints nothing when `claudescope` is not on `PATH`.
+
+It deliberately does not run on `startup`, `resume`, or `clear`. Injecting
+earlier sessions there puts untrusted session titles into every session's
+context whether or not the work continues anything, and `clear` is the user
+asking for a fresh context. Those moments are covered on demand by the history
+skill's resume recipe (`claudescope sessions --cwd … --branch …`).
+
+Codex requires `hooks = true` under `[features]` in `~/.codex/config.toml`, and
+gates new or changed hooks behind a one-time trust step: run `/hooks` once to
+review and trust it. Claude Code has no way to disable a single plugin hook;
+set `CLAUDESCOPE_HOOKS=0` in the environment, or uninstall the plugin, to turn
+it off there.
+
+Nothing leaves the machine and nothing untrusted enters the context: the
+injected line contains only the harness's own session id.
+
+### Weekly digest
+
+For a push rather than pull workflow, cron a weekly digest:
+
+```cron
+0 9 * * 1 claudescope digest > "$HOME/claudescope-digest.md"
+```
+
+`claudescope digest` defaults to the last seven calendar days ending today;
+pass `--from`/`--to` for an exact calendar week.
 
 ## Skill or MCP?
 
