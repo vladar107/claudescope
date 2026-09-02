@@ -47,6 +47,7 @@ import {
   waitForHealth,
 } from './daemon.js';
 import { runMcpServer } from './agent/mcp.js';
+import { sessionStartHookMain } from './agent/hook.js';
 import { ApiClient } from './agent/api-client.js';
 import {
   detectedTimeZone,
@@ -412,16 +413,19 @@ Commands:
                    (register with: claude mcp add claudescope -- claudescope mcp)
   update [-y]      Upgrade to the latest published version and restart
   pricing update   Fetch current model prices (LiteLLM) into the local rate table
+  hook session-start
+                   Plugin SessionStart hook: after a compaction, prints the
+                   recovery pointer for the session (harness JSON on stdin)
   help             Show this help
   version          Print the installed version
 
 Query commands (read-only; start the background server on first use):
   search "<query>" Full-text search across transcripts and agent memory
                    [--project id] [--role user|assistant] [--scope sessions|memory|all] [--limit N]
-  sessions         List sessions [--project id] [--agent id]
+  sessions         List sessions [--project id] [--cwd path] [--agent id] [--branch name]
                    [--sort recent|oldest|tokens|cost|messages] [--q substr] [--limit N]
   session <id>     One session as Markdown — a window of turns, pageable
-                   [--offset N] [--limit N] [--around uuid] [--radius N]
+                   [--offset N] [--limit N] [--around uuid] [--radius N] [--tail N]
                    [--max-tool-chars N] [--redact]
   projects         List projects
   analytics        Token/cost aggregates [--group-by project|model|day|agent]
@@ -456,7 +460,9 @@ async function main(): Promise<void> {
       'no-open': { type: 'boolean' },
       // Query subcommand flags (search/sessions/session/projects/analytics).
       project: { type: 'string' },
+      cwd: { type: 'string' },
       agent: { type: 'string' },
+      branch: { type: 'string' },
       role: { type: 'string' },
       scope: { type: 'string' },
       sort: { type: 'string' },
@@ -466,6 +472,7 @@ async function main(): Promise<void> {
       session: { type: 'string' },
       around: { type: 'string' },
       radius: { type: 'string' },
+      tail: { type: 'string' },
       'max-tool-chars': { type: 'string' },
       redact: { type: 'boolean' },
       json: { type: 'boolean' },
@@ -526,9 +533,20 @@ async function main(): Promise<void> {
       break;
     case 'sessions':
       await runQuery(() => {
+        if (values.project !== undefined && values.cwd !== undefined) {
+          throw new UsageError('--project and --cwd are mutually exclusive (--cwd resolves to a project id)');
+        }
+        if (values.cwd !== undefined && values.cwd.length === 0) {
+          throw new UsageError('--cwd expects a non-empty path');
+        }
+        if (values.branch !== undefined && values.branch.length === 0) {
+          throw new UsageError('--branch expects a non-empty branch name');
+        }
         const args = {
           project: values.project,
+          cwd: values.cwd,
           agent: values.agent,
+          branch: values.branch,
           sort: enumFlag('sort', values.sort, ['recent', 'oldest', 'tokens', 'cost', 'messages'] as const),
           q: values.q,
           limit: intFlag('limit', values.limit),
@@ -540,12 +558,20 @@ async function main(): Promise<void> {
     case 'session':
       await runQuery(() => {
         const id = positionals[1];
-        if (!id) throw new UsageError('usage: claudescope session <id> [--offset N] [--limit N] [--around uuid] [--radius N] [--max-tool-chars N] [--redact] [--json]');
+        if (!id) throw new UsageError('usage: claudescope session <id> [--offset N] [--limit N] [--around uuid] [--radius N] [--tail N] [--max-tool-chars N] [--redact] [--json]');
+        const tail = intFlag('tail', values.tail);
+        if (tail !== undefined) {
+          if (tail < 1) throw new UsageError(`--tail expects a positive integer, got '${values.tail}'`);
+          if (values.offset !== undefined || values.limit !== undefined || values.around !== undefined) {
+            throw new UsageError('--tail cannot be combined with --offset, --limit, or --around');
+          }
+        }
         const args = {
           offset: intFlag('offset', values.offset),
           limit: intFlag('limit', values.limit),
           around: values.around,
           radius: intFlag('radius', values.radius),
+          tail,
           maxToolChars: intFlag('max-tool-chars', values['max-tool-chars']),
           redact: values.redact,
           json: values.json,
@@ -588,6 +614,18 @@ async function main(): Promise<void> {
         await pricingUpdate();
       } else {
         pricingHelp();
+      }
+      break;
+    }
+    case 'hook': {
+      // The hook itself must stay silent and exit 0 (the harness runs it after
+      // every compaction); a mistyped subcommand is a normal usage error.
+      const sub = positionals[1];
+      if (sub === 'session-start') {
+        await sessionStartHookMain();
+      } else {
+        console.error('usage: claudescope hook session-start');
+        process.exitCode = 1;
       }
       break;
     }

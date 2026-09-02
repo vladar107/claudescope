@@ -30,6 +30,7 @@ import {
   day,
   fmtCost,
   fmtTokens,
+  projectIdForCwd,
   resolveWindowArgs,
   shapeSearchResults,
   shapeSessionMarkdown,
@@ -138,21 +139,34 @@ export function createMcpServer(deps: McpDeps): McpServer {
     'list_sessions',
     {
       description:
-        'List recorded sessions (most recent first by default), optionally filtered by project, ' +
-        'agent, or a title/text match. Returns compact rows with sessionIds for get_session.',
+        'List recorded sessions (most recent first by default), optionally filtered by project ' +
+        '(or a working directory), agent, git branch, or a title/text match. Returns compact rows ' +
+        'with sessionIds for get_session.',
       inputSchema: z.object({
         project: z.string().optional().describe('Project id to scope to (from list_projects)'),
+        cwd: z
+          .string()
+          .optional()
+          .describe('Working directory to scope to; resolved to a project id (project wins if both are given)'),
         agent: z
           .string()
           .optional()
           .describe('Agent connector id, e.g. claude-code, codex, junie, pi, opencode, copilot, antigravity'),
+        branch: z.string().optional().describe('Exact git branch the session recorded, e.g. main'),
         sort: z.enum(['recent', 'oldest', 'tokens', 'cost', 'messages']).optional(),
         q: z.string().optional().describe('Substring filter on the session title'),
         limit: z.number().int().min(1).max(200).optional().describe(`Max rows (default ${DEFAULT_LIMIT})`),
       }),
     },
-    guarded(async (client, args: { project?: string; agent?: string; sort?: 'recent' | 'oldest' | 'tokens' | 'cost' | 'messages'; q?: string; limit?: number }) => {
-      const rows = await client.sessions({ ...args, limit: args.limit ?? DEFAULT_LIMIT });
+    guarded(async (client, args: { project?: string; cwd?: string; agent?: string; branch?: string; sort?: 'recent' | 'oldest' | 'tokens' | 'cost' | 'messages'; q?: string; limit?: number }) => {
+      const rows = await client.sessions({
+        project: args.project ?? (args.cwd ? projectIdForCwd(args.cwd) : undefined),
+        agent: args.agent,
+        branch: args.branch,
+        sort: args.sort,
+        q: args.q,
+        limit: args.limit ?? DEFAULT_LIMIT,
+      });
       if (rows.length === 0) return 'No sessions match.';
       return rows.map(sessionLine).join('\n');
     }),
@@ -163,20 +177,33 @@ export function createMcpServer(deps: McpDeps): McpServer {
     {
       description:
         'Read one session as compact Markdown. Sessions can be huge, so this returns a WINDOW of ' +
-        `turns (default: first ${DEFAULT_TURNS}) plus the total count — page with offset/limit, or anchor ` +
-        'on a search hit with around (a messageUuid) + radius. Tool payloads are truncated to ' +
-        `maxToolChars (default ${DEFAULT_MAX_TOOL_CHARS}). Set redact: true to mask home paths and likely secrets.`,
+        `turns (default: first ${DEFAULT_TURNS}) plus the total count — page with offset/limit, take the ` +
+        'last N turns with tail, or anchor on a search hit with around (a messageUuid) + radius. ' +
+        `Tool payloads are truncated to maxToolChars (default ${DEFAULT_MAX_TOOL_CHARS}). ` +
+        'Set redact: true to mask home paths and likely secrets.',
       inputSchema: z.object({
         sessionId: z.string().describe('Session id (from list_sessions or search_transcripts)'),
         offset: z.number().int().min(0).optional().describe('0-based index of the first turn'),
         limit: z.number().int().min(1).optional().describe('Turns to return'),
         around: z.string().optional().describe('Center the window on this message uuid (overrides offset/limit)'),
         radius: z.number().int().min(0).optional().describe('Turns on each side of around (default 10)'),
+        tail: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe('Return the last N turns; cannot be combined with offset/limit/around'),
         maxToolChars: z.number().int().min(0).optional().describe('Char cap per tool payload; 0 = uncapped'),
         redact: z.boolean().optional().describe('Mask home paths and likely secrets (default false)'),
       }),
     },
-    guarded(async (client, args: { sessionId: string; offset?: number; limit?: number; around?: string; radius?: number; maxToolChars?: number; redact?: boolean }) => {
+    guarded(async (client, args: { sessionId: string; offset?: number; limit?: number; around?: string; radius?: number; tail?: number; maxToolChars?: number; redact?: boolean }) => {
+      if (
+        args.tail !== undefined &&
+        (args.offset !== undefined || args.limit !== undefined || args.around !== undefined)
+      ) {
+        throw new Error('tail cannot be combined with offset, limit, or around');
+      }
       const data = await client.session(args.sessionId, {
         ...resolveWindowArgs(args),
         maxToolChars: args.maxToolChars ?? DEFAULT_MAX_TOOL_CHARS,

@@ -18,6 +18,7 @@ import {
   day,
   fmtCost,
   fmtTokens,
+  projectIdForCwd,
   resolveWindowArgs,
   shapeSearchResults,
   shapeSessionMarkdown,
@@ -77,7 +78,10 @@ export async function querySearch(client: ApiClient, args: SearchArgs): Promise<
 
 export interface SessionsArgs {
   project?: string;
+  /** Working directory to scope to; resolved locally to a project id. */
+  cwd?: string;
   agent?: string;
+  branch?: string;
   sort?: SessionSort;
   q?: string;
   limit?: number;
@@ -85,21 +89,30 @@ export interface SessionsArgs {
 }
 
 export async function querySessions(client: ApiClient, args: SessionsArgs): Promise<string> {
-  const rows = await client.sessions({ ...args, limit: args.limit ?? DEFAULT_LIMIT });
+  const project = args.project ?? (args.cwd ? projectIdForCwd(args.cwd) : undefined);
+  const rows = await client.sessions({
+    project,
+    agent: args.agent,
+    branch: args.branch,
+    sort: args.sort,
+    q: args.q,
+    limit: args.limit ?? DEFAULT_LIMIT,
+  });
   if (args.json) return json(rows);
   if (rows.length === 0) return 'No sessions match.';
   return table(
-    ['ID', 'AGENT', 'TITLE', 'DATE', 'MSGS', 'TOKENS', 'COST'],
+    ['ID', 'AGENT', 'BRANCH', 'TITLE', 'DATE', 'MSGS', 'TOKENS', 'COST'],
     rows.map((s) => [
       s.id,
       s.connectorId,
+      s.gitBranch ?? '',
       clip(s.title),
       day(s.startedAt),
       String(s.messageCount),
       fmtTokens(s.totalTokens),
       fmtCost(s.totalCostUsd),
     ]),
-    [false, false, false, false, true, true, true],
+    [false, false, false, false, false, true, true, true],
   );
 }
 
@@ -108,6 +121,7 @@ export interface SessionArgs {
   limit?: number;
   around?: string;
   radius?: number;
+  tail?: number;
   maxToolChars?: number;
   redact?: boolean;
   json?: boolean;

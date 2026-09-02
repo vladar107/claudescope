@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'command -v claudescope >/dev/null 2>&1 && claudescope hook session-start 2>/dev/null; exit 0'",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -21,6 +21,7 @@ import { getConnection, queryRows, sqlLikeEscape, sqlString } from '../db/duckdb
 import { readRow } from '../db/row.js';
 import { displayNameFromCwd, projectIdFromCwd } from '../data/project-id.js';
 import { projectFilter } from '../data/analytics-scope.js';
+import { BadRequestError } from '../params.js';
 import { toIso } from './projects.js';
 import { assembleThread, buildSubagentRuns } from '../data/parser.js';
 import { loadSessionData } from '../data/session-loader.js';
@@ -84,15 +85,25 @@ function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
 
 export async function registerSessionsRoutes(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { project?: string; sort?: string; q?: string; agent?: string; limit?: string };
+    Querystring: {
+      project?: string;
+      sort?: string;
+      q?: string;
+      agent?: string;
+      branch?: string;
+      limit?: string;
+    };
   }>('/api/sessions', async (req): Promise<SessionMeta[]> => {
     const conn = await getConnection();
-    const { project, sort, q, agent } = req.query;
+    const { project, sort, q, agent, branch } = req.query;
     const limit = intParam(req.query.limit);
 
     const where: string[] = [];
     if (agent) {
       where.push(`connector_id = ${sqlString(agent)}`);
+    }
+    if (branch) {
+      where.push(`git_branch = ${sqlString(branch)}`);
     }
     // `project` is the slug id; resolution + the unknown-slug sentinel are shared
     // with /api/search and the analytics routes.
@@ -135,12 +146,33 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
 
   app.get<{
     Params: { id: string };
-    Querystring: { offset?: string; limit?: string; around?: string; radius?: string; maxToolChars?: string };
+    Querystring: {
+      offset?: string;
+      limit?: string;
+      around?: string;
+      radius?: string;
+      tail?: string;
+      maxToolChars?: string;
+    };
   }>(
     '/api/sessions/:id',
     async (req, reply): Promise<SessionDetailResponse | void> => {
       const conn = await getConnection();
       const id = req.params.id;
+
+      // Windowing/truncation for token-frugal consumers (MCP/CLI). Parsed and
+      // validated before the session is loaded — a malformed request must not
+      // pay for a full parse. No params → the full session, byte-identical to
+      // the pre-windowing behavior.
+      const offset = intParam(req.query.offset);
+      const limit = intParam(req.query.limit);
+      const radius = intParam(req.query.radius);
+      const tail = intParam(req.query.tail);
+      const maxToolChars = intParam(req.query.maxToolChars);
+      const around = req.query.around;
+      if (tail !== undefined && (offset !== undefined || limit !== undefined || around !== undefined)) {
+        throw new BadRequestError('tail cannot be combined with offset, limit, or around');
+      }
 
       const rows = await queryRows(
         conn,
@@ -162,15 +194,8 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
 
       const res: SessionDetailResponse = { meta, thread, subagents };
 
-      // Windowing/truncation for token-frugal consumers (MCP/CLI). No params →
-      // the full session, byte-identical to the pre-windowing behavior.
-      const offset = intParam(req.query.offset);
-      const limit = intParam(req.query.limit);
-      const radius = intParam(req.query.radius);
-      const maxToolChars = intParam(req.query.maxToolChars);
-      const around = req.query.around;
-      if (offset !== undefined || limit !== undefined || around !== undefined) {
-        const window = resolveWindow(thread, subagents, { offset, limit, around, radius });
+      if (offset !== undefined || limit !== undefined || around !== undefined || tail !== undefined) {
+        const window = resolveWindow(thread, subagents, { offset, limit, around, radius, tail });
         thread = thread.slice(window.offset, window.offset + window.limit);
         subagents = subagentsInWindow(thread, subagents);
         res.window = window;

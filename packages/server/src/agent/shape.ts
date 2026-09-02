@@ -5,8 +5,10 @@
  * talks to the network.
  */
 
+import { isAbsolute, resolve } from 'node:path';
 import type { AnalyticsResponse, SearchResponse, SessionDetailResponse } from '@claudescope/shared';
 import { redactText, threadItemsToMarkdown } from '@claudescope/shared';
+import { projectIdFromCwd } from '../data/project-id.js';
 
 /** Default hits/rows returned by the list-shaped tools/commands. */
 export const DEFAULT_LIMIT = 20;
@@ -25,6 +27,7 @@ export interface WindowArgs {
   limit?: number;
   around?: string;
   radius?: number;
+  tail?: number;
 }
 
 /**
@@ -38,11 +41,28 @@ export interface WindowArgs {
  * as the MCP get_session tool".
  */
 export function resolveWindowArgs(args: WindowArgs): WindowArgs {
+  // `tail` short-circuits only because both callers have already rejected it
+  // combined with offset/limit/around; the server instead gives `around`
+  // precedence, so this must never be the place a conflict is resolved.
+  if (args.tail !== undefined) return { tail: args.tail };
   const unwindowed =
     args.around === undefined && args.offset === undefined && args.limit === undefined;
   return unwindowed
     ? { offset: 0, limit: DEFAULT_TURNS }
     : { offset: args.offset, limit: args.limit, around: args.around, radius: args.radius };
+}
+
+/**
+ * The project id a `--cwd` refers to. Project ids are a pure function of the
+ * cwd string the connectors recorded, so agent-facing consumers hash a path
+ * locally instead of listing projects first. An absolute path is used verbatim
+ * (only trailing separators dropped): `resolve()` would rewrite a POSIX path on
+ * Windows into a drive-lettered, backslashed form no session ever recorded.
+ * Only a relative path is resolved against the process cwd.
+ */
+export function projectIdForCwd(cwd: string): string {
+  const absolute = isAbsolute(cwd) ? cwd : resolve(cwd);
+  return projectIdFromCwd(absolute.replace(/(?<=.)[/\\]+$/, ''));
 }
 
 /** The one-line totals summary appended to analytics output. */

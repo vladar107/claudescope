@@ -121,6 +121,8 @@ export interface SessionsQuery {
   q?: string;
   /** Filter to a single agent connector id, e.g. `codex`. */
   agent?: string;
+  /** Exact match on the session's recorded git branch. */
+  branch?: string;
   /** Max rows returned (positive int). Absent = all rows (the web UI's default). */
   limit?: number;
 }
@@ -140,6 +142,8 @@ export interface SessionDetailQuery {
   around?: string;
   /** Items on each side of `around` (default 10). */
   radius?: number;
+  /** Return only the last N turns; exclusive with `offset`/`limit`/`around`. */
+  tail?: number;
   /** Cap tool input/result strings at this many chars (with a truncation marker). */
   maxToolChars?: number;
 }
