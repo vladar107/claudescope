@@ -26,6 +26,9 @@ command it gives instead of listing sessions.
    - Exact error message, identifier, tool or skill name: `claudescope search
      --literal '<exact string>' --limit 5` (case-insensitive substring over
      transcript text, failed tool results, tool and skill names; no ranking).
+     For a failed command, search one distinctive line from the end of its
+     output (the exception or `error:` line), not the whole output: paths,
+     process ids and interleaved stdout make the full text unique.
    - Search hit context: `claudescope session <session-id> --around <message-uuid>
      --radius 4 --max-tool-chars 1200 --redact`.
    - Recent, expensive, or project/agent-specific sessions: `claudescope sessions
