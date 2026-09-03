@@ -32,6 +32,7 @@ import type {
   SessionsResponse,
   SourcesResponse,
   SystemInfoResponse,
+  ToolUsageKind,
   ToolUsageResponse,
   DigestResponse,
 } from '@claudescope/shared';
@@ -100,6 +101,8 @@ export interface SearchParams {
   project?: string;
   type?: SearchType;
   scope?: SearchScope;
+  /** Exact mode: one case-insensitive substring, newest first (`literal=true`). */
+  literal?: boolean;
 }
 
 export interface AnalyticsParams {
@@ -157,10 +160,16 @@ export const api = {
     );
   },
 
-  /** GET /api/search?q=&project=&type= */
+  /** GET /api/search?q=&project=&type=&scope=&literal= */
   search(params: SearchParams, signal?: AbortSignal): Promise<SearchResponse> {
     return request<SearchResponse>(
-      `/search${qs({ q: params.q, project: params.project, type: params.type, scope: params.scope })}`,
+      `/search${qs({
+        q: params.q,
+        project: params.project,
+        type: params.type,
+        scope: params.scope,
+        literal: params.literal ? 'true' : undefined,
+      })}`,
       { signal },
     );
   },
@@ -194,13 +203,14 @@ export const api = {
     );
   },
 
-  /** GET /api/analytics/tools?from=&to=&timeZone= */
+  /** GET /api/analytics/tools?kind=&project=&from=&to=&timeZone= */
   analyticsTools(
-    params: { project?: string; from?: string; to?: string; timeZone?: string },
+    params: { kind?: ToolUsageKind; project?: string; from?: string; to?: string; timeZone?: string },
     signal?: AbortSignal,
   ): Promise<ToolUsageResponse> {
     return request<ToolUsageResponse>(
       `/analytics/tools${qs({
+        kind: params.kind,
         project: params.project,
         from: params.from,
         to: params.to,

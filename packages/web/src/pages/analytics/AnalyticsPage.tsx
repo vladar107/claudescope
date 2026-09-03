@@ -35,6 +35,7 @@ import { AgentComparisonTable } from './AgentComparisonTable.js';
 import { DigestView } from './DigestView.js';
 import { BreakdownChart } from './BreakdownChart.js';
 import { ToolUsageChart } from './ToolUsageChart.js';
+import { SkillUsageChart } from './SkillUsageChart.js';
 import type { BreakdownMetric, BreakdownSort } from './BreakdownChart.js';
 import { TimeSeriesChart } from './TimeSeriesChart.js';
 import { formatCount, formatCost, formatPct } from './format.js';
@@ -142,6 +143,9 @@ export function AnalyticsPage() {
   const [series, setSeries] = useState<QueryState>(INITIAL);
   const [activity, setActivity] = useState<{ data: ActivityResponse | null; loading: boolean; error: unknown }>({ data: null, loading: true, error: null });
   const [tools, setTools] = useState<{ data: ToolUsageResponse | null; loading: boolean; error: unknown }>({ data: null, loading: true, error: null });
+  // Same endpoint as `tools` with kind=skill, in its own state so one card's
+  // failure never blanks the other.
+  const [skills, setSkills] = useState<{ data: ToolUsageResponse | null; loading: boolean; error: unknown }>({ data: null, loading: true, error: null });
 
   // Keep calendar dates intact so the server can interpret them in TIME_ZONE.
   const range = useMemo(() => {
@@ -274,6 +278,29 @@ export function AnalyticsPage() {
       .catch((error) => {
         if (ctrl.signal.aborted) return;
         setTools({ data: null, loading: false, error });
+      });
+    return () => ctrl.abort();
+  }, [view, grain, effProject, range.from, range.to]);
+
+  useEffect(() => {
+    if (view !== 'efficiency' || grain !== 'agents') return;
+    const ctrl = new AbortController();
+    setSkills((s) => ({ ...s, loading: true }));
+    api
+      .analyticsTools(
+        {
+          kind: 'skill',
+          project: effProject || undefined,
+          from: range.from,
+          to: range.to,
+          timeZone: TIME_ZONE,
+        },
+        ctrl.signal,
+      )
+      .then((data) => setSkills({ data, loading: false, error: null }))
+      .catch((error) => {
+        if (ctrl.signal.aborted) return;
+        setSkills({ data: null, loading: false, error });
       });
     return () => ctrl.abort();
   }, [view, grain, effProject, range.from, range.to]);
@@ -543,6 +570,14 @@ export function AnalyticsPage() {
                 empty={!tools.data || tools.data.rows.length === 0}
               >
                 {tools.data && <ToolUsageChart rows={tools.data.rows} />}
+              </ChartCard>
+              <ChartCard
+                title="Skill usage"
+                hint="calls by skill"
+                loading={skills.loading}
+                empty={!skills.data || skills.data.rows.length === 0}
+              >
+                {skills.data && <SkillUsageChart rows={skills.data.rows} />}
               </ChartCard>
             </div>
           </>

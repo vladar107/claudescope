@@ -38,7 +38,7 @@ Claudescope works whether you use one agent or all eight. Adding another is just
 - **Review changes** via a **Files changed** tab that aggregates every edit/write in the session by file, with per-file diffs and +/− counts (diffs load lazily per file).
 - **Export / share** a session to Markdown — download or copy it, with an optional toggle to **redact** home-dir paths and likely secrets.
 - **Memory** — browse each agent's long-lived **instruction files** (`CLAUDE.md`, `AGENTS.md`, …) and **agent-distilled per-project memory**, read live from each agent's home directory; Claude Code facts deep-link back to the session that produced them.
-- **Search** full-text across all sessions, all agents (DuckDB BM25), with highlighted snippets that deep-link to the exact message.
+- **Search** full-text across all sessions, all agents (DuckDB BM25), with highlighted snippets that deep-link to the exact message; an **Exact** mode matches one substring, newest first, for error lines and identifiers.
 - **Analyze** token usage and cost over time, by project, by model, and **by agent** — including cache-hit ratio.
 - **Light & dark themes** — follows your system appearance, with a manual toggle.
 
@@ -83,7 +83,8 @@ optional redaction) sit in the header.
 
 **Search** — full-text across every session and agent (DuckDB BM25) with
 highlighted snippets and user/assistant filters; each result deep-links to the
-exact message.
+exact message. Flip **Exact** to match one substring instead — an error line,
+an identifier — across transcript text and failed tool results, newest first.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/search-dark.png">
@@ -100,7 +101,8 @@ agent**, with a cache-read breakdown. Click a chart legend to toggle a series.
 
 **Compare** — the Efficiency tab puts every agent head-to-head on one scorecard:
 cost, tokens per response, cache hit ratio, subagent usage, **tool-error rate**,
-and interrupts — honestly. A metric an agent's format can't report shows as
+and interrupts — honestly, plus tool calls by category and **skill usage** by
+skill and agent. A metric an agent's format can't report shows as
 *n/a* with the reason, never a fake 0. Flip the grain to hunt outlier
 **sessions** instead, and a **Digest** view sums up your week (copy it as
 Markdown, or run `claudescope digest` in a terminal).
