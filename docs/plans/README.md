@@ -104,3 +104,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0077 | [Restore Codex file-change detection](./0077-restore-codex-file-change-detection.md) | done |
 | 0078 | [Proactive history context](./0078-proactive-history-context.md) | done |
 | 0079 | [Literal search and tool/skill analytics](./0079-literal-search-and-skill-analytics.md) | done |
+| 0080 | [Tool-failure history hook](./0080-tool-failure-history-hook.md) | abandoned |
