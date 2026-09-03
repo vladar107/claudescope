@@ -11,8 +11,13 @@
  * The scope control selects where search looks: transcripts only (`sessions`,
  * the default), transcripts plus agent memory (`all`), or memory only (`memory`).
  *
- * Query state lives in the URL (?q=&project=&type=&scope=) so searches are
- * shareable and survive reloads.
+ * "Exact" (`exact=1`) swaps ranking for one case-insensitive substring match
+ * over transcript text, failed tool results, tool and skill names, newest
+ * first (`literal=true` on the API) — for error lines and identifiers that
+ * tokenized search dilutes. Memory hits stay ranked either way.
+ *
+ * Query state lives in the URL (?q=&project=&type=&scope=&exact=) so searches
+ * are shareable and survive reloads.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -67,10 +72,13 @@ function SearchGroup({
   group,
   projectName,
   maxScore,
+  showRelevance,
 }: {
   group: SessionGroup;
   projectName?: string;
   maxScore: number;
+  /** Off in exact mode, where hits are ordered by recency and carry no score. */
+  showRelevance: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? group.matches : group.matches.slice(0, GROUP_COLLAPSE);
@@ -107,7 +115,7 @@ function SearchGroup({
               // Server snippet is HTML-escaped except <mark> wraps (safe).
               dangerouslySetInnerHTML={{ __html: m.snippet }}
             />
-            <RelevanceBar ratio={m.score / maxScore} />
+            {showRelevance ? <RelevanceBar ratio={m.score / maxScore} /> : null}
           </Link>
         ))}
         {hidden > 0 ? (
@@ -169,6 +177,9 @@ export function SearchPage() {
   const project = searchParams.get('project') ?? '';
   const type = asSearchType(searchParams.get('type'));
   const scope = asSearchScope(searchParams.get('scope'));
+  // Exact mode only reaches the transcript half of a search, so in memory-only
+  // scope the switch is hidden and the flag is inert.
+  const exact = searchParams.get('exact') === '1' && scope !== 'memory';
 
   const [sessions, setSessions] = useState<SearchResult[]>([]);
   const [memory, setMemory] = useState<MemorySearchHit[]>([]);
@@ -233,7 +244,7 @@ export function SearchPage() {
     debounceRef.current = setTimeout(() => {
       api
         .search(
-          { q: trimmed, project: project || undefined, type, scope },
+          { q: trimmed, project: project || undefined, type, scope, literal: exact },
           controller.signal,
         )
         .then((res) => {
@@ -254,7 +265,7 @@ export function SearchPage() {
       controller.abort();
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query, project, type, scope]);
+  }, [query, project, type, scope, exact]);
 
   const hasQuery = query.trim() !== '';
 
@@ -342,7 +353,26 @@ export function SearchPage() {
             ))}
           </select>
         ) : null}
+        {showRoleFilter ? (
+          <label className="tv-search__toggle">
+            <input
+              type="checkbox"
+              className="tv-switch__input"
+              checked={exact}
+              onChange={(e) => patchParams({ exact: e.target.checked ? '1' : '' })}
+            />
+            <span className="tv-switch" aria-hidden="true" />
+            Exact
+          </label>
+        ) : null}
       </div>
+      {exact ? (
+        <p className="tv-search__hint">
+          Exact: the query is matched as one case-insensitive substring over transcript
+          text, failed tool results, tool and skill names, newest first. Memory results
+          stay ranked.
+        </p>
+      ) : null}
 
       {error ? (
         <ErrorBox error={error} title="Search failed" onRetry={() => patchParams({ q: query })} />
@@ -352,7 +382,7 @@ export function SearchPage() {
         <p className="tv-search__empty">Type a query above to search across all transcripts.</p>
       ) : searched && totalCount === 0 ? (
         <p className="tv-search__empty">
-          No matches for <strong>{query}</strong>
+          No {exact ? 'exact ' : ''}matches for <strong>{query}</strong>
           {project ? ' in this project' : ''}.
         </p>
       ) : (
@@ -382,6 +412,7 @@ export function SearchPage() {
                     group={g}
                     projectName={projectNameById.get(g.projectId)}
                     maxScore={maxScore}
+                    showRelevance={!exact}
                   />
                 ))}
               </div>

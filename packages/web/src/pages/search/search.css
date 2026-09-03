@@ -42,6 +42,21 @@
   color: var(--tv-fg-faint);
 }
 
+.tv-search__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.tv-search__hint {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-muted);
+  margin: calc(-1 * var(--tv-space-2)) 0 var(--tv-space-4);
+}
+
 .tv-search__meta {
   font-size: var(--tv-fs-sm);
   color: var(--tv-fg-muted);
