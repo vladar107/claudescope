@@ -104,12 +104,19 @@ export interface SubagentRun {
   /** Optional slug carried on the subagent's events. */
   slug?: string;
   /**
-   * The main-thread `Agent`/`Task` tool_use id that spawned this run, when it
-   * could be correlated (by description + type). Absent if unmatched.
+   * The `Agent`/`Task` tool_use id that spawned this run, when it could be
+   * correlated (exact id, else description + type). The call lives in the main
+   * thread, or — for a subagent spawned by a subagent — in the thread of the
+   * run named by {@link parentAgentId}. Absent if unmatched.
    */
   toolUseId?: string;
-  /** uuid of the main-thread turn carrying that tool_use (jump/anchor target). */
+  /** uuid of the turn carrying that tool_use (jump/anchor target). */
   spawnUuid?: string;
+  /**
+   * agentId of the run whose thread holds the spawning call. Absent for runs
+   * spawned from the main thread and for unmatched runs. Chains are acyclic.
+   */
+  parentAgentId?: string;
   /** Number of assembled turns in the subagent thread. */
   messageCount: number;
   /** Number of tool calls the subagent made. */

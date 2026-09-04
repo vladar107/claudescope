@@ -99,10 +99,37 @@ function pushTurnEntries(
 }
 
 /**
- * Flatten the transcript into searchable entries, walking in render order: each
- * main-thread turn, and — right after a tool call that spawned subagents — that
- * tool's subagent runs (which render nested there). Orphan subagents come last.
- * Role filtering is NOT applied here so the corpus survives filter changes.
+ * Push one thread's entries in render order: each turn, and — right after a
+ * tool call that spawned subagents — those runs' own threads, recursively, so
+ * a subagent spawned by a subagent is searchable too. `nested` records every
+ * run already walked, which both keeps the trailing orphan pass from repeating
+ * one and bounds the recursion against a cyclic map.
+ */
+function pushThreadEntries(
+  thread: ThreadItem[],
+  subagentId: string | undefined,
+  subagentsByToolUseId: Map<string, SubagentRun[]>,
+  nested: Set<string>,
+  out: CorpusEntry[],
+): void {
+  for (const turn of thread) {
+    pushTurnEntries(turn, subagentId, out);
+    for (const block of turn.blocks) {
+      if (block.kind !== 'tool') continue;
+      for (const run of subagentsByToolUseId.get(block.id) ?? []) {
+        if (nested.has(run.agentId)) continue;
+        nested.add(run.agentId);
+        pushThreadEntries(run.thread, run.agentId, subagentsByToolUseId, nested, out);
+      }
+    }
+  }
+}
+
+/**
+ * Flatten the transcript into searchable entries, walking in render order: the
+ * main thread with each spawned run nested at its tool call. Subagents that
+ * never rendered nested (orphans) come last. Role filtering is NOT applied here
+ * so the corpus survives filter changes.
  */
 export function buildSearchCorpus(
   thread: ThreadItem[],
@@ -111,23 +138,33 @@ export function buildSearchCorpus(
 ): CorpusEntry[] {
   const out: CorpusEntry[] = [];
   const nested = new Set<string>();
-  for (const turn of thread) {
-    pushTurnEntries(turn, undefined, out);
-    for (const block of turn.blocks) {
-      if (block.kind !== 'tool') continue;
-      const runs = subagentsByToolUseId.get(block.id);
-      if (!runs) continue;
-      for (const run of runs) {
-        nested.add(run.agentId);
-        for (const t of run.thread) pushTurnEntries(t, run.agentId, out);
-      }
-    }
-  }
-  for (const run of subagents) {
+  pushThreadEntries(thread, undefined, subagentsByToolUseId, nested, out);
+  // Runs not reached from the main thread (unlinked, or nested under an
+  // unlinked parent): walk parents before children so a nested run is
+  // indexed inside its parent's panel, matching render order.
+  for (const run of parentsFirst(subagents)) {
     if (nested.has(run.agentId)) continue;
-    for (const t of run.thread) pushTurnEntries(t, run.agentId, out);
+    nested.add(run.agentId);
+    pushThreadEntries(run.thread, run.agentId, subagentsByToolUseId, nested, out);
   }
   return out;
+}
+
+/** Stable sort by nesting depth (parent hops, capped) — payload order within a depth. */
+function parentsFirst(runs: SubagentRun[]): SubagentRun[] {
+  const byId = new Map(runs.map((r) => [r.agentId, r]));
+  const depthOf = (run: SubagentRun): number => {
+    let depth = 0;
+    let cur: SubagentRun | undefined = run;
+    while (cur?.parentAgentId !== undefined && cur.parentAgentId !== cur.agentId && depth < 32) {
+      cur = byId.get(cur.parentAgentId);
+      depth++;
+    }
+    return depth;
+  };
+  return runs.map((run, i) => ({ run, i, depth: depthOf(run) }))
+    .sort((a, b) => a.depth - b.depth || a.i - b.i)
+    .map((x) => x.run);
 }
 
 /** Scan a prebuilt corpus for a query — the only work that runs per keystroke. */

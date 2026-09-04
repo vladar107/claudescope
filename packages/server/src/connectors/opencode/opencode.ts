@@ -70,8 +70,10 @@ function auxProjections(filePath: string): AuxProjections {
 /**
  * Load a session's events, splitting the resolved synthetic files into the main
  * transcript (its id equals the session id) and one subagent per re-parented
- * task-spawned child. Children are labeled from the parent's `task` parts
- * (matched via `state.metadata.sessionId`) so each run anchors to its Task block.
+ * task-spawned child. Children are labeled from the spawning session's `task`
+ * parts (matched via `state.metadata.sessionId`) so each run anchors to its Task
+ * block — scanned across every resolved session, since a subagent that spawns a
+ * subagent holds the grandchild's `task` part in its OWN transcript.
  */
 async function loadSession(sessionId: string, paths: string[]): Promise<SessionData> {
   const sessions = [...paths]
@@ -84,7 +86,7 @@ async function loadSession(sessionId: string, paths: string[]): Promise<SessionD
 
   const main = sessions.filter((s) => s.id === sessionId);
   const mainEvents = main.flatMap(buildEvents);
-  const spawns = new Map(main.flatMap((s) => [...taskSpawns(s)]));
+  const spawns = new Map(sessions.flatMap((s) => [...taskSpawns(s)]));
   const subagents: SubagentSource[] = sessions
     .filter((s) => s.id !== sessionId)
     .map((s) => ({
@@ -94,6 +96,9 @@ async function loadSession(sessionId: string, paths: string[]): Promise<SessionD
       // own title; it renders detached rather than anchored, which is the
       // honest state, but at least carries a human-readable label.
       description: spawns.get(s.id)?.description || s.title,
+      // Only a spawning session that is itself a child is passed on — the root
+      // is implied, and it scopes matching to that run's own `task` calls.
+      ...(s.parentId && s.parentId !== sessionId ? { parentAgentId: s.parentId } : {}),
       events: buildEvents(s),
     }));
 

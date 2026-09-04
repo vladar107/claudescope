@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RawEvent, ThreadItem } from '@claudescope/shared';
+import type { RawEvent, SubagentRun, ThreadItem } from '@claudescope/shared';
 import { assembleThread, buildSubagentRuns } from '../src/data/parser.js';
 import type { SubagentSource } from '../src/data/session-loader.js';
 
@@ -482,6 +482,106 @@ describe('buildSubagentRuns', () => {
       source({ agentId: 'r2', description: 'dup' }),
     ]);
     expect(new Set(runs.map((r) => r.toolUseId))).toEqual(new Set(['tu1', 'tu2']));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Nested subagents (a subagent spawning a subagent)
+// ---------------------------------------------------------------------------
+
+/** A depth-1 run whose thread itself carries an Agent call (`tu_nested`). */
+function spawningSource(agentId: string, description: string, nestedDescription: string): SubagentSource {
+  return source({
+    agentId,
+    agentType: 'general-purpose',
+    description,
+    events: [
+      user('su', 'do it', true),
+      assistant(
+        `${agentId}-spawn`,
+        [
+          {
+            kind: 'tool',
+            type: 'tool_use',
+            id: 'tu_nested',
+            name: 'Agent',
+            input: { description: nestedDescription, subagent_type: 'general-purpose', prompt: 'nested prompt' },
+          },
+        ],
+        { isSidechain: true },
+      ),
+    ],
+  });
+}
+
+describe('buildSubagentRuns — nested subagents', () => {
+  it('links a run by exact id to a call inside another run, whichever is listed first', () => {
+    const runs = buildSubagentRuns(mainThreadWithSpawns(), [
+      // Child listed BEFORE its parent: spawn points must come from every run.
+      source({ agentId: 'child', description: 'nested probe', toolUseId: 'tu_nested', parentAgentId: 'parent' }),
+      spawningSource('parent', 'Explore X', 'nested probe'),
+    ]);
+    const byId = new Map(runs.map((r) => [r.agentId, r]));
+    expect(byId.get('parent')).toMatchObject({ toolUseId: 'tu_agent', spawnUuid: 'm1' });
+    expect(byId.get('parent')?.parentAgentId).toBeUndefined();
+    expect(byId.get('child')).toMatchObject({ toolUseId: 'tu_nested', spawnUuid: 'parent-spawn', parentAgentId: 'parent' });
+  });
+
+  it('a named parent narrows description matching to that run — the same-description trap', () => {
+    // The nested call reuses the main thread's description. Without the parent
+    // restriction the child would be attached to the main-thread call.
+    const runs = buildSubagentRuns(mainThreadWithSpawns(), [
+      spawningSource('parent', 'Explore X', 'Explore X'),
+      source({ agentId: 'child', description: 'Explore X', parentAgentId: 'parent' }),
+    ]);
+    const byId = new Map(runs.map((r) => [r.agentId, r]));
+    expect(byId.get('child')).toMatchObject({ toolUseId: 'tu_nested', parentAgentId: 'parent' });
+    expect(byId.get('parent')).toMatchObject({ toolUseId: 'tu_agent' });
+  });
+
+  it('without parent metadata, description matching never leaves the main thread', () => {
+    // Legacy child: no id, no parent. Its description only exists inside a
+    // run's thread — it must stay unlinked rather than nest by guesswork.
+    const runs = buildSubagentRuns(mainThreadWithSpawns(), [
+      spawningSource('parent', 'Explore X', 'nested probe'),
+      source({ agentId: 'legacy', description: 'nested probe' }),
+    ]);
+    const legacy = runs.find((r) => r.agentId === 'legacy');
+    expect(legacy?.toolUseId).toBeUndefined();
+    expect(legacy?.parentAgentId).toBeUndefined();
+  });
+
+  it('ignores an unknown or self-referential parent, and unlinks a parent cycle', () => {
+    const unknown = buildSubagentRuns(mainThreadWithSpawns(), [
+      source({ agentId: 'a', description: 'Explore X', parentAgentId: 'ghost' }),
+    ]);
+    // Falls back to main-thread matching, so the depth-1 link still lands.
+    expect(unknown[0]).toMatchObject({ toolUseId: 'tu_agent' });
+    expect(unknown[0]?.parentAgentId).toBeUndefined();
+
+    const self = buildSubagentRuns(mainThreadWithSpawns(), [
+      source({ agentId: 'a', description: 'Explore X', parentAgentId: 'a', toolUseId: 'tu_agent' }),
+    ]);
+    expect(self[0]).toMatchObject({ toolUseId: 'tu_agent' });
+    expect(self[0]?.parentAgentId).toBeUndefined();
+
+    // a's call is in b's thread and b's call is in a's thread. The cycle must
+    // be broken (one link may legitimately survive) so a chain walker ends.
+    const cycle = buildSubagentRuns([], [
+      { ...spawningSource('a', 'A', 'B'), toolUseId: 'tu_nested', parentAgentId: 'b' },
+      { ...spawningSource('b', 'B', 'A'), toolUseId: 'tu_nested', parentAgentId: 'a' },
+    ]);
+    const byId = new Map(cycle.map((r) => [r.agentId, r]));
+    for (const r of cycle) {
+      let cur: SubagentRun | undefined = r;
+      let hops = 0;
+      while (cur?.parentAgentId !== undefined && hops < 5) {
+        cur = byId.get(cur.parentAgentId);
+        hops++;
+      }
+      expect(hops).toBeLessThan(2);
+    }
+    expect(cycle.filter((r) => r.parentAgentId !== undefined).length).toBeLessThan(2);
   });
 });
 

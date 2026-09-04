@@ -77,13 +77,17 @@ async function loadSession(_sessionId: string, paths: string[]): Promise<Session
     .map((p) => parseCopilotSession(p, { resolveImages: true }))
     .filter((s): s is CopilotSession => s !== null);
   const mainEvents = sessions.flatMap((s) => s.events);
-  // Inline subagent runs, segmented out by the normalizer — each anchors to its
-  // canonical `Task` block via the shared description string.
+  // Inline subagent runs, segmented out by the normalizer. `agentId` IS the
+  // spawning `task` toolCallId — the exact id of its canonical `Task` block —
+  // and `parentAgentId` names the run that made the call when a subagent
+  // spawned this one.
   const subagents: SubagentSource[] = sessions.flatMap((s) =>
     s.subagents.map((sub) => ({
       agentId: sub.agentId,
       agentType: sub.agentType,
       description: sub.description,
+      toolUseId: sub.agentId,
+      ...(sub.parentAgentId ? { parentAgentId: sub.parentAgentId } : {}),
       events: sub.events,
     })),
   );

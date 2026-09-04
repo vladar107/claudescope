@@ -14,7 +14,7 @@ import type {
   ToolUsageKind,
   ToolUsageResponse,
 } from '@claudescope/shared';
-import { redactText, threadItemsToMarkdown } from '@claudescope/shared';
+import { orderSubagentRunsDepthFirst, redactText, threadItemsToMarkdown } from '@claudescope/shared';
 import { projectIdFromCwd } from '../data/project-id.js';
 
 /** Default hits/rows returned by the list-shaped tools/commands. */
@@ -172,9 +172,12 @@ export function shapeSessionMarkdown(data: SessionDetailResponse, redact: boolea
 
   const opts = { redact };
   const parts = [head.join('\n'), '---', threadItemsToMarkdown(data.thread, opts)];
-  for (const run of data.subagents) {
+  const byId = new Map(data.subagents.map((run) => [run.agentId, run]));
+  for (const run of orderSubagentRunsDepthFirst(data.subagents)) {
+    const parent = run.parentAgentId ? byId.get(run.parentAgentId) : undefined;
+    const nested = parent ? ` · nested in ${r(parent.description || parent.agentId)}` : '';
     parts.push(
-      `--- subagent · ${run.agentType} — ${r(run.description || run.agentId)} ---`,
+      `--- subagent · ${run.agentType} — ${r(run.description || run.agentId)}${nested} ---`,
       threadItemsToMarkdown(run.thread, opts),
     );
   }

@@ -178,9 +178,14 @@ function writeChildRollout(): string {
       { type: 'session_meta', timestamp: ts(30), payload: { id: '019f2222-aaaa-7bbb-8ccc-000000000001', cwd: '/tmp/codexproj', thread_source: 'subagent', source: { subagent: { thread_spawn: { parent_thread_id: 'codex-sess-1', depth: 1, agent_nickname: 'Linnaeus', agent_role: 'explorer' } } }, git: { branch: 'main' } } },
       { type: 'turn_context', timestamp: ts(31), payload: { model: 'gpt-5.4' } },
       { type: 'response_item', timestamp: ts(32), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Scan the repo for issues.' }] } },
-      { type: 'response_item', timestamp: ts(33), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'zebranugget report from the child' }] } },
+      // This child spawns a child of its own in the LEGACY form: the output names
+      // the grandchild thread id, and the readable label exists ONLY here — the
+      // root's spawn map knows nothing about it.
+      { type: 'response_item', timestamp: ts(33), payload: { type: 'function_call', name: 'spawn_agent', arguments: '{"agent_type":"summarizer","message":"Tally the findings.\\nBe brief."}', call_id: 'call_spawn3' } },
+      { type: 'response_item', timestamp: ts(34), payload: { type: 'function_call_output', call_id: 'call_spawn3', output: '{"agent_id":"019f2222-aaaa-7bbb-8ccc-000000000004","nickname":"Tallier"}' } },
+      { type: 'response_item', timestamp: ts(35), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'zebranugget report from the child' }] } },
       // Child usage folds into the parent session's totals (claude-code precedent).
-      { type: 'event_msg', timestamp: ts(34), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 100, cached_input_tokens: 0, output_tokens: 50 } }, rate_limits: {} } },
+      { type: 'event_msg', timestamp: ts(36), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 100, cached_input_tokens: 0, output_tokens: 50 } }, rate_limits: {} } },
     ]),
   );
   return file;
@@ -197,7 +202,48 @@ function writeCurrentChildRollout(): string {
       { type: 'session_meta', timestamp: ts(35), payload: { id: '019f2222-aaaa-7bbb-8ccc-000000000002', cwd: '/tmp/codexproj', thread_source: 'subagent', source: { subagent: { thread_spawn: { parent_thread_id: 'codex-sess-1', depth: 1, agent_path: '/root/locate_analytics_range', agent_nickname: 'Cartographer', agent_role: 'context_explorer' } } }, git: { branch: 'main' } } },
       { type: 'turn_context', timestamp: ts(36), payload: { model: 'gpt-5.4' } },
       { type: 'response_item', timestamp: ts(37), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'copied parent context, not the task label' }] } },
-      { type: 'response_item', timestamp: ts(38), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'current-format child report' }] } },
+      // This child spawns a child of its own: the spawn record lives HERE, not in
+      // the root rollout, so only a merged spawn map can resolve the grandchild.
+      { type: 'response_item', timestamp: ts(38), payload: { type: 'function_call', name: 'spawn_agent', namespace: 'collaboration', arguments: '{"agent_type":"summarizer","message":"Summarize what you found.","task_name":"summarize_findings"}', call_id: 'call_spawn4' } },
+      { type: 'response_item', timestamp: ts(39), payload: { type: 'function_call_output', call_id: 'call_spawn4', output: '{"task_name":"/root/locate_analytics_range/summarize_findings"}' } },
+      { type: 'response_item', timestamp: ts(40), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'current-format child report' }] } },
+    ]),
+  );
+  return file;
+}
+
+/** A DEPTH-2 rollout: `parent_thread_id` names the depth-1 child above, and its
+ *  `agent_path` extends that child's canonical path. */
+function writeGrandchildRollout(): string {
+  const dir = join(codexDir, '2026', '01', '01');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'rollout-2026-01-01T10-03-00-019f2222-aaaa-7bbb-8ccc-000000000003.jsonl');
+  writeFileSync(
+    file,
+    jsonl([
+      { type: 'session_meta', timestamp: ts(41), payload: { id: '019f2222-aaaa-7bbb-8ccc-000000000003', cwd: '/tmp/codexproj', thread_source: 'subagent', source: { subagent: { thread_spawn: { parent_thread_id: '019f2222-aaaa-7bbb-8ccc-000000000002', depth: 2, agent_path: '/root/locate_analytics_range/summarize_findings', agent_nickname: 'Chronicler', agent_role: 'summarizer' } } }, git: { branch: 'main' } } },
+      { type: 'turn_context', timestamp: ts(42), payload: { model: 'gpt-5.4' } },
+      { type: 'response_item', timestamp: ts(43), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Summarize what you found.' }] } },
+      { type: 'response_item', timestamp: ts(44), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'quokkaline grandchild summary' }] } },
+    ]),
+  );
+  return file;
+}
+
+/** A DEPTH-2 rollout under the LEGACY child: it has no `agent_path`, so its
+ *  whole identity (label, type, spawning id) comes from a spawn record that
+ *  exists only in the depth-1 child's rollout. */
+function writeLegacyGrandchildRollout(): string {
+  const dir = join(codexDir, '2026', '01', '01');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'rollout-2026-01-01T10-04-00-019f2222-aaaa-7bbb-8ccc-000000000004.jsonl');
+  writeFileSync(
+    file,
+    jsonl([
+      { type: 'session_meta', timestamp: ts(45), payload: { id: '019f2222-aaaa-7bbb-8ccc-000000000004', cwd: '/tmp/codexproj', thread_source: 'subagent', source: { subagent: { thread_spawn: { parent_thread_id: '019f2222-aaaa-7bbb-8ccc-000000000001', depth: 2, agent_nickname: 'Tallier', agent_role: 'summarizer' } } }, git: { branch: 'main' } } },
+      { type: 'turn_context', timestamp: ts(46), payload: { model: 'gpt-5.4' } },
+      { type: 'response_item', timestamp: ts(47), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Tally the findings.' }] } },
+      { type: 'response_item', timestamp: ts(48), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'wombatcount tally from the grandchild' }] } },
     ]),
   );
   return file;
@@ -340,6 +386,8 @@ beforeAll(async () => {
   writeRollout();
   writeChildRollout();
   writeCurrentChildRollout();
+  writeGrandchildRollout();
+  writeLegacyGrandchildRollout();
   writeOrphanRollout();
   writeLocalRollout();
   writeBootstrapOnlyRollout();
@@ -535,7 +583,7 @@ describe('Codex session detail', () => {
       subagent_type: 'explorer',
     });
 
-    expect(detail.subagents).toHaveLength(2);
+    expect(detail.subagents).toHaveLength(4);
     const run = detail.subagents.find(
       (candidate: { agentId: string }) => candidate.agentId === '019f2222-aaaa-7bbb-8ccc-000000000001',
     );
@@ -570,6 +618,46 @@ describe('Codex session detail', () => {
       toolUseId: 'call_spawn2',
     });
     expect(JSON.stringify(currentRun.thread)).toContain('current-format child report');
+  });
+
+  it('nests depth-2 rollouts at the spawn call inside their depth-1 child', async () => {
+    const detail = (await get('/api/sessions/codex-sess-1')).json();
+    const runOf = (id: string) =>
+      detail.subagents.find((candidate: { agentId: string }) => candidate.agentId === id);
+    /** uuid of the turn in `run`'s thread carrying the tool call `callId`. */
+    const spawnUuidIn = (run: { thread: { uuid: string; blocks: { id?: string }[] }[] }, callId: string) =>
+      run.thread.find((t) => t.blocks.some((b) => b.id === callId))?.uuid;
+
+    // Both spawn records live in a CHILD's rollout — invisible to the root's own
+    // spawn map — and `parent_thread_id` names that child, not the root.
+    const current = runOf('019f2222-aaaa-7bbb-8ccc-000000000003');
+    expect(current).toMatchObject({
+      agentType: 'summarizer',
+      description: '/root/locate_analytics_range/summarize_findings',
+      toolUseId: 'call_spawn4',
+      parentAgentId: '019f2222-aaaa-7bbb-8ccc-000000000002',
+    });
+    expect(current.spawnUuid).toBe(
+      spawnUuidIn(runOf('019f2222-aaaa-7bbb-8ccc-000000000002'), 'call_spawn4'),
+    );
+
+    // The legacy form has no `agent_path`: label, type and id come only from the
+    // depth-1 child's `agent_id` spawn record.
+    const legacy = runOf('019f2222-aaaa-7bbb-8ccc-000000000004');
+    expect(legacy).toMatchObject({
+      agentType: 'summarizer',
+      description: 'Tally the findings.',
+      toolUseId: 'call_spawn3',
+      parentAgentId: '019f2222-aaaa-7bbb-8ccc-000000000001',
+    });
+    expect(legacy.spawnUuid).toBe(
+      spawnUuidIn(runOf('019f2222-aaaa-7bbb-8ccc-000000000001'), 'call_spawn3'),
+    );
+
+    // Neither grandchild's turns leak into the main transcript.
+    const main = JSON.stringify(detail.thread);
+    expect(main).not.toContain('quokkaline grandchild summary');
+    expect(main).not.toContain('wombatcount tally from the grandchild');
   });
 
   it('fans apply_patch out to canonical Write/Edit blocks the changeset keys off', async () => {

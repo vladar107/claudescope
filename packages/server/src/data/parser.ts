@@ -259,6 +259,8 @@ function usageTokens(usage?: MessageUsage): number {
 interface SpawnPoint {
   toolUseId: string;
   spawnUuid: string;
+  /** agentId of the run whose thread holds the call; undefined = main thread. */
+  owner?: string;
   description?: string;
   subagentType?: string;
   prompt?: string;
@@ -268,8 +270,73 @@ interface SpawnPoint {
 interface WorkflowSpawn {
   toolUseId: string;
   spawnUuid: string;
+  owner?: string;
   /** Concatenated tool-result text — searched for the workflow run id. */
   resultText: string;
+}
+
+/** Collect the spawn points of one thread (the main thread or a run's). */
+function collectSpawns(
+  thread: ThreadItem[],
+  owner: string | undefined,
+  spawns: SpawnPoint[],
+  workflowSpawns: WorkflowSpawn[],
+): void {
+  for (const item of thread) {
+    for (const block of item.blocks) {
+      if (block.kind !== 'tool') continue;
+      if (SUBAGENT_TOOL_NAMES.has(block.name)) {
+        const input = (block.input ?? {}) as Record<string, unknown>;
+        spawns.push({
+          toolUseId: block.id,
+          spawnUuid: item.uuid,
+          owner,
+          description: typeof input.description === 'string' ? input.description : undefined,
+          subagentType: typeof input.subagent_type === 'string' ? input.subagent_type : undefined,
+          prompt: typeof input.prompt === 'string' ? input.prompt : undefined,
+          used: false,
+        });
+      } else if (block.name === 'Workflow') {
+        workflowSpawns.push({
+          toolUseId: block.id,
+          spawnUuid: item.uuid,
+          owner,
+          resultText: resultText(block),
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Break parent cycles (A spawned in B's thread, B in A's) by unlinking the run
+ * whose pointer closes the cycle. Not producible by a real harness, but a
+ * corrupt or hand-edited id must never make a consumer walking
+ * `parentAgentId` chains loop forever — and a run whose chain merely passes
+ * through a cycle keeps its own link.
+ */
+function breakParentCycles(runs: SubagentRun[]): void {
+  const byId = new Map(runs.map((r) => [r.agentId, r]));
+  const settled = new Set<string>();
+  for (const start of runs) {
+    if (settled.has(start.agentId)) continue;
+    const path: SubagentRun[] = [];
+    const onPath = new Set<string>();
+    let cur: SubagentRun | undefined = start;
+    while (cur !== undefined && !settled.has(cur.agentId)) {
+      if (onPath.has(cur.agentId)) {
+        const closer = path[path.length - 1]!;
+        delete closer.parentAgentId;
+        delete closer.toolUseId;
+        delete closer.spawnUuid;
+        break;
+      }
+      onPath.add(cur.agentId);
+      path.push(cur);
+      cur = cur.parentAgentId !== undefined ? byId.get(cur.parentAgentId) : undefined;
+    }
+    for (const r of path) settled.add(r.agentId);
+  }
 }
 
 /** Plain text of a tool result's content blocks (for run-id matching). */
@@ -282,12 +349,18 @@ function resultText(tool: ToolInteraction): string {
 
 /**
  * Build {@link SubagentRun}s from the loaded subagent sources, correlating each
- * to the `Agent`/`Task` tool call in the main thread that spawned it.
+ * to the `Agent`/`Task` tool call that spawned it — in the main thread, or in
+ * another run's thread when a subagent spawned a subagent.
  *
- * Correlation key is the task description (+ subagent type as a tiebreaker),
- * which is unique per call in practice. Matching is intentionally strict: a
- * subagent that can't be confidently matched is returned WITHOUT a spawn link
- * (the UI lists it separately) rather than risk attaching it to the wrong call.
+ * Every run is assembled first so spawn points can be collected from all
+ * threads (a parent may be listed after its child). Matching order: the exact
+ * spawning id anywhere; else the task description (+ subagent type), which is
+ * unique per call in practice — searched only in the parent the source names,
+ * or, when it names none, only in the main thread, so a legacy nested run can
+ * never be pulled under a same-named call in some other run. Matching is
+ * intentionally strict: a subagent that can't be confidently matched is
+ * returned WITHOUT a spawn link (the UI lists it separately) rather than risk
+ * attaching it to the wrong call.
  */
 export function buildSubagentRuns(
   mainThread: ThreadItem[],
@@ -296,41 +369,43 @@ export function buildSubagentRuns(
 ): SubagentRun[] {
   const spawns: SpawnPoint[] = [];
   const workflowSpawns: WorkflowSpawn[] = [];
-  for (const item of mainThread) {
-    for (const block of item.blocks) {
-      if (block.kind !== 'tool') continue;
-      if (SUBAGENT_TOOL_NAMES.has(block.name)) {
-        const input = (block.input ?? {}) as Record<string, unknown>;
-        spawns.push({
-          toolUseId: block.id,
-          spawnUuid: item.uuid,
-          description: typeof input.description === 'string' ? input.description : undefined,
-          subagentType: typeof input.subagent_type === 'string' ? input.subagent_type : undefined,
-          prompt: typeof input.prompt === 'string' ? input.prompt : undefined,
-          used: false,
-        });
-      } else if (block.name === 'Workflow') {
-        workflowSpawns.push({
-          toolUseId: block.id,
-          spawnUuid: item.uuid,
-          resultText: resultText(block),
-        });
-      }
-    }
-  }
+  collectSpawns(mainThread, undefined, spawns, workflowSpawns);
 
-  const runs: SubagentRun[] = [];
-  for (const src of sources) {
+  const assembled = sources.map((src) => {
     const thread = assembleThread(src.events, opts);
     const toolCallCount = thread.reduce(
       (n, t) => n + t.blocks.filter((b) => b.kind === 'tool').length,
       0,
     );
     const totalTokens = thread.reduce((n, t) => n + usageTokens(t.usage), 0);
+    return { src, thread, toolCallCount, totalTokens };
+  });
+  const runIds = new Set(sources.map((s) => s.agentId));
+  for (const a of assembled) collectSpawns(a.thread, a.src.agentId, spawns, workflowSpawns);
 
-    let match: { toolUseId: string; spawnUuid: string } | undefined;
+  const runs: SubagentRun[] = [];
+  for (const { src, thread, toolCallCount, totalTokens } of assembled) {
+    // A named parent narrows description matching to that run's own calls. An
+    // unknown or self-referential parent is ignored, not trusted.
+    const parent =
+      src.parentAgentId && src.parentAgentId !== src.agentId && runIds.has(src.parentAgentId)
+        ? src.parentAgentId
+        : undefined;
+    const inScope = (s: { owner?: string }): boolean =>
+      parent !== undefined ? s.owner === parent : s.owner === undefined;
+
+    let match: { toolUseId: string; spawnUuid: string; owner?: string } | undefined;
+    // The exact id wins — except in the run's own thread, and, when the source
+    // names its parent, never inside some unrelated run (a colliding id would
+    // otherwise re-parent the run to wherever that id happens to live).
     const directSpawn = src.toolUseId
-      ? spawns.find((s) => !s.used && s.toolUseId === src.toolUseId)
+      ? spawns.find(
+          (s) =>
+            !s.used &&
+            s.toolUseId === src.toolUseId &&
+            s.owner !== src.agentId &&
+            (parent === undefined || s.owner === parent || s.owner === undefined),
+        )
       : undefined;
     if (directSpawn) {
       directSpawn.used = true;
@@ -338,7 +413,9 @@ export function buildSubagentRuns(
     } else if (src.workflowId) {
       // Workflow agents: link all of a run's agents to the Workflow tool call
       // whose result references the run id (a one-to-many spawn; not consumed).
-      match = workflowSpawns.find((w) => w.resultText.includes(src.workflowId as string));
+      match = workflowSpawns.find(
+        (w) => inScope(w) && w.resultText.includes(src.workflowId as string),
+      );
     } else {
       // Agent/Task: match description (+ type), earliest unused. Require a
       // non-empty description so missing-meta agents never match by emptiness.
@@ -348,9 +425,10 @@ export function buildSubagentRuns(
           spawns.find(
             (s) =>
               !s.used &&
+              inScope(s) &&
               s.description === src.description &&
               (!s.subagentType || !src.agentType || s.subagentType === src.agentType),
-          ) ?? spawns.find((s) => !s.used && s.description === src.description);
+          ) ?? spawns.find((s) => !s.used && inScope(s) && s.description === src.description);
         if (sp) {
           sp.used = true;
           match = sp;
@@ -364,6 +442,7 @@ export function buildSubagentRuns(
         const promptMatches = spawns.filter(
           (s) =>
             !s.used &&
+            inScope(s) &&
             s.prompt === src.prompt &&
             (!s.subagentType || !src.agentType || s.subagentType === src.agentType),
         );
@@ -390,10 +469,12 @@ export function buildSubagentRuns(
     if (match) {
       run.toolUseId = match.toolUseId;
       run.spawnUuid = match.spawnUuid;
+      if (match.owner !== undefined) run.parentAgentId = match.owner;
     }
     runs.push(run);
   }
 
+  breakParentCycles(runs);
   return runs;
 }
 

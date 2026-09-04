@@ -21,6 +21,12 @@ export interface SubagentSource {
   slug?: string;
   /** Exact id of the Agent/Task call that spawned this run, when known. */
   toolUseId?: string;
+  /**
+   * agentId of the subagent that spawned this run, when the source records it
+   * (a subagent spawned by a subagent). Narrows description matching to that
+   * run's own calls; without it, description matching stays main-thread only.
+   */
+  parentAgentId?: string;
   /** Full first user prompt, retained for guarded exact-match correlation. */
   prompt?: string;
   /**

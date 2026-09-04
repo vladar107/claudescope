@@ -276,11 +276,22 @@ export function getContext(appDataDir: string): AntigravityContext {
   return ctx;
 }
 
-/** Subagent metadata (agentType, matched description) for a transcript, if it's a child. */
-export function subagentMetaFor(path: string): { agentType: string; description: string } | null {
+/**
+ * Subagent metadata for a transcript, if it's a child: its type, the description
+ * derived from the spawning prompt (identically to the `Task` block the spawning
+ * conversation emits), and the conversation that spawned it — which is the root
+ * at depth 1 and another subagent deeper.
+ */
+export function subagentMetaFor(
+  path: string,
+): { agentType: string; description: string; parentConvId: string } | null {
   const link = getContext(appDataDirFromPath(path)).subagents.get(convIdFromPath(path));
   if (!link) return null;
-  return { agentType: link.typeName, description: subagentLabel(link.prompt) };
+  return {
+    agentType: link.typeName,
+    description: subagentLabel(link.prompt),
+    parentConvId: link.parentConvId,
+  };
 }
 
 // --- content cleaning -------------------------------------------------------

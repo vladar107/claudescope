@@ -93,10 +93,15 @@ async function loadSession(sessionId: string, paths: string[]): Promise<SessionD
       mainEvents.push(...parsed.events);
     } else {
       const meta = subagentMetaFor(p);
+      // A spawning conversation that is itself a subagent scopes the description
+      // match to that run's own `invoke_subagent` calls; the root is implied.
+      const parentAgentId =
+        meta && meta.parentConvId !== sessionId ? meta.parentConvId : undefined;
       subagents.push({
         agentId: parsed.convId,
         agentType: meta?.agentType ?? '',
         description: meta?.description ?? '',
+        ...(parentAgentId ? { parentAgentId } : {}),
         events: parsed.events,
       });
     }

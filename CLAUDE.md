@@ -172,6 +172,17 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   is absent or drifted, the shared parser may fall back to an exact full match
   between the spawning `Agent`/`Task.prompt` and the child's first user prompt.
   Empty or ambiguous matches stay detached; there is no fuzzy prompt matching.
+- **Nested subagents (a subagent spawning a subagent)** — the grandchild is a
+  SIBLING file in the same `subagents/` dir, not nested a level deeper; its
+  meta carries `toolUseId` (the `Agent` call inside its parent's transcript)
+  and `parentAgentId`. `SubagentRun`s stay a flat list with a `parentAgentId`
+  pointer, not a tree; spawn points are collected from every run's thread
+  (plus the main thread), so a call living inside a run can still be matched.
+  Description/prompt matching is scoped to the named parent's own spawns, or —
+  without a parent — to the main thread only, never another run, so a
+  same-named call elsewhere can't steal the match. A window carries a run's
+  descendants along with it. pi and Grok still only re-key one hop, so their
+  grandchildren surface as their own top-level sessions (follow-up).
 - **pi connector** (`connectors/pi/`) — JSONL like Claude/Codex but `cwd` is on
   the `session` line and tool results are separate `toolResult` records, so a
   `prepare()` pass normalizes to canonical NDJSON (Codex pattern). `model` comes
@@ -258,6 +269,14 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   with zero ID linkage to the spawner (only the coincidental prompt text).
   Matching command text to session prompts would be heuristic and fragile, so
   they intentionally list as separate top-level sessions.
+- **Never `scrollIntoView({ behavior: 'smooth' })` across the transcript.**
+  Turns are lazily sized (`content-visibility: auto` with a 280px intrinsic
+  size in `session.css`), so their real heights replace the estimates as the
+  viewport passes them and the document shrinks by tens of thousands of pixels
+  mid-animation — the scroll lands far past its target (the jump-menu bug on
+  nested subagents). Navigate with an instant jump plus `holdAnchor` from
+  `useScrollRestore.ts`, which re-pins the element each frame until layout
+  settles and yields to the reader's own scroll.
 - **Cost is a local estimate** from token usage × rates; not real billing.
   Computed once at index time and stored. Rates auto-refresh daily from LiteLLM
   at runtime (`pricing.fetched.json`); `pricing.json` is the fallback/override

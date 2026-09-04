@@ -35,7 +35,13 @@
  *    event-level `agentId` (= the spawning `task` toolCallId). Tagged events are
  *    routed into per-agent buffers (never the main thread), the `task` call is
  *    canonicalized to a `Task` block, and each buffer becomes a `SubagentSource`
- *    nested at its spawn point (matched by description, see `buildSubagentRuns`).
+ *    nested at its spawn point — by that exact id, see `buildSubagentRuns`.
+ *    A subagent that spawns a subagent makes the call from its own stream, so
+ *    the inner run is segmented like any other and carries the outer agent as
+ *    its `parentAgentId`. Whether Copilot tags the inner run's events with the
+ *    inner or the outer `agentId` is UNVERIFIED — no real nested sample exists;
+ *    the flat per-agent map assumes the inner one (anything else collapses the
+ *    inner run into its parent's stream rather than mislabelling it).
  *
  * STRICTLY READ-ONLY with respect to ~/.copilot — files are only ever read.
  */
@@ -73,6 +79,9 @@ export interface CopilotSubagent {
   /** The `task` call's `arguments.description` — same string the canonical
    *  `Task` block carries, so the run anchors to its spawn point. */
   description: string;
+  /** agentId of the run whose stream carried the spawning `task` call, when a
+   *  subagent spawned this one; absent when the main thread did. */
+  parentAgentId?: string;
   events: CopilotThreadEvent[];
 }
 
@@ -283,8 +292,12 @@ export function parseCopilotSession(
   const knownAgentIds = new Set<string>();
   // `task` toolRequest descriptions by toolCallId — the Task block and its
   // SubagentSource must carry the SAME string (the anchor buildSubagentRuns
-  // matches on), so both sides read from this one map.
+  // matches on), so both sides read from this one map. The owner is the stream
+  // the spawning message ran in ('' = main thread): a subagent that spawns a
+  // subagent makes the call from inside its OWN stream, and the nested run
+  // needs that pointer to resolve against the right spawn point.
   const taskDescById = new Map<string, string>();
+  const taskOwnerById = new Map<string, string>();
   for (const ev of lines) {
     const d = rec(ev.data);
     if (str(ev.agentId)) knownAgentIds.add(str(ev.agentId));
@@ -294,6 +307,7 @@ export function parseCopilotSession(
         const tr = rec(r);
         if (str(tr.name) === 'task' && str(tr.toolCallId)) {
           taskDescById.set(str(tr.toolCallId), str(rec(tr.arguments).description));
+          taskOwnerById.set(str(tr.toolCallId), str(ev.agentId));
         }
       }
     } else if (ev.type === 'session.start') {
@@ -478,11 +492,13 @@ export function parseCopilotSession(
   const subagents: CopilotSubagent[] = [];
   for (const [agentId, s] of subStreams) {
     if (s.events.length === 0) continue; // spawned but produced nothing — no run to show
+    const owner = taskOwnerById.get(agentId) ?? '';
     subagents.push({
       agentId,
       agentType: agentMetaById.get(agentId)?.agentType ?? '',
       // '' when the spawning call is lost — renders detached, never mismatched.
       description: taskDescById.get(agentId) ?? '',
+      ...(owner && owner !== agentId ? { parentAgentId: owner } : {}),
       events: s.events,
     });
   }

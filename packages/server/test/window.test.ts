@@ -64,6 +64,20 @@ describe('resolveWindow', () => {
     });
   });
 
+  it('anchors around a turn inside a nested run on the top-level ancestor’s spawn turn', () => {
+    const subs = [
+      run('in', 'm2', ['x']),
+      { ...run('child', 'x', ['y']), parentAgentId: 'in' },
+      { ...run('grandchild', 'y', ['z']), parentAgentId: 'child' },
+    ];
+    expect(resolveWindow(thread, subs, { around: 'z', radius: 0 })).toEqual({
+      offset: 2, limit: 1, total: 6, anchorFound: true,
+    });
+    // A chain that never reaches the main thread (unlinked ancestor) is not an anchor.
+    const loose = [{ ...run('child', 'x', ['y']), parentAgentId: 'ghost' }];
+    expect(resolveWindow(thread, loose, { around: 'y', radius: 0 }).anchorFound).toBe(false);
+  });
+
   it('around wins over offset/limit, and offset clamps past the end', () => {
     expect(resolveWindow(thread, [], { around: 'm4', radius: 0, offset: 0, limit: 99 })).toEqual({
       offset: 4, limit: 1, total: 6, anchorFound: true,
@@ -79,6 +93,22 @@ describe('subagentsInWindow', () => {
     const subs = [run('in', 'm2', ['x']), run('out', 'm5', ['y']), run('orphan', undefined, ['z'])];
     const slice = thread.slice(1, 4); // m1..m3
     expect(subagentsInWindow(slice, subs).map((r) => r.agentId)).toEqual(['in']);
+  });
+
+  it('carries nested runs with their ancestor, however deep, and drops them with it', () => {
+    // grandchild → child → in (spawned at m2); their spawn turns are run
+    // turns, never in the main slice.
+    const subs = [
+      run('in', 'm2', ['x']),
+      { ...run('child', 'x', ['y']), parentAgentId: 'in' },
+      { ...run('grandchild', 'y', ['z']), parentAgentId: 'child' },
+      { ...run('elsewhere', 'q', ['w']), parentAgentId: 'out' },
+      run('out', 'm5', ['q']),
+    ];
+    expect(subagentsInWindow(thread.slice(1, 4), subs).map((r) => r.agentId)).toEqual([
+      'in', 'child', 'grandchild',
+    ]);
+    expect(subagentsInWindow(thread.slice(0, 1), subs)).toEqual([]);
   });
 });
 

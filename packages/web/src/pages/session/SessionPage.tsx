@@ -13,7 +13,13 @@ import {
   shortModel,
 } from '../browse/format.js';
 import { hasRenderableContent } from './blocks.js';
-import { SubagentBlock, SubagentJumpMenu, ThreadList, useHashTarget } from './ThreadView.js';
+import {
+  ancestorRunIds,
+  SubagentBlock,
+  SubagentJumpMenu,
+  ThreadList,
+  useHashTarget,
+} from './ThreadView.js';
 import { useProgressiveMount } from './useProgressiveMount.js';
 import { useScrollRestore } from './useScrollRestore.js';
 import { holdBottom, isNearBottom, useLiveSession } from './useLiveSession.js';
@@ -183,6 +189,7 @@ function SessionView({
     return map;
   }, [subagents]);
   const orphanSubagents = useMemo(() => subagents.filter((s) => !s.toolUseId), [subagents]);
+  const runById = useMemo(() => new Map(subagents.map((s) => [s.agentId, s])), [subagents]);
 
   // Mount turns progressively: the first chunk renders immediately, the rest
   // stream in during idle time, so a huge session never blocks the first paint
@@ -192,7 +199,9 @@ function SessionView({
 
   // subagentId → uuid of the top-level turn its run renders under. Used to
   // mount the right turn before navigating to a match/anchor inside a nested
-  // subagent (orphan runs render after the list and are always mounted).
+  // subagent (orphan runs render after the list and are always mounted). A run
+  // spawned by another run renders inside its parent's panel, so it resolves
+  // through the ancestor chain to the turn its top-level ancestor renders under.
   const spawnTurnBySubagentId = useMemo(() => {
     const map = new Map<string, string>();
     for (const item of items) {
@@ -201,8 +210,18 @@ function SessionView({
         for (const run of subagentsByToolUseId.get(block.id) ?? []) map.set(run.agentId, item.uuid);
       }
     }
+    for (const run of subagents) {
+      if (map.has(run.agentId)) continue;
+      for (const id of ancestorRunIds(run, runById)) {
+        const uuid = map.get(id);
+        if (uuid !== undefined) {
+          map.set(run.agentId, uuid);
+          break;
+        }
+      }
+    }
     return map;
-  }, [items, subagentsByToolUseId]);
+  }, [items, subagents, subagentsByToolUseId, runById]);
 
   // Post-load hash navigation (subagent jump menu, time anchors): the target's
   // turn may not be mounted yet, in which case the native hash scroll (and a
@@ -299,9 +318,26 @@ function SessionView({
   // Reset to the first match whenever the result set changes.
   useEffect(() => setActiveIndex(0), [matches]);
 
-  // Reveal ONLY the active match's block/subagent — never all of them.
+  // Reveal ONLY the active match's block/subagent — never all of them — plus
+  // the runs above it: a nested run is rendered by its parent's panel, so it
+  // exists in the DOM only while every ancestor is open. The hash target's
+  // ancestors join the set for the same reason; the target itself is left to
+  // SubagentBlock's own hash effect, which opens AND scrolls to it (and leaves
+  // it collapsible).
   const activeMatch = count > 0 ? matches[Math.min(activeIndex, count - 1)] : undefined;
-  const reveal = useMemo(() => revealForMatch(activeMatch), [activeMatch]);
+  const hashRunId = hashTarget.startsWith('subagent-')
+    ? hashTarget.slice('subagent-'.length)
+    : undefined;
+  const reveal = useMemo(() => {
+    const base = revealForMatch(activeMatch);
+    const subagentIds = new Set(base.subagentIds);
+    const targets = [...base.subagentIds, ...(hashRunId ? [hashRunId] : [])];
+    for (const id of targets) {
+      const run = runById.get(id);
+      if (run) for (const ancestor of ancestorRunIds(run, runById)) subagentIds.add(ancestor);
+    }
+    return { blockIds: base.blockIds, subagentIds };
+  }, [activeMatch, hashRunId, runById]);
 
   // Highlight the active match within its (now-revealed) block. Scoped to one
   // block, so it stays cheap. Re-run on a short delay to catch async code
@@ -391,7 +427,11 @@ function SessionView({
                 <span className="tv-muted"> (not linked to a tool call)</span>
               </h2>
               {orphanSubagents.map((run) => (
-                <SubagentBlock key={run.agentId} run={run} />
+                <SubagentBlock
+                  key={run.agentId}
+                  run={run}
+                  subagentsByToolUseId={subagentsByToolUseId}
+                />
               ))}
             </section>
           ) : null}
