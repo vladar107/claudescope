@@ -48,6 +48,27 @@ function assistant(
   } as unknown as RawEvent;
 }
 
+/** A `compact_boundary` system row (Claude Code native / synthesized). */
+function boundary(
+  opts: { compactMetadata?: Record<string, unknown>; summary?: string } = {},
+): RawEvent {
+  return {
+    type: 'system',
+    subtype: 'compact_boundary',
+    uuid: 'sys',
+    parentUuid: null,
+    sessionId: 's',
+    timestamp: ts(),
+    cwd: '/x',
+    ...opts,
+  } as unknown as RawEvent;
+}
+
+/** A user turn flagged as the post-compaction summary (2025 format). */
+function compactSummary(uuid: string, content: unknown): RawEvent {
+  return { ...(user(uuid, content) as object), isCompactSummary: true } as RawEvent;
+}
+
 describe('assembleThread', () => {
   it('renders plain user + assistant text turns (happy path)', () => {
     const thread = assembleThread([
@@ -132,6 +153,131 @@ describe('assembleThread', () => {
       user('u1', 'hi'),
     ]);
     expect(thread).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Compaction stamping
+// ---------------------------------------------------------------------------
+
+describe('assembleThread compactions', () => {
+  it('stamps the boundary metadata on the next conversational turn', () => {
+    const thread = assembleThread([
+      assistant('a1', [{ type: 'text', text: 'before' }]),
+      boundary({ compactMetadata: { trigger: 'auto', preTokens: 152_000, postTokens: 21_000 } }),
+      user('u1', 'carry on'),
+    ]);
+    expect(thread[0]?.compaction).toBeUndefined();
+    expect(thread[1]?.compaction).toEqual({
+      trigger: 'auto',
+      preTokens: 152_000,
+      postTokens: 21_000,
+    });
+  });
+
+  it('carries the stamp past a tool_result-only turn onto the next rendered turn', () => {
+    const thread = assembleThread([
+      assistant('a1', [{ type: 'tool_use', id: 't1', name: 'Bash', input: {} }]),
+      boundary({ compactMetadata: { trigger: 'manual', preTokens: 90_000, postTokens: 8_000 } }),
+      user('u1', [{ type: 'tool_result', tool_use_id: 't1', content: 'done' }]),
+      assistant('a2', [{ type: 'text', text: 'after' }]),
+    ]);
+    expect(thread.map((t) => t.uuid)).toEqual(['a1', 'a2']);
+    expect(thread[1]?.compaction).toMatchObject({ trigger: 'manual', preTokens: 90_000 });
+  });
+
+  it('merges a boundary and its flagged summary turn into one stamp', () => {
+    const thread = assembleThread([
+      assistant('a1', [{ type: 'text', text: 'before' }]),
+      boundary({ compactMetadata: { trigger: 'auto', preTokens: 150_000, postTokens: 12_000 } }),
+      compactSummary('u1', 'This session is being continued from…'),
+      assistant('a2', [{ type: 'text', text: 'after' }]),
+    ]);
+    expect(thread[1]?.compaction).toEqual({
+      trigger: 'auto',
+      preTokens: 150_000,
+      postTokens: 12_000,
+      isSummaryTurn: true,
+    });
+    // One compaction -> one stamp; the following turn stays clean.
+    expect(thread[2]?.compaction).toBeUndefined();
+  });
+
+  it('merges them in either order (subagent files are timestamp-sorted, which can flip it)', () => {
+    // On disk the summary turn can carry an EARLIER timestamp than its boundary,
+    // so a sorted stream sees the summary first. Still one compaction.
+    const thread = assembleThread([
+      assistant('a1', [{ type: 'text', text: 'before' }]),
+      compactSummary('u1', 'This session is being continued from…'),
+      boundary({ compactMetadata: { trigger: 'manual', preTokens: 331_954, postTokens: 17_672 } }),
+      assistant('a2', [{ type: 'text', text: 'after' }]),
+    ]);
+    expect(thread[1]?.compaction).toEqual({
+      trigger: 'manual',
+      preTokens: 331_954,
+      postTokens: 17_672,
+      isSummaryTurn: true,
+    });
+    expect(thread[2]?.compaction).toBeUndefined();
+    // …but a boundary that follows a summary AND another turn is a second compaction.
+    const two = assembleThread([
+      compactSummary('u1', 'first summary'),
+      assistant('a1', [{ type: 'text', text: 'work' }]),
+      boundary({ compactMetadata: { trigger: 'auto' } }),
+      assistant('a2', [{ type: 'text', text: 'after' }]),
+    ]);
+    expect(two.filter((t) => t.compaction)).toHaveLength(2);
+  });
+
+  it('stamps a flagged summary turn that has no boundary row (2025 format)', () => {
+    const thread = assembleThread([
+      assistant('a1', [{ type: 'text', text: 'before' }]),
+      compactSummary('u1', 'Summary of the previous context'),
+    ]);
+    expect(thread[1]?.compaction).toEqual({ isSummaryTurn: true });
+  });
+
+  it('derives pre/post from the adjacent turns when the agent records neither', () => {
+    const thread = assembleThread([
+      assistant('a1', [{ type: 'text', text: 'before' }], {
+        usage: {
+          input_tokens: 100,
+          output_tokens: 40,
+          cache_read_input_tokens: 5_000,
+          cache_creation_input_tokens: 900,
+        },
+      }),
+      boundary({ summary: 'We refactored the parser.' }),
+      user('u1', 'continue'),
+      assistant('a2', [{ type: 'text', text: 'after' }], {
+        usage: { input_tokens: 50, output_tokens: 10, cache_read_input_tokens: 1_000 },
+      }),
+    ]);
+    expect(thread[1]?.compaction).toEqual({
+      summary: 'We refactored the parser.',
+      preTokens: 6_000,
+      postTokens: 1_050,
+    });
+  });
+
+  it('drops a boundary that nothing follows', () => {
+    const thread = assembleThread([
+      user('u1', 'hi'),
+      assistant('a1', [{ type: 'text', text: 'bye' }]),
+      boundary({ compactMetadata: { trigger: 'auto' } }),
+    ]);
+    expect(thread).toHaveLength(2);
+    expect(thread.some((t) => t.compaction !== undefined)).toBe(false);
+  });
+
+  it('leaves ordinary turns without a compaction key', () => {
+    const thread = assembleThread([
+      user('u1', 'hi'),
+      assistant('a1', [{ type: 'text', text: 'hello' }], {
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    ]);
+    expect(thread.every((t) => !('compaction' in t))).toBe(true);
   });
 });
 

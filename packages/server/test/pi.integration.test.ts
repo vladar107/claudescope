@@ -42,6 +42,7 @@ const jsonl = (events: unknown[]): string => events.map((e) => JSON.stringify(e)
 const ts = (s: number) => `2026-06-15T10:00:${String(s).padStart(2, '0')}.000Z`;
 const ts2 = (s: number) => `2026-06-15T11:00:${String(s).padStart(2, '0')}.000Z`;
 const ts3 = (s: number) => `2026-06-15T13:00:${String(s).padStart(2, '0')}.000Z`;
+const ts4 = (s: number) => `2026-06-15T14:00:${String(s).padStart(2, '0')}.000Z`;
 
 // Composite tool ids as pi writes them (`call_…|fc_…`) — must survive verbatim
 // on both the tool_use and its tool_result, or the pairing breaks.
@@ -228,6 +229,36 @@ function writeMixedProviderSession(): void {
   );
 }
 
+/**
+ * A session with ONE `compaction` entry: pi records the summary AND the
+ * pre-compaction size, so `tokensBefore` must win over the derived figure. The
+ * `branch_summary` entry looks similar but marks no compaction.
+ */
+function writeCompactionSession(): void {
+  const dir = join(piDir, '--tmp-piproj--');
+  writeFileSync(
+    join(dir, '2026-06-15T14-00-00-000Z_05dddddd-1111-7222-8333-444455556666.jsonl'),
+    jsonl([
+      { type: 'session', version: 3, id: 'pi-compact-1', timestamp: ts4(0), cwd: '/tmp/piproj' },
+      { type: 'message', id: 'u1', parentId: null, timestamp: ts4(1), message: { role: 'user', content: [{ type: 'text', text: 'grind through the long haul' }] } },
+      { type: 'message', id: 'a1', parentId: 'u1', timestamp: ts4(2), message: {
+        role: 'assistant', model: 'gpt-5.4-mini', provider: 'openai-codex',
+        content: [{ type: 'text', text: 'context is filling up' }],
+        usage: { input: 90000, output: 400, cacheRead: 30000, cacheWrite: 0, totalTokens: 120400 },
+      } },
+      { type: 'compaction', id: 'cmp1', parentId: 'a1', timestamp: ts4(3), summary: 'squeezed the long haul into this', firstKeptEntryId: 'u2', tokensBefore: 123456 },
+      // Not a compaction — a branch digest. Must not count as a second marker.
+      { type: 'branch_summary', id: 'bs1', parentId: 'cmp1', timestamp: ts4(4), summary: 'a branch digest, not a compaction' },
+      { type: 'message', id: 'u2', parentId: 'cmp1', timestamp: ts4(5), message: { role: 'user', content: [{ type: 'text', text: 'carry on from the summary' }] } },
+      { type: 'message', id: 'a2', parentId: 'u2', timestamp: ts4(6), message: {
+        role: 'assistant', model: 'gpt-5.4-mini', provider: 'openai-codex',
+        content: [{ type: 'text', text: 'resumed with room to spare' }],
+        usage: { input: 9000, output: 100, cacheRead: 0, cacheWrite: 0, totalTokens: 9100 },
+      } },
+    ]),
+  );
+}
+
 let app: FastifyInstance;
 let closeConnection: () => Promise<void>;
 
@@ -237,6 +268,7 @@ beforeAll(async () => {
   writeSubagentSession();
   writeEmptyParentSession();
   writeMixedProviderSession();
+  writeCompactionSession();
 
   const Fastify = (await import('fastify')).default;
   const { registerRoutes } = await import('../src/routes/index.js');
@@ -264,6 +296,7 @@ describe('pi session indexing', () => {
     // top-level sessions; the orphan (parent file missing) stays standalone, and
     // the empty parent is listed via its child's re-keyed rows.
     expect(sessions.map((s: { id: string }) => s.id).sort()).toEqual([
+      'pi-compact-1',
       'pi-empty-parent',
       'pi-orphan-1',
       'pi-sess-1',
@@ -445,5 +478,34 @@ describe('pi provider-aware cost', () => {
     expect(s.totalCostUsd).toBeCloseTo(0.0006, 6);
     // A zero-rated provider on the session sets the local marker.
     expect(s.hasLocalProvider).toBe(true);
+  });
+});
+
+describe('pi compaction markers', () => {
+  it('counts the compaction entry and stamps the turn after it with pi’s own sizes', async () => {
+    const detail = (await get('/api/sessions/pi-compact-1')).json();
+    expect(detail.meta.compactionCount).toBe(1); // branch_summary is not one
+
+    const stamped = detail.thread.filter((t: { compaction?: unknown }) => t.compaction);
+    expect(stamped).toHaveLength(1);
+    expect(JSON.stringify(stamped[0].blocks)).toContain('carry on from the summary');
+    expect(stamped[0].compaction).toMatchObject({
+      summary: 'squeezed the long haul into this',
+      // `tokensBefore` verbatim — NOT the 120000 the previous turn would derive.
+      preTokens: 123456,
+      postTokens: 9000,
+    });
+  });
+
+  it('keeps the marker out of the events (no system turn, message count unchanged)', async () => {
+    const detail = (await get('/api/sessions/pi-compact-1')).json();
+    expect(detail.meta.messageCount).toBe(4);
+    expect(detail.thread.map((t: { role: string }) => t.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+    ]);
+    expect(JSON.stringify(detail.thread)).not.toContain('a branch digest');
   });
 });

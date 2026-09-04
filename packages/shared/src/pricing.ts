@@ -12,6 +12,11 @@ export interface ModelRates {
   cacheWrite: number;
   /** USD per 1M cache-read tokens. */
   cacheRead: number;
+  /**
+   * Model context window in tokens (LiteLLM `max_input_tokens`), when known.
+   * Not a rate: it only feeds the "context used" percentage in the UI.
+   */
+  contextWindow?: number;
 }
 
 /** Snapshot of rates fetched at runtime (e.g. from LiteLLM). */

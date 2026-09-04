@@ -107,3 +107,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0080 | [Tool-failure history hook](./0080-tool-failure-history-hook.md) | abandoned |
 | 0081 | [Skill usage and exact-match search in the web](./0081-web-skill-usage-and-exact-search.md) | done |
 | 0082 | [Brew release waits for the npm tarball](./0082-brew-release-waits-for-npm-tarball.md) | done |
+| 0083 | [Context size and compaction count per session](./0083-context-window-and-compactions.md) | done |

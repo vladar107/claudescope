@@ -55,6 +55,23 @@ export type ThreadBlock =
   | ParsedAttachmentBlock;
 
 /**
+ * A context compaction that happened immediately before the thread item it is
+ * attached to. `preTokens`/`postTokens` come from Claude Code's boundary
+ * metadata when present, else are derived from the adjacent assistant turns'
+ * usage (prompt size = input + cache read + cache write); either may be absent.
+ */
+export interface CompactionInfo {
+  /** `auto` or `manual`, when the agent records it. */
+  trigger?: string;
+  preTokens?: number;
+  postTokens?: number;
+  /** Plaintext summary the agent stored for the compaction (Codex/pi). */
+  summary?: string;
+  /** True when the item itself is the summary turn (Claude Code 2025 format). */
+  isSummaryTurn?: boolean;
+}
+
+/**
  * One ordered message in an assembled session thread. Aggregates the parsed
  * blocks for a single user/assistant turn together with its metadata.
  */
@@ -67,6 +84,8 @@ export interface ThreadItem {
   usage?: MessageUsage;
   isSidechain: boolean;
   blocks: ThreadBlock[];
+  /** Present when a compaction happened right before this turn. */
+  compaction?: CompactionInfo;
 }
 
 /**

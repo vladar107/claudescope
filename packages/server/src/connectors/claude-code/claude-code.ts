@@ -229,12 +229,19 @@ function eventsProjectionSql(filePath: string): string {
     WHERE type IN ('user', 'assistant')`;
 }
 
-/** ai-title and pr-link projections, keyed by session. */
+/** ai-title and pr-link projections (session-keyed) plus compactions (file-keyed). */
 function auxProjections(filePath: string): AuxProjections {
   const path = sqlString(filePath);
   const readFn = `read_ndjson(${path}, ${READ_OPTS}, columns={
     type:'VARCHAR', sessionId:'VARCHAR', aiTitle:'VARCHAR',
     prNumber:'BIGINT', prRepository:'VARCHAR', prUrl:'VARCHAR'
+  })`;
+  // Compaction markers live on records the events projection filters out
+  // (`system`) or on a flagged user turn, so they need their own column map.
+  const compactionReadFn = `read_ndjson(${path}, ${READ_OPTS}, columns={
+    type:'VARCHAR', subtype:'VARCHAR', isCompactSummary:'BOOLEAN', uuid:'VARCHAR',
+    sessionId:'VARCHAR', timestamp:'VARCHAR', isSidechain:'BOOLEAN',
+    compactMetadata:'JSON'
   })`;
   return {
     // ai-title: latest non-null title in the file wins.
@@ -256,6 +263,32 @@ function auxProjections(filePath: string): AuxProjections {
       FROM ${readFn}
       WHERE type = 'pr-link' AND sessionId IS NOT NULL AND prUrl IS NOT NULL
       GROUP BY sessionId`,
+    // One row per compaction. Current Claude Code writes a `compact_boundary`
+    // system record; the 2025 format instead flagged the summary user turn with
+    // `isCompactSummary`, and files from the transition carry BOTH for a single
+    // compaction. So flagged summaries only count in a file with no boundary at
+    // all — the conservative direction, where a wrong guess under-counts rather
+    // than doubling. `MATERIALIZED` keeps the NOT EXISTS check from reading the
+    // transcript a second time.
+    compactions: `
+      WITH marks AS MATERIALIZED (
+        SELECT type, uuid, sessionId, timestamp, isSidechain, compactMetadata
+        FROM ${compactionReadFn}
+        WHERE sessionId IS NOT NULL
+          AND ((type = 'system' AND subtype = 'compact_boundary')
+               OR (type = 'user' AND COALESCE(isCompactSummary, FALSE)))
+      )
+      SELECT
+        ${path} AS file_path,
+        sessionId AS session_id,
+        uuid,
+        try_cast(timestamp AS TIMESTAMP) AS ts,
+        COALESCE(isSidechain, FALSE) AS is_sidechain,
+        json_extract_string(compactMetadata, '$.trigger') AS trigger,
+        try_cast(json_extract(compactMetadata, '$.preTokens') AS BIGINT) AS pre_tokens,
+        try_cast(json_extract(compactMetadata, '$.postTokens') AS BIGINT) AS post_tokens
+      FROM marks
+      WHERE type = 'system' OR NOT EXISTS (SELECT 1 FROM marks WHERE type = 'system')`,
   };
 }
 

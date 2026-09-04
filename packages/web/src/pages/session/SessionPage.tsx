@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
-import { ArrowUpRight, GitBranch, GitPullRequest, MessageSquare, RefreshCw, Wrench } from 'lucide-react';
-import type { SessionDetailResponse, SubagentRun } from '@claudescope/shared';
+import { ArrowUpRight, GitBranch, GitPullRequest, MessageSquare, RefreshCw, RotateCcw, Wrench } from 'lucide-react';
+import type { SessionDetailResponse, SessionMeta, SubagentRun } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
 import { AgentBadge, ErrorBox, formatCost, formatCount, LocalBadge, ModelChips, Spinner } from '../../components';
-import { formatBytes, formatDateTime, formatDuration } from '../browse/format.js';
+import {
+  contextLabel,
+  contextLevel,
+  formatBytes,
+  formatDateTime,
+  formatDuration,
+  shortModel,
+} from '../browse/format.js';
 import { hasRenderableContent } from './blocks.js';
 import { SubagentBlock, SubagentJumpMenu, ThreadList, useHashTarget } from './ThreadView.js';
 import { useProgressiveMount } from './useProgressiveMount.js';
@@ -493,7 +500,10 @@ function SessionView({
             │
           </span>
           <span className="tv-session__cost">{formatCost(meta.totalCostUsd)}</span>
-          <span className="tv-session__tokens">{formatCount(meta.totalTokens)} tokens</span>
+          <span className="tv-session__tokens" title="Tokens billed across every turn of the session">
+            {formatCount(meta.totalTokens)} total tokens
+          </span>
+          <ContextFigure meta={meta} />
           {duration ? <span className="tv-muted">{duration}</span> : null}
         </div>
 
@@ -505,6 +515,12 @@ function SessionView({
           <span className="tv-session__meta-item">
             <Wrench size={13} aria-hidden="true" /> {meta.toolCallCount} tools
           </span>
+          {meta.compactionCount !== undefined ? (
+            <span className="tv-session__meta-item" title="Context compactions on the main thread">
+              <RotateCcw size={13} aria-hidden="true" /> {meta.compactionCount} compaction
+              {meta.compactionCount === 1 ? '' : 's'}
+            </span>
+          ) : null}
           {meta.gitBranch ? (
             <span className="tv-session__meta-item tv-mono" title="git branch">
               <GitBranch size={13} aria-hidden="true" /> {meta.gitBranch}
@@ -554,4 +570,36 @@ function SessionView({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Context at the last main-thread turn, with the share of the model's window
+ * when pricing knows it. Absent for agents that record no per-response usage.
+ */
+function ContextFigure({ meta }: { meta: SessionMeta }) {
+  if (meta.contextTokens === undefined) return null;
+  const level = contextLevel(meta.contextTokens, meta.contextWindow);
+  // Own group after the spend figures: context is a snapshot, not a total.
+  return (
+    <>
+      <span className="tv-session__sep" aria-hidden="true">
+        │
+      </span>
+      <span className={level ? `tv-ctx tv-ctx--${level}` : 'tv-ctx'} title={contextTitle(meta)}>
+        context {contextLabel(meta.contextTokens, meta.contextWindow)}
+      </span>
+    </>
+  );
+}
+
+/** Spells out what the figure measures and which window it is measured against. */
+function contextTitle(meta: SessionMeta): string {
+  const what =
+    'Context at the last turn: input + cache read + cache write of the last assistant response.';
+  if (meta.contextWindow === undefined) return `${what} The window size is unknown for this model.`;
+  // The window belongs to the model of that turn; name it only for a
+  // single-model session, where there is no ambiguity about which one that is.
+  const only = meta.models.length === 1 ? meta.models[0] : undefined;
+  const model = only ? ` (${shortModel(only)})` : '';
+  return `${what} Window: ${formatCount(meta.contextWindow)}${model}`;
 }

@@ -6,8 +6,9 @@
  * `{type, data, id, timestamp, parentId}`. The transcript is spread across record
  * types: `session.start` carries cwd/branch/repository, `session.model_change`
  * the model, `assistant.message` the text + tool calls (+ encrypted reasoning),
- * `tool.execution_complete` the tool results, and `session.shutdown` the ONLY
- * token counts (session-level — there is no per-message usage). The sibling
+ * `tool.execution_complete` the tool results, `session.context_changed` a
+ * context compaction (→ a synthetic `compact_boundary`), and `session.shutdown`
+ * the ONLY token counts (session-level — there is no per-message usage). The sibling
  * `workspace.yaml` carries the session title; `files/<displayName>` holds persisted
  * attachments (screenshots) when saving is enabled.
  *
@@ -45,6 +46,7 @@ import type {
   AssistantEvent,
   ContentBlock,
   MessageUsage,
+  SystemEvent,
   ToolResultBlock,
   UserEvent,
 } from '@claudescope/shared';
@@ -52,8 +54,15 @@ import { resolveImageWithin } from '../safe-image.js';
 import { toolNamesCsv } from '../tool-names.js';
 import { skillNamesCsv } from '../skill-names.js';
 import { toolErrorCount, toolErrorText } from '../tool-errors.js';
-import type { CanonicalRow } from '../canonical.js';
+import { compactionRow, type CanonicalRow } from '../canonical.js';
 import { num, rec, str } from '../json.js';
+
+/**
+ * One normalized thread event: a conversational turn, or the synthetic
+ * `compact_boundary` marker a `session.context_changed` compaction becomes.
+ * (`CopilotEvent` below is the raw on-disk line, not this.)
+ */
+export type CopilotThreadEvent = UserEvent | AssistantEvent | SystemEvent;
 
 /** One inline subagent run, segmented out of the parent's event stream. */
 export interface CopilotSubagent {
@@ -64,7 +73,7 @@ export interface CopilotSubagent {
   /** The `task` call's `arguments.description` — same string the canonical
    *  `Task` block carries, so the run anchors to its spawn point. */
   description: string;
-  events: (UserEvent | AssistantEvent)[];
+  events: CopilotThreadEvent[];
 }
 
 export interface CopilotSession {
@@ -72,7 +81,7 @@ export interface CopilotSession {
   cwd: string;
   branch: string | null;
   title: string;
-  events: (UserEvent | AssistantEvent)[];
+  events: CopilotThreadEvent[];
   subagents: CopilotSubagent[];
 }
 
@@ -210,7 +219,7 @@ interface CopilotEvent {
 /** Per-thread turn buffer: the main transcript and each subagent run get their
  *  own event list, uuid chain, and running model. */
 interface TurnStream {
-  events: (UserEvent | AssistantEvent)[];
+  events: CopilotThreadEvent[];
   seq: number;
   prevUuid: string | null;
   uuidPrefix: string;
@@ -362,6 +371,19 @@ export function parseCopilotSession(
     s.prevUuid = uuid;
   };
 
+  /** A context compaction marker for the stream it appeared in. It carries no
+   *  metadata or summary, and deliberately does NOT advance `prevUuid` — the
+   *  next turn still chains to the previous one. */
+  const pushCompaction = (s: TurnStream, ts: string): void => {
+    s.events.push({
+      uuid: `${s.uuidPrefix}-${s.seq++}`,
+      parentUuid: s.prevUuid,
+      ...envelope(ts, s.sidechain),
+      type: 'system',
+      subtype: 'compact_boundary',
+    } as SystemEvent);
+  };
+
   /** One `assistant.message` → an assistant turn (+ a tool-result user turn). */
   const assistantTurn = (s: TurnStream, d: Record<string, unknown>, ts: string): void => {
     if (str(d.model)) s.model = str(d.model);
@@ -430,6 +452,10 @@ export function parseCopilotSession(
       pushUser(stream, ts, userBlocks(d, sessionDir, resolveImages));
     } else if (ev.type === 'assistant.message') {
       assistantTurn(stream, d, ts);
+    } else if (ev.type === 'session.context_changed') {
+      // The ONLY compaction signal Copilot writes. Other reasons for a context
+      // change are not compactions and stay skipped.
+      if (str(d.reason) === 'compaction') pushCompaction(stream, ts);
     } else if (ev.type === 'session.shutdown') {
       shutdown = shutdownUsage(d);
     }
@@ -471,6 +497,18 @@ export function parseCopilotSession(
 export function toCanonicalRows(session: CopilotSession, filePath: string): CanonicalRow[] {
   const all = [...session.events, ...session.subagents.flatMap((s) => s.events)];
   return all.map((e) => {
+    if (e.type === 'system') {
+      // The synthetic compaction marker: a `compactions` cache row, not an event.
+      return compactionRow({
+        file_path: filePath,
+        session_id: session.sessionId,
+        uuid: e.uuid,
+        parent_uuid: e.parentUuid,
+        ts: e.timestamp,
+        cwd: session.cwd,
+        is_sidechain: e.isSidechain === true,
+      });
+    }
     const msg = e.message;
     const content = Array.isArray(msg.content) ? msg.content : [];
     const usage = (msg as { usage?: MessageUsage }).usage;

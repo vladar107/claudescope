@@ -109,8 +109,11 @@ function writeSession1(): void {
       }),
       ev('tool.execution_start', { toolCallId: 'call-edit', toolName: 'edit', arguments: { path: '/tmp/cproj/app.ts', old_str: 'bug', new_str: 'fixed' }, model: 'gpt-5-mini' }),
       ev('tool.execution_complete', { toolCallId: 'call-edit', success: true, result: { content: 'File app.ts updated with changes.' } }),
-      // Unknown event type — must be tolerated and skipped without breaking indexing.
+      // Only `reason: compaction` is a compaction marker; other reasons stay skipped.
+      ev('session.context_changed', { reason: 'model_change' }),
       ev('session.context_changed', { reason: 'compaction' }),
+      ev('user.message', { content: 'carry on from the summary' }),
+      ev('assistant.message', { messageId: 'm1b', model: 'gpt-5-mini', content: 'resumed with room to spare' }),
       ev('session.shutdown', {
         tokenDetails: { input: { tokenCount: 100 }, cache_read: { tokenCount: 20 }, output: { tokenCount: 50 } },
         codeChanges: { linesAdded: 1, linesRemoved: 1, filesModified: ['/tmp/cproj/app.ts'] },
@@ -180,6 +183,9 @@ function writeSession3(): void {
     }), 'call-task'),
     sub(ev('tool.execution_start', { toolCallId: 'call-sub-view', toolName: 'view' }), 'call-task'),
     sub(ev('tool.execution_complete', { toolCallId: 'call-sub-view', success: true, result: { content: '{"main":"src/index.ts"}' } }), 'call-task'),
+    // The subagent run compacts: the marker belongs to ITS stream, not the main one.
+    sub(ev('session.context_changed', { reason: 'compaction' }), 'call-task'),
+    sub(ev('assistant.message', { model: 'gpt-5-mini', content: 'resumed the zebrafinder scan' }), 'call-task'),
     sub(ev('subagent.completed', { toolCallId: 'call-task', agentName: 'explore' }), 'call-task'),
     ev('tool.execution_complete', { toolCallId: 'call-task', success: true, result: { content: 'Entry point is src/index.ts.' } }),
     // A tagged turn with no subagent.started — tolerated as a detached run.
@@ -379,5 +385,39 @@ describe('copilot subagent embedding', () => {
     expect(flat.some((b) => b.kind === 'attachment')).toBe(false);
     expect(JSON.stringify(detail.thread)).toContain('[📷 evil.png]');
     expect(JSON.stringify(detail)).not.toContain(SECRET_B64);
+  });
+});
+
+describe('copilot compaction markers', () => {
+  it('counts only the `compaction` reason and stamps the turn that follows it', async () => {
+    const detail = (await get('/api/sessions/copilot-sess-1')).json();
+    expect(detail.meta.compactionCount).toBe(1); // the model_change reason is not one
+
+    const stamped = detail.thread.filter((t: { compaction?: unknown }) => t.compaction);
+    expect(stamped).toHaveLength(1);
+    expect(JSON.stringify(stamped[0].blocks)).toContain('carry on from the summary');
+    // Copilot records neither a trigger nor a summary on the marker, and its
+    // usage is a session total pinned to the last turn — not a prompt size —
+    // so no before/after figure may be derived from it either.
+    expect(stamped[0].compaction).toEqual({});
+  });
+
+  it('reports the compaction count but no context size (session-level usage)', async () => {
+    const { meta } = (await get('/api/sessions/copilot-sess-1')).json();
+    expect(meta.compactionCount).toBe(1);
+    expect(meta.contextTokens).toBeUndefined();
+    expect(meta.contextWindow).toBeUndefined();
+  });
+
+  it('keeps a subagent compaction in its own run and out of the session count', async () => {
+    const detail = (await get('/api/sessions/copilot-sess-3')).json();
+    // Main thread only: the run compacted, the session did not.
+    expect(detail.meta.compactionCount).toBe(0);
+    expect(detail.thread.some((t: { compaction?: unknown }) => t.compaction)).toBe(false);
+
+    const run = detail.subagents.find((r: { agentType: string }) => r.agentType === 'explore');
+    const stamped = run.thread.filter((t: { compaction?: unknown }) => t.compaction);
+    expect(stamped).toHaveLength(1);
+    expect(JSON.stringify(stamped[0].blocks)).toContain('resumed the zebrafinder scan');
   });
 });

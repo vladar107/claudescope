@@ -17,9 +17,14 @@ import type {
   SessionEfficiencyRow,
   SessionEfficiencySort,
 } from '@claudescope/shared';
-import { getConnection, queryRows } from '../db/duckdb.js';
+import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { scopeFilters } from '../data/analytics-scope.js';
 import { cacheHitRatioSql } from '../data/analytics-metrics.js';
+import {
+  connectorsWithCompactionSignal,
+  connectorsWithPromptSizedUsage,
+} from '../data/agent-capabilities.js';
+import { contextWindowFor, loadPricing } from '../data/pricing.js';
 import { readRow } from '../db/row.js';
 import { projectIdFromCwd, displayNameFromCwd } from '../data/project-id.js';
 import { toIso } from './projects.js';
@@ -36,7 +41,12 @@ const SORT_EXPR: Record<SessionEfficiencySort, string> = {
   tokensPerResponse: 'tokens_per_response',
   toolCallCount: 'tool_call_count',
   toolCallsPerResponse: 'tool_calls_per_response',
+  contextTokens: 'context_tokens',
+  compactionCount: 'compaction_count',
 };
+
+/** `'a', 'b'` for an `IN (...)` list; `''` never happens (both sets are non-empty). */
+const sqlList = (ids: string[]): string => ids.map(sqlString).join(', ');
 
 function clampInt(raw: string | undefined, dflt: number, min: number, max: number): number {
   const n = raw === undefined ? dflt : Number.parseInt(raw, 10);
@@ -71,6 +81,14 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
     // Optional project + inclusive date bounds (shared resolution/semantics).
     const scoped = await scopeFilters(conn, req.query, { cwd: 's.project_cwd', ts: 's.started_at' });
     const scopeClause = scoped.map((f) => `AND ${f}`).join('\n          ');
+
+    // Context/compactions are NULL (not 0) for agents whose format never records
+    // them, so they sort last and stay out of the quantiles.
+    // COALESCE mirrors rowToSessionMeta's default so both routes agree on a
+    // (theoretical) NULL connector_id.
+    const connector = "COALESCE(s.connector_id, 'claude-code')";
+    const withContext = sqlList(connectorsWithPromptSizedUsage());
+    const withCompactions = sqlList(connectorsWithCompactionSignal());
 
     // Shared CTE: per-session deduped sums -> derived ratios, filtered.
     const cte = `
@@ -115,7 +133,10 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
             WHEN s.ended_at IS NOT NULL AND s.started_at IS NOT NULL
             THEN epoch_ms(s.ended_at) - epoch_ms(s.started_at)
             ELSE 0
-          END AS duration_ms
+          END AS duration_ms,
+          CASE WHEN ${connector} IN (${withContext}) THEN s.context_tokens END AS context_tokens,
+          s.context_model,
+          CASE WHEN ${connector} IN (${withCompactions}) THEN s.compaction_count END AS compaction_count
         FROM agg a
         JOIN sessions s ON s.id = a.session_id
         WHERE a.responses >= ${minResponses}
@@ -131,9 +152,13 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
        LIMIT ${limit}`,
     );
 
+    const pricing = loadPricing();
     const rows: SessionEfficiencyRow[] = rowsRaw.map((r) => {
       const rd = readRow(r, 'session-efficiency');
       const cwd = rd.str('project_cwd');
+      const contextTokens = rd.req('context_tokens') == null ? null : rd.num('context_tokens');
+      const contextWindow =
+        contextTokens === null ? null : (contextWindowFor(rd.str('context_model'), pricing) ?? null);
       return {
         sessionId: rd.str('session_id'),
         title: rd.str('title'),
@@ -152,6 +177,9 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
         costPerResponse: rd.num('cost_per_response'),
         tokensPerResponse: rd.num('tokens_per_response'),
         toolCallsPerResponse: rd.num('tool_calls_per_response'),
+        contextTokens,
+        contextWindow,
+        compactionCount: rd.req('compaction_count') == null ? null : rd.num('compaction_count'),
       };
     });
 
@@ -166,6 +194,9 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
       'tool_call_count',
       'tool_calls_per_response',
       'cache_hit_ratio',
+      // quantile_cont skips NULLs: these two cover only sessions with a value.
+      'context_tokens',
+      'compaction_count',
     ];
     const quantileExprs = statCols
       .map(
@@ -206,6 +237,8 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
           toolCallCount: stat('tool_call_count'),
           toolCallsPerResponse: stat('tool_calls_per_response'),
           cacheHitRatio: stat('cache_hit_ratio'),
+          contextTokens: stat('context_tokens'),
+          compactionCount: stat('compaction_count'),
         },
       },
     };

@@ -237,6 +237,13 @@ describe('Junie session indexing', () => {
 });
 
 describe('Junie session detail', () => {
+  it('reports no context size: a Junie row sums every LLM call of the turn, not one prompt', async () => {
+    const detail = (await get(`/api/sessions/${SESSION_ID}`)).json();
+    expect(detail.meta.totalTokens).toBeGreaterThan(0);
+    expect('contextTokens' in detail.meta).toBe(false);
+    expect('compactionCount' in detail.meta).toBe(false); // no marker in the format either
+  });
+
   it('coalesces block events by stepId into paired tool interactions', async () => {
     const detail = (await get(`/api/sessions/${SESSION_ID}`)).json();
     expect(detail.subagents).toEqual([]);

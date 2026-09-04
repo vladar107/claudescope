@@ -23,7 +23,7 @@ import { basename, dirname, join } from 'node:path';
 import { piSessionsDir } from '../../settings.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
-import { canonicalProjectionSql } from '../canonical.js';
+import { canonicalProjectionSql, compactionsProjectionSql } from '../canonical.js';
 import { ndjsonCache } from '../ndjson-cache.js';
 import { parentSessionFile, parsePiSession, subagentRuns, toCanonicalRows } from './normalize.js';
 
@@ -75,8 +75,10 @@ function eventsProjectionSql(filePath: string): string {
   return canonicalProjectionSql(cache.path(filePath), { provider: true });
 }
 
-function auxProjections(_filePath: string): AuxProjections {
-  return {}; // pi has no ai-title / pr-link records (first-user-message title fallback applies)
+/** pi has no ai-title / pr-link records (the first-user-message title fallback
+ *  applies) — only the compaction markers the normalizer wrote into the cache. */
+function auxProjections(filePath: string): AuxProjections {
+  return { compactions: compactionsProjectionSql(cache.path(filePath)) };
 }
 
 async function loadSession(_sessionId: string, paths: string[]): Promise<SessionData> {

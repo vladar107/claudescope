@@ -29,7 +29,7 @@ const LITELLM = {
     litellm_provider: 'one of https://docs.litellm.ai/docs/providers',
     mode: 'chat',
   },
-  // anthropic chat model with all four rates present.
+  // anthropic chat model with all four rates present (+ a context window).
   'claude-sonnet-4-5': {
     litellm_provider: 'anthropic',
     mode: 'chat',
@@ -37,6 +37,15 @@ const LITELLM = {
     output_cost_per_token: 15e-6,
     cache_creation_input_token_cost: 3.75e-6,
     cache_read_input_token_cost: 0.3e-6,
+    max_input_tokens: 200000,
+  },
+  // a non-integer window must not cost the entry its rates.
+  'claude-haiku-4-5': {
+    litellm_provider: 'anthropic',
+    mode: 'chat',
+    input_cost_per_token: 1e-6,
+    output_cost_per_token: 5e-6,
+    max_input_tokens: '200k',
   },
   // openai chat model missing cache fields (one null, one absent) → 0.
   'gpt-5': {
@@ -99,7 +108,14 @@ describe('mapLiteLLM', () => {
       output: 15,
       cacheWrite: 3.75,
       cacheRead: 0.3,
+      contextWindow: 200000,
     });
+  });
+
+  it('leaves the window out (not the entry) when max_input_tokens is unusable', () => {
+    expect(rates['claude-haiku-4-5']).toEqual({ input: 1, output: 5, cacheWrite: 0, cacheRead: 0 });
+    // gpt-5 has no max_input_tokens at all → no key, not `contextWindow: undefined`.
+    expect('contextWindow' in rates['gpt-5']!).toBe(false);
   });
 
   it('defaults missing/null cache fields to 0', () => {
@@ -170,8 +186,8 @@ describe('refreshPricing', () => {
 
     const result = await refreshPricing();
     expect(result.path).toBe(fetchedPath);
-    expect(result.modelCount).toBe(3); // claude-sonnet-4-5, gpt-5, gpt-5-codex
-    expect(result.changed).toBe(3); // no previous snapshot → all changed
+    expect(result.modelCount).toBe(4); // claude-sonnet-4-5, claude-haiku-4-5, gpt-5, gpt-5-codex
+    expect(result.changed).toBe(4); // no previous snapshot → all changed
 
     const snapshot = JSON.parse(readFileSync(fetchedPath, 'utf8'));
     expect(typeof snapshot.fetchedAt).toBe('string');
@@ -181,6 +197,7 @@ describe('refreshPricing', () => {
       output: 15,
       cacheWrite: 3.75,
       cacheRead: 0.3,
+      contextWindow: 200000,
     });
   });
 
@@ -197,7 +214,7 @@ describe('refreshPricing', () => {
 
     const result = await refreshPricing();
     expect(result.changed).toBe(1);
-    expect(result.modelCount).toBe(3);
+    expect(result.modelCount).toBe(4);
   });
 
   it('leaves an existing snapshot untouched when the fetch is invalid', async () => {

@@ -33,15 +33,20 @@ export interface DiscoveredFile {
  */
 
 /**
- * Optional auxiliary, session-keyed projections. Each value is a `SELECT` body
- * the indexer wraps with `INSERT OR REPLACE INTO <table> (...)`:
- *   - `titles` → `(session_id, title)`
- *   - `prLinks` → `(session_id, pr_number, pr_repository, pr_url)`
- * Agents without these (e.g. Codex) simply omit them.
+ * Optional auxiliary projections. Each value is a `SELECT` body the indexer
+ * stages and inserts into the matching table:
+ *   - `titles` → `(session_id, title)` (session-keyed, INSERT OR REPLACE)
+ *   - `prLinks` → `(session_id, pr_number, pr_repository, pr_url)` (same)
+ *   - `compactions` → `(file_path, session_id, uuid, ts, is_sidechain, trigger,
+ *     pre_tokens, post_tokens)` — one row per context compaction in the file;
+ *     file-keyed (rows of the reloaded file are replaced). Cache-backed
+ *     connectors get it from `canonical.ts:compactionsProjectionSql`.
+ * Agents without these simply omit them.
  */
 export interface AuxProjections {
   titles?: string;
   prLinks?: string;
+  compactions?: string;
 }
 
 /** A source of agent transcripts. One implementation per supported agent. */

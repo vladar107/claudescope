@@ -89,6 +89,53 @@ export interface CanonicalRow {
   text_content: string;
   /** Session title; read by the aux projection, ignored by the events one. */
   title?: string;
+  /**
+   * Compaction metadata, set only on {@link COMPACTION_ROW_TYPE} rows (see
+   * {@link compactionRow}); read by {@link compactionsProjectionSql}, ignored by
+   * the events projection, which filters those rows out.
+   */
+  compaction_trigger?: string | null;
+  compaction_pre_tokens?: number | null;
+  compaction_post_tokens?: number | null;
+}
+
+/**
+ * `type` of a cache row that records a context compaction rather than a
+ * conversational event. Cache-internal: it is neither a Claude Code event type
+ * nor an `events` row — the events projection excludes it by type.
+ */
+export const COMPACTION_ROW_TYPE = 'compaction';
+
+/**
+ * A cache row marking one context compaction (the normalizer's synthetic
+ * `system`/`compact_boundary` event). Token/text columns are the canonical
+ * zeros so the row is shape-identical to an event row in the NDJSON file.
+ */
+export function compactionRow(
+  base: Pick<CanonicalRow, 'file_path' | 'session_id' | 'uuid' | 'parent_uuid' | 'ts' | 'cwd' | 'is_sidechain'>,
+  meta: { trigger?: string; preTokens?: number; postTokens?: number } = {},
+): CanonicalRow {
+  return {
+    ...base,
+    role: 'system',
+    type: COMPACTION_ROW_TYPE,
+    git_branch: null,
+    model: null,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    service_tier: null,
+    tool_use_count: 0,
+    tool_names: '',
+    tool_error_count: null,
+    tool_error_text: null,
+    skill_names: '',
+    text_content: '',
+    compaction_trigger: meta.trigger ?? null,
+    compaction_pre_tokens: meta.preTokens ?? null,
+    compaction_post_tokens: meta.postTokens ?? null,
+  };
 }
 
 /**
@@ -122,11 +169,32 @@ export function canonicalProjectionSql(cachePath: string, opts: { provider: bool
   const selected = Object.keys(CANONICAL_COLUMNS).map((n) =>
     n === 'provider' && !opts.provider ? 'CAST(NULL AS VARCHAR) AS provider' : n,
   );
+  // Compaction rows share the file (see compactionRow) but are not events.
+  // This filter is the contract: a `toCanonicalRows` must only ever emit
+  // user/assistant rows plus COMPACTION_ROW_TYPE — any other `type` would
+  // silently vanish from `events` here rather than fail.
   return `
     SELECT
       ${selected.join(', ')},
       CAST(NULL AS VARCHAR) AS message_id, CAST(NULL AS VARCHAR) AS forked_from_session_id
-    FROM read_ndjson(${sqlString(cachePath)}, ${READ_OPTS}, ${columnsMap(names)})`;
+    FROM read_ndjson(${sqlString(cachePath)}, ${READ_OPTS}, ${columnsMap(names)})
+    WHERE type IN ('user', 'assistant')`;
+}
+
+/**
+ * The `compactions` aux projection for a cache-backed connector: the
+ * {@link compactionRow}s of the file, in the `compactions` table's column order.
+ */
+export function compactionsProjectionSql(cachePath: string): string {
+  return `
+      SELECT file_path, session_id, uuid, ts, COALESCE(is_sidechain, FALSE) AS is_sidechain,
+             compaction_trigger AS trigger, compaction_pre_tokens AS pre_tokens,
+             compaction_post_tokens AS post_tokens
+      FROM read_ndjson(${sqlString(cachePath)}, ${READ_OPTS},
+        columns={file_path:'VARCHAR', session_id:'VARCHAR', uuid:'VARCHAR', type:'VARCHAR',
+                 ts:'TIMESTAMP', is_sidechain:'BOOLEAN', compaction_trigger:'VARCHAR',
+                 compaction_pre_tokens:'BIGINT', compaction_post_tokens:'BIGINT'})
+      WHERE type = '${COMPACTION_ROW_TYPE}' AND session_id IS NOT NULL`;
 }
 
 /**

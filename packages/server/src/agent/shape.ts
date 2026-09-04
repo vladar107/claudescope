@@ -10,6 +10,7 @@ import type {
   AnalyticsResponse,
   SearchResponse,
   SessionDetailResponse,
+  SessionMeta,
   ToolUsageKind,
   ToolUsageResponse,
 } from '@claudescope/shared';
@@ -129,6 +130,23 @@ export function shapeSearchResults(res: SearchResponse, limit: number): string {
 }
 
 /**
+ * ` · ctx 142K (71%) · 2 compactions` for the session header — each part only
+ * when the agent records it (see data/agent-capabilities.ts), so an absent
+ * figure reads as unknown rather than 0.
+ */
+function contextSuffix(meta: SessionMeta): string {
+  const parts: string[] = [];
+  if (meta.contextTokens !== undefined) {
+    const pct = meta.contextWindow ? ` (${Math.round((meta.contextTokens / meta.contextWindow) * 100)}%)` : '';
+    parts.push(`ctx ${fmtTokens(meta.contextTokens)}${pct}`);
+  }
+  if (meta.compactionCount !== undefined) {
+    parts.push(`${meta.compactionCount} compaction${meta.compactionCount === 1 ? '' : 's'}`);
+  }
+  return parts.map((p) => ` · ${p}`).join('');
+}
+
+/**
  * One session (or a window of it) as compact Markdown: a header with ids and
  * totals, the paging line when the response is windowed, then the turns and
  * any subagent runs inside the window. `redact` masks home paths and likely
@@ -140,7 +158,8 @@ export function shapeSessionMarkdown(data: SessionDetailResponse, redact: boolea
   const head = [
     `# ${r(meta.title)}`,
     `session ${meta.id} [${meta.connectorId}] · project ${meta.projectDisplayName} · ` +
-      `${meta.startedAt} → ${meta.endedAt} · ${fmtTokens(meta.totalTokens)} tok · ${fmtCost(meta.totalCostUsd)}`,
+      `${meta.startedAt} → ${meta.endedAt} · ${fmtTokens(meta.totalTokens)} tok · ${fmtCost(meta.totalCostUsd)}` +
+      contextSuffix(meta),
   ];
   if (window) {
     const end = window.offset + window.limit;

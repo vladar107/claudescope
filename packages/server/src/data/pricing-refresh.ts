@@ -58,6 +58,7 @@ interface LiteLLMEntry {
   output_cost_per_token?: unknown;
   cache_creation_input_token_cost?: unknown;
   cache_read_input_token_cost?: unknown;
+  max_input_tokens?: unknown;
 }
 
 /** A finite, non-negative number within the sanity cap, else `null`. */
@@ -74,6 +75,15 @@ function toCacheRate(value: unknown): number | null {
 }
 
 /**
+ * The model's context window (`max_input_tokens`), or `undefined` when absent
+ * or not a positive integer. Not a rate: it never reaches SQL, so a bad value
+ * just leaves the window unknown instead of dropping the entry.
+ */
+function toWindow(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+/**
  * Map a parsed LiteLLM JSON object to our per-MTok rate table. Pure; exported
  * for tests.
  *
@@ -82,7 +92,7 @@ function toCacheRate(value: unknown): number | null {
  * — transcripts store bare model ids, and the bare id is present for these
  * providers. Individual entries with missing/invalid input or output cost (or
  * any rate over the sanity cap) are skipped, not fatal. Missing cache fields
- * default to 0.
+ * default to 0. `max_input_tokens` rides along as `contextWindow` when present.
  */
 export function mapLiteLLM(json: unknown): Record<string, ModelRates> {
   const out: Record<string, ModelRates> = {};
@@ -108,7 +118,8 @@ export function mapLiteLLM(json: unknown): Record<string, ModelRates> {
       continue;
     }
 
-    out[id] = { input, output, cacheWrite, cacheRead };
+    const contextWindow = toWindow(entry.max_input_tokens);
+    out[id] = { input, output, cacheWrite, cacheRead, ...(contextWindow ? { contextWindow } : {}) };
   }
 
   return out;

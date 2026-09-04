@@ -272,6 +272,12 @@
   border-color: var(--tv-warning);
   color: var(--tv-warning);
 }
+/* Compaction count — informational, not a warning: quiet next to the title. */
+.tv-chip--compaction {
+  align-items: center;
+  border-color: var(--tv-border-strong);
+  color: var(--tv-fg-muted);
+}
 .tv-chip--pr {
   border-color: var(--tv-accent);
   color: var(--tv-accent);

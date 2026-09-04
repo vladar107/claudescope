@@ -4,8 +4,9 @@
  * Loads a layered {@link PricingConfig}: a base layer (the user-editable
  * {@link PRICING_PATH}, falling back to the shipped {@link DEFAULT_PRICING_PATH})
  * with an optional overlay of runtime-fetched rates from
- * {@link FETCHED_PRICING_PATH}. Fetched rates win per exact model id; `families`
- * and `default` always come from the base layer (LiteLLM has no such concepts).
+ * {@link FETCHED_PRICING_PATH}. Fetched rates win per exact model id (a
+ * user-set `contextWindow` on that id survives); `families` and `default`
+ * always come from the base layer (LiteLLM has no such concepts).
  *
  * The result is cached and keyed on the (mtime, existence) of both files, so an
  * edit to either — e.g. a `claudescope pricing update` rewriting the fetched
@@ -32,7 +33,11 @@ function rateOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-/** A fully-valid {@link ModelRates}, or `null` if any field is unusable. */
+/**
+ * A fully-valid {@link ModelRates}, or `null` if any rate is unusable. The
+ * optional `contextWindow` is not a rate (it never reaches SQL): it is kept
+ * when a positive integer and silently left out otherwise.
+ */
 function ratesOrNull(value: unknown): ModelRates | null {
   if (value === null || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
@@ -42,7 +47,27 @@ function ratesOrNull(value: unknown): ModelRates | null {
     if (n === null) return null;
     out[field] = n;
   }
+  const window = raw.contextWindow;
+  if (typeof window === 'number' && Number.isInteger(window) && window > 0) out.contextWindow = window;
   return out;
+}
+
+/**
+ * The context window (tokens) pricing knows for a model id: the exact-id entry
+ * first, then the first substring family that defines one — the same
+ * `models` → `families` chain the cost expression uses (`data/index.ts:
+ * buildCostExpr`), minus the default, which has no window. `undefined` when
+ * unknown; the UI then shows the absolute context size without a percentage.
+ */
+export function contextWindowFor(model: string | null | undefined, pricing: PricingConfig): number | undefined {
+  if (!model) return undefined;
+  const exact = pricing.models[model]?.contextWindow;
+  if (exact !== undefined) return exact;
+  const id = model.toLowerCase();
+  for (const [family, rates] of Object.entries(pricing.families ?? {})) {
+    if (rates.contextWindow !== undefined && id.includes(family.toLowerCase())) return rates.contextWindow;
+  }
+  return undefined;
 }
 
 /**
@@ -169,7 +194,16 @@ export function loadPricing(): PricingConfig {
         'fetched.models',
         [],
       );
-      config = { ...base, models: { ...base.models, ...overlay } };
+      const models = { ...base.models, ...overlay };
+      // Rates come from the feed, but a window the user wrote on an exact id in
+      // pricing.json is a deliberate override (e.g. a 1M-context variant LiteLLM
+      // lists under another id): keep it on top of the fetched entry.
+      for (const [id, rates] of Object.entries(base.models)) {
+        if (rates.contextWindow !== undefined && id in overlay) {
+          models[id] = { ...models[id]!, contextWindow: rates.contextWindow };
+        }
+      }
+      config = { ...base, models };
     }
   }
 

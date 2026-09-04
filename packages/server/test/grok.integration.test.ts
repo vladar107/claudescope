@@ -350,6 +350,13 @@ describe('grok session indexing', () => {
 });
 
 describe('grok session detail', () => {
+  it('reports no context size: turn_completed usage is a per-turn total, not one prompt', async () => {
+    const detail = (await get('/api/sessions/grok-sess-1')).json();
+    expect(detail.meta.totalTokens).toBeGreaterThan(0);
+    expect('contextTokens' in detail.meta).toBe(false);
+    expect('compactionCount' in detail.meta).toBe(false);
+  });
+
   it('renders plaintext reasoning, strips the user_query wrapper, embeds the image, maps tools', async () => {
     const detail = (await get('/api/sessions/grok-sess-1')).json();
     const flat = detail.thread.flatMap((t: { blocks: Record<string, unknown>[] }) => t.blocks);

@@ -270,6 +270,26 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   **prospectively** — cost is stamped per event at index time, so only an index
   rebuild re-prices already-indexed history. Rates are interpolated into SQL, so
   `loadPricing` validates them — an unusable rate is dropped, not passed through.
+- **Context & compactions come from the index, not from a live process.**
+  `sessions.context_tokens` is the prompt size (input + cache read + cache
+  write) of the LAST main-thread assistant row, and `compaction_count` counts
+  main-thread rows of the file-keyed `compactions` aux table. The API reports
+  both as *absent* (not 0) for agents whose format never records them — decided
+  in `data/agent-capabilities.ts`, never inferred from the data. Context needs
+  **prompt-sized** rows (Claude Code, Codex, pi, opencode): Junie sums every LLM
+  call of a turn into one row and Grok records one total per user turn, so a
+  "context" read from them would be a fabrication, not merely session-level
+  like Copilot's. Compaction
+  markers differ per agent: Claude Code's is a `system`/`compact_boundary` row
+  (the 2025 format flagged the summary user turn `isCompactSummary`; mid-period
+  files carry both, so boundaries win and summaries are only counted in files
+  with no boundary); Codex's is the top-level `compacted` record (the
+  `compaction` item and `context_compacted` event belong to the same
+  compaction — never count them); pi's is the `compaction` entry; Copilot's is
+  `session.context_changed` with reason `compaction`. Normalizers synthesize
+  the Claude Code system-row shape so the parser and the aux projection have one
+  path; the window percentage is best-effort from pricing (`contextWindow`,
+  LiteLLM `max_input_tokens`) and is never stored.
 - **`loadFile` stages, then swaps — keep it that way.** It materializes the
   projection into temp tables *before* deleting the file's existing rows, so a
   failure while projecting (unreadable source, a bad rate reaching the
