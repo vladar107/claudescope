@@ -144,6 +144,12 @@ export interface UserEvent extends EventEnvelope {
   message: RawMessage;
   permissionMode?: string;
   promptId?: string;
+  /**
+   * Claude Code (2025 format): this user turn IS the post-compaction summary.
+   * Current Claude Code writes a `system` `compact_boundary` row instead (see
+   * {@link SystemEvent}); mid-period files carry both for one compaction.
+   */
+  isCompactSummary?: boolean;
 }
 
 export interface AssistantEvent extends EventEnvelope {
@@ -152,12 +158,32 @@ export interface AssistantEvent extends EventEnvelope {
   requestId?: string;
 }
 
+/** Claude Code's `compactMetadata` on a `compact_boundary` system row. */
+export interface CompactMetadata {
+  /** `auto` or `manual`. */
+  trigger?: string;
+  /** Context size (tokens) just before / after the compaction. */
+  preTokens?: number;
+  postTokens?: number;
+  [key: string]: unknown;
+}
+
+/**
+ * A `subtype: 'compact_boundary'` system event marks a context compaction that
+ * happened right before the next conversational event. Claude Code writes these
+ * natively; the Codex/pi/Copilot normalizers synthesize the same shape so one
+ * parser path and one index projection serve every agent.
+ */
 export interface SystemEvent extends EventEnvelope {
   type: 'system';
   subtype?: string;
   isMeta?: boolean;
   messageCount?: number;
   durationMs?: number;
+  content?: string;
+  compactMetadata?: CompactMetadata;
+  /** Synthetic only (Codex/pi): the plaintext compaction summary, when stored. */
+  summary?: string;
 }
 
 export interface AttachmentEvent extends EventEnvelope {

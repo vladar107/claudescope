@@ -1,3 +1,5 @@
+import { formatCount } from '../../components/TokenChips.js';
+
 /**
  * Small presentational helpers shared by the browse + session views.
  * Kept local to these pages (no shell files touched).
@@ -72,6 +74,53 @@ export function formatDuration(startIso: string | undefined, endIso: string | un
   const week = Math.floor(day / 7);
   const d = day % 7;
   return d ? `${week}w ${d}d` : `${week}w`;
+}
+
+/**
+ * Share of the model's context window used at a turn, or undefined when the
+ * window (or the figure itself) is unknown — no window, no ratio.
+ */
+function contextRatio(
+  tokens: number | null | undefined,
+  window: number | null | undefined,
+): number | undefined {
+  if (tokens == null || window == null) return undefined;
+  if (!Number.isFinite(tokens) || !Number.isFinite(window) || window <= 0) return undefined;
+  return tokens / window;
+}
+
+/**
+ * How hot the context is at a turn: `warm` from 80 % of the window, `hot` from
+ * 95 %. The single source of the thresholds for every view that flags them.
+ */
+export function contextLevel(
+  tokens: number | null | undefined,
+  window: number | null | undefined,
+): 'warm' | 'hot' | undefined {
+  const ratio = contextRatio(tokens, window);
+  if (ratio === undefined) return undefined;
+  if (ratio >= 0.95) return 'hot';
+  if (ratio >= 0.8) return 'warm';
+  return undefined;
+}
+
+/**
+ * "395K of 1M (39%)" — the last prompt's size against the model's window, so it
+ * cannot be mistaken for the session's cumulative token total shown beside it;
+ * just "395K" when the window is unknown.
+ */
+export function contextLabel(tokens: number, window: number | null | undefined): string {
+  const pct = contextPct(tokens, window);
+  return pct ? `${formatCount(tokens)} of ${formatCount(window as number)} (${pct})` : formatCount(tokens);
+}
+
+/** Context fill as a whole-percent label ("71%"), or "" when the window is unknown. */
+export function contextPct(
+  tokens: number | null | undefined,
+  window: number | null | undefined,
+): string {
+  const ratio = contextRatio(tokens, window);
+  return ratio === undefined ? '' : `${Math.round(ratio * 100)}%`;
 }
 
 /** Human-readable byte size (e.g. "1.3 MB"). */

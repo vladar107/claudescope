@@ -3,7 +3,8 @@
  *
  * A Codex session (`rollout-*.jsonl`) spreads its data across record types:
  * `session_meta` (id, cwd), `turn_context` (model, per turn), `response_item`
- * (the transcript), and `event_msg/token_count` (per-turn token usage). This
+ * (the transcript), `event_msg/token_count` (per-turn token usage), and
+ * `compacted` (a context compaction → a synthetic `compact_boundary`). This
  * parses one rollout into Claude-shaped `RawEvent[]` — assistant/user turns whose
  * `message.content` carries text / thinking / tool_use / tool_result blocks — so
  * the existing thread assembler and the canonical index row builder both reuse it.
@@ -28,6 +29,7 @@ import type {
   AssistantEvent,
   ContentBlock,
   MessageUsage,
+  SystemEvent,
   ToolUseBlock,
   UserEvent,
 } from '@claudescope/shared';
@@ -35,7 +37,7 @@ import { codexSessionsDir } from '../../settings.js';
 import { toolNamesCsv } from '../tool-names.js';
 import { skillNamesCsv } from '../skill-names.js';
 import { toolErrorCount, toolErrorText } from '../tool-errors.js';
-import type { CanonicalRow } from '../canonical.js';
+import { compactionRow, type CanonicalRow } from '../canonical.js';
 import { num, rec, str } from '../json.js';
 
 interface CodexLine {
@@ -43,6 +45,12 @@ interface CodexLine {
   payload?: Record<string, unknown>;
   timestamp?: string;
 }
+
+/**
+ * One normalized event: a conversational turn, or the synthetic
+ * `compact_boundary` marker a top-level `compacted` record becomes.
+ */
+export type CodexEvent = UserEvent | AssistantEvent | SystemEvent;
 
 export interface CodexSession {
   /** Own thread id — the correlation key `loadSession` splits files by. */
@@ -60,7 +68,7 @@ export interface CodexSession {
   /** `model_provider` from session_meta — session-level, applied to every
    *  assistant row (e.g. 'openai'). */
   modelProvider?: string;
-  events: (UserEvent | AssistantEvent)[];
+  events: CodexEvent[];
   /** Legacy child thread id OR current canonical task path → exact Task
    *  correlation meta, recovered from this rollout's `spawn_agent` calls. */
   spawnedAgents: Map<string, { description: string; agentType: string; toolUseId: string }>;
@@ -724,7 +732,7 @@ export function parseRollout(path: string): CodexSession | null {
     }
   }
 
-  const events: (UserEvent | AssistantEvent)[] = [];
+  const events: CodexEvent[] = [];
   let seq = 0;
   let wsSeq = 0;
   let prevUuid: string | null = null;
@@ -818,8 +826,33 @@ export function parseRollout(path: string): CodexSession | null {
       continue;
     }
 
+    // A context compaction. Codex writes it three times over — this top-level
+    // record, an encrypted `compaction` response item, and (current versions) a
+    // `context_compacted` event — so ONLY this one becomes the marker.
+    if (line.type === 'compacted') {
+      flush();
+      const summary = str(pl.message);
+      events.push({
+        uuid: `${sessionId}-${seq++}`,
+        // Deliberately NOT advancing prevUuid: the boundary sits beside the
+        // conversation, so the next turn still chains to the previous one.
+        parentUuid: prevUuid,
+        sessionId,
+        timestamp: ts,
+        cwd,
+        isSidechain,
+        type: 'system',
+        subtype: 'compact_boundary',
+        ...(summary ? { summary } : {}),
+      } as SystemEvent);
+      continue;
+    }
+
     if (line.type !== 'response_item') continue;
     const kind = str(pl.type);
+    // The encrypted twin of the `compacted` record above — bookkeeping, never a
+    // transcript block.
+    if (kind === 'compaction') continue;
 
     if (kind === 'message') {
       const role = str(pl.role);
@@ -992,6 +1025,18 @@ export function parseRollout(path: string): CodexSession | null {
 /** Flatten a parsed session into canonical index rows for one file. */
 export function toCanonicalRows(session: CodexSession, filePath: string): CanonicalRow[] {
   return session.events.map((e) => {
+    if (e.type === 'system') {
+      // The synthetic compaction marker: a `compactions` cache row, not an event.
+      return compactionRow({
+        file_path: filePath,
+        session_id: session.indexSessionId,
+        uuid: e.uuid,
+        parent_uuid: e.parentUuid,
+        ts: e.timestamp,
+        cwd: session.cwd,
+        is_sidechain: session.isSidechain,
+      });
+    }
     const msg = (e as AssistantEvent | UserEvent).message;
     const content = msg.content;
     const arr = Array.isArray(content) ? content : [];

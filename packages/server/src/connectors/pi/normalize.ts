@@ -4,9 +4,10 @@
  * A pi session (`<ts>_<uuid>.jsonl`) is a flat, threaded record stream: a
  * `session` line (carrying `cwd` + the session id), `message` records
  * (`role: user | assistant | toolResult`), and `model_change` /
- * `thinking_level_change` records. The conversation lives entirely in the
- * `message` records; the model and usage ride the assistant message itself, and
- * `cwd` ride the single `session` line.
+ * `thinking_level_change` records, plus a `compaction` entry per context
+ * compaction (→ a synthetic `compact_boundary`). The conversation lives entirely
+ * in the `message` records; the model and usage ride the assistant message
+ * itself, and `cwd` ride the single `session` line.
  *
  * This parses one session into Claude-shaped `RawEvent[]` — assistant/user turns
  * whose `message.content` carries text / thinking / tool_use / tool_result blocks
@@ -34,12 +35,18 @@
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
-import type { AssistantEvent, ContentBlock, MessageUsage, UserEvent } from '@claudescope/shared';
+import type { AssistantEvent, ContentBlock, MessageUsage, SystemEvent, UserEvent } from '@claudescope/shared';
 import { toolNamesCsv } from '../tool-names.js';
 import { skillNamesCsv } from '../skill-names.js';
 import { toolErrorCount, toolErrorText } from '../tool-errors.js';
-import type { CanonicalRow } from '../canonical.js';
+import { compactionRow, type CanonicalRow } from '../canonical.js';
 import { num, rec, str } from '../json.js';
+
+/**
+ * One normalized event: a conversational turn, or the synthetic
+ * `compact_boundary` marker a `compaction` entry becomes.
+ */
+export type PiEvent = UserEvent | AssistantEvent | SystemEvent;
 
 export interface PiSession {
   /** Indexing key: the parent's session id for a nested subagent, else the own id. */
@@ -49,7 +56,7 @@ export interface PiSession {
   /** True for a nested subagent transcript (re-keyed to the parent session). */
   isSidechain: boolean;
   cwd: string;
-  events: (UserEvent | AssistantEvent)[];
+  events: PiEvent[];
 }
 
 
@@ -230,6 +237,9 @@ interface PiLine {
   };
   id?: string;
   cwd?: string;
+  /** `compaction` entries only: the plaintext summary and the pre-compaction size. */
+  summary?: string;
+  tokensBefore?: number;
 }
 
 /** Tolerantly read a pi JSONL file, or null if unreadable. */
@@ -309,7 +319,7 @@ export function parsePiSession(path: string): PiSession | null {
   const sessionId = parentFile ? sessionIdOf(parentFile) : ownId;
   const isSidechain = parentFile !== null;
 
-  const events: (UserEvent | AssistantEvent)[] = [];
+  const events: PiEvent[] = [];
   let seq = 0;
   let prevUuid: string | null = null;
   const nextUuid = (): string => `${ownId}-${seq++}`;
@@ -336,6 +346,28 @@ export function parsePiSession(path: string): PiSession | null {
   };
 
   for (const line of lines) {
+    // A context compaction. `branch_summary` entries look similar but record a
+    // branch digest, not a compaction, so only this type is a marker.
+    if (line.type === 'compaction') {
+      flushToolResults();
+      const summary = str(line.summary);
+      const preTokens = num(line.tokensBefore);
+      events.push({
+        // Deliberately NOT advancing prevUuid: the boundary sits beside the
+        // conversation, so the next turn still chains to the previous one.
+        uuid: nextUuid(),
+        parentUuid: prevUuid,
+        sessionId,
+        timestamp: str(line.timestamp),
+        cwd,
+        isSidechain,
+        type: 'system',
+        subtype: 'compact_boundary',
+        ...(summary ? { summary } : {}),
+        ...(preTokens > 0 ? { compactMetadata: { preTokens } } : {}),
+      } as SystemEvent);
+      continue;
+    }
     if (line.type !== 'message' || !line.message) continue;
     const msg = line.message;
     const role = str(msg.role);
@@ -460,6 +492,21 @@ export function subagentRuns(path: string): PiSubagentRun[] {
 /** Flatten a parsed session into canonical index rows for one file. */
 export function toCanonicalRows(session: PiSession, filePath: string): CanonicalRow[] {
   return session.events.map((e) => {
+    if (e.type === 'system') {
+      // The synthetic compaction marker: a `compactions` cache row, not an event.
+      return compactionRow(
+        {
+          file_path: filePath,
+          session_id: session.sessionId,
+          uuid: e.uuid,
+          parent_uuid: e.parentUuid,
+          ts: e.timestamp,
+          cwd: session.cwd,
+          is_sidechain: session.isSidechain,
+        },
+        e.compactMetadata?.preTokens !== undefined ? { preTokens: e.compactMetadata.preTokens } : {},
+      );
+    }
     const msg = e.message;
     const content = Array.isArray(msg.content) ? msg.content : [];
     const usage = (msg as { usage?: MessageUsage }).usage;

@@ -68,6 +68,19 @@ export interface SessionMeta {
   hasSidechain: boolean;
   /** Agent that produced this session, e.g. `claude-code` or `codex`. */
   connectorId: string;
+  /**
+   * Prompt size (input + cache read + cache write) of the last main-thread
+   * assistant turn — the session's context as of that turn. Absent when the
+   * agent's format has no per-response usage (Copilot, Antigravity, Junie).
+   */
+  contextTokens?: number;
+  /** Context window of the model at that turn, when pricing knows it. */
+  contextWindow?: number;
+  /**
+   * Main-thread context compactions. Absent when the agent's format carries no
+   * compaction marker (opencode, Grok, Antigravity, Junie) — distinct from 0.
+   */
+  compactionCount?: number;
 }
 
 /** A single full-text search hit. */
@@ -113,7 +126,7 @@ export interface AnalyticsTotals {
 // Request query parameter shapes
 // ---------------------------------------------------------------------------
 
-export type SessionSort = 'recent' | 'oldest' | 'tokens' | 'cost' | 'messages';
+export type SessionSort = 'recent' | 'oldest' | 'tokens' | 'cost' | 'messages' | 'context';
 
 export interface SessionsQuery {
   project?: string;
@@ -220,7 +233,9 @@ export type SessionEfficiencySort =
   | 'costPerResponse'
   | 'tokensPerResponse'
   | 'toolCallCount'
-  | 'toolCallsPerResponse';
+  | 'toolCallsPerResponse'
+  | 'contextTokens'
+  | 'compactionCount';
 
 /** Sort direction. */
 export type SortDir = 'asc' | 'desc';
@@ -258,6 +273,12 @@ export interface SessionEfficiencyRow {
   costPerResponse: number;
   tokensPerResponse: number;
   toolCallsPerResponse: number;
+  /** Context at the last main-thread turn; null when the agent has no per-response usage. */
+  contextTokens: number | null;
+  /** Window of the model at that turn, when pricing knows it. */
+  contextWindow: number | null;
+  /** Main-thread compactions; null when the agent's format has no compaction marker. */
+  compactionCount: number | null;
 }
 
 /**
@@ -293,6 +314,10 @@ export interface SessionEfficiencyResponse {
       toolCallCount: SessionEfficiencyStat;
       toolCallsPerResponse: SessionEfficiencyStat;
       cacheHitRatio: SessionEfficiencyStat;
+      /** Over sessions with a known context only. */
+      contextTokens: SessionEfficiencyStat;
+      /** Over sessions whose agent records compactions only. */
+      compactionCount: SessionEfficiencyStat;
     };
   };
 }

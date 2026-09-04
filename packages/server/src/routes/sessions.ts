@@ -26,7 +26,8 @@ import { toIso } from './projects.js';
 import { assembleThread, buildSubagentRuns } from '../data/parser.js';
 import { loadSessionData } from '../data/session-loader.js';
 import { computeSessionFingerprint } from '../data/fingerprint.js';
-import { loadPricing } from '../data/pricing.js';
+import { contextWindowFor, loadPricing } from '../data/pricing.js';
+import { hasCompactionSignal, hasPromptSizedUsage } from '../data/agent-capabilities.js';
 import { connectorById } from '../connectors/registry.js';
 import { buildResumeInfo } from '../connectors/resume.js';
 import { resolveWindow, subagentsInWindow, truncateToolChars } from '../data/window.js';
@@ -44,6 +45,7 @@ const SORT_SQL: Record<SessionSort, string> = {
   tokens: 'total_tokens DESC',
   cost: 'total_cost_usd DESC',
   messages: 'message_count DESC',
+  context: 'context_tokens DESC NULLS LAST',
 };
 
 function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
@@ -57,6 +59,7 @@ function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
     const rates = pricing.providers?.[p.toLowerCase()];
     return rates !== undefined && isZeroRated(rates);
   });
+  const connectorId = rd.str('connector_id') || 'claude-code';
   const meta: SessionMeta = {
     id: rd.str('id'),
     projectId: cwd ? projectIdFromCwd(cwd) : '',
@@ -72,9 +75,17 @@ function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
     providers,
     sizeBytes: rd.num('size_bytes'),
     hasSidechain: rd.bool('has_sidechain'),
-    connectorId: rd.str('connector_id') || 'claude-code',
+    connectorId,
   };
   if (hasLocalProvider) meta.hasLocalProvider = true;
+  // Context/compactions read "unavailable" (absent) for agents whose format
+  // never records them — a property of the connector, not of this session.
+  if (hasPromptSizedUsage(connectorId) && rd.req('context_tokens') != null) {
+    meta.contextTokens = rd.num('context_tokens');
+    const window = contextWindowFor(rd.str('context_model'), pricing);
+    if (window !== undefined) meta.contextWindow = window;
+  }
+  if (hasCompactionSignal(connectorId)) meta.compactionCount = rd.num('compaction_count');
   if (rd.bool('title_derived')) meta.titleDerived = true;
   const gitBranch = rd.str('git_branch');
   if (gitBranch) meta.gitBranch = gitBranch;
@@ -186,8 +197,9 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
       const meta = rowToSessionMeta(row);
 
       const { mainEvents, subagents: subagentSources } = await loadSessionData(id);
-      let thread = assembleThread(mainEvents);
-      let subagents = buildSubagentRuns(thread, subagentSources);
+      const assemble = { deriveContextSizes: hasPromptSizedUsage(meta.connectorId) };
+      let thread = assembleThread(mainEvents, assemble);
+      let subagents = buildSubagentRuns(thread, subagentSources, assemble);
 
       const cwd = readRow(row, 'sessions').str('project_cwd');
       const resume = buildResumeInfo(connectorById(meta.connectorId), id, cwd || null);

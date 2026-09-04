@@ -97,7 +97,7 @@ const RATES_ALIAS = 'pr';
 /**
  * Suffix for {@link loadFile}'s staging temp tables. Constant (not per-file):
  * only one pass runs at a time (see {@link inFlight}) and it loads files
- * sequentially, so `CREATE OR REPLACE` reuses the same three tables instead of
+ * sequentially, so `CREATE OR REPLACE` reuses the same staging tables instead of
  * leaking one set per indexed file. Temp tables are connection-scoped, so this
  * can never collide with a route's query.
  */
@@ -217,6 +217,7 @@ async function loadFile(
   const stagedEvents = `stage_events_${STAGE_SUFFIX}`;
   const stagedTitles = `stage_titles_${STAGE_SUFFIX}`;
   const stagedPrLinks = `stage_pr_links_${STAGE_SUFFIX}`;
+  const stagedCompactions = `stage_compactions_${STAGE_SUFFIX}`;
 
   // The cost expression references the projected token/model columns plus the
   // pricing_rates join (aliased `pr` — see buildCostExpr). LEFT JOIN on the
@@ -248,6 +249,9 @@ async function loadFile(
   if (aux.prLinks) {
     await conn.run(`CREATE OR REPLACE TEMP TABLE ${stagedPrLinks} AS ${aux.prLinks}`);
   }
+  if (aux.compactions) {
+    await conn.run(`CREATE OR REPLACE TEMP TABLE ${stagedCompactions} AS ${aux.compactions}`);
+  }
 
   // Swap. From here the statements are table-to-table copies — no source file,
   // no interpolated pricing, nothing left that can realistically fail.
@@ -259,6 +263,10 @@ async function loadFile(
   await conn.run(`DELETE FROM titles   WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${path})`);
   await conn.run(`DELETE FROM pr_links WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${path})`);
   await conn.run(`DELETE FROM events WHERE file_path = ${path}`);
+  // Compactions are keyed by FILE, not by session (unlike titles/pr_links): a
+  // subagent transcript shares its parent's session id, so a session-keyed
+  // delete here would drop the sibling file's rows on every parent reload.
+  await conn.run(`DELETE FROM compactions WHERE file_path = ${path}`);
   await conn.run(`INSERT INTO events SELECT * FROM ${stagedEvents}`);
   if (aux.titles) {
     await conn.run(`INSERT OR REPLACE INTO titles (session_id, title) SELECT * FROM ${stagedTitles}`);
@@ -267,6 +275,9 @@ async function loadFile(
     await conn.run(
       `INSERT OR REPLACE INTO pr_links (session_id, pr_number, pr_repository, pr_url) SELECT * FROM ${stagedPrLinks}`,
     );
+  }
+  if (aux.compactions) {
+    await conn.run(`INSERT INTO compactions SELECT * FROM ${stagedCompactions}`);
   }
 }
 
@@ -317,10 +328,10 @@ async function electCanonicalUsage(conn: DuckDBConnection): Promise<void> {
 }
 
 /**
- * Recompute the derived `sessions` table from `events`, `titles`, and
- * `pr_links`. Cheap full recompute (no per-file partial maintenance needed at
- * this scale). `project_cwd` is the modal (most frequent) cwd of the session's
- * events — robust to subdirectory cwds appearing mid-session.
+ * Recompute the derived `sessions` table from `events`, `titles`, `pr_links`,
+ * and `compactions`. Cheap full recompute (no per-file partial maintenance
+ * needed at this scale). `project_cwd` is the modal (most frequent) cwd of the
+ * session's events — robust to subdirectory cwds appearing mid-session.
  */
 async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
   await conn.run('DELETE FROM sessions');
@@ -345,6 +356,34 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
                row_number() OVER (PARTITION BY session_id ORDER BY count(*) DESC, cwd) AS rn
         FROM events WHERE cwd IS NOT NULL GROUP BY session_id, cwd
       ) WHERE rn = 1
+    ),
+    last_turn AS (
+      -- Context at the session's last main-thread turn: the prompt size
+      -- (input + cache read + cache write) of the newest assistant row that
+      -- carries one, and that row's model. Deliberately NOT filtered by
+      -- usage_canonical — context is the size of ONE prompt, not a sum, and the
+      -- per-content-block rows of a single call all repeat the same usage, so
+      -- the uuid tie-break below picks an identical value either way. (The
+      -- tie-break is lexicographic; it only has to be deterministic, because a
+      -- ts tie between DIFFERENT calls needs a connector with no real clock,
+      -- and those have no prompt-sized usage to read a context from anyway.)
+      SELECT session_id, context_tokens, context_model FROM (
+        SELECT session_id,
+               input_tokens + cache_read_tokens + cache_write_tokens AS context_tokens,
+               model AS context_model,
+               row_number() OVER (
+                 PARTITION BY session_id ORDER BY ts DESC NULLS LAST, uuid DESC
+               ) AS rn
+        FROM events
+        WHERE type = 'assistant' AND NOT is_sidechain
+          AND input_tokens + cache_read_tokens + cache_write_tokens > 0
+      ) WHERE rn = 1
+    ),
+    compaction_counts AS (
+      -- Main thread only: a subagent compacting is visible in its own thread,
+      -- but counting it would inflate the session's number confusingly.
+      SELECT session_id, count(*) AS compaction_count
+      FROM compactions WHERE NOT is_sidechain GROUP BY session_id
     ),
     agg AS (
       SELECT
@@ -389,13 +428,18 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
       p.pr_url,
       COALESCE(fs.size_bytes, 0) AS size_bytes,
       a.has_sidechain,
-      sc.connector_id
+      sc.connector_id,
+      lt.context_tokens,
+      lt.context_model,
+      COALESCE(cc.compaction_count, 0) AS compaction_count
     FROM agg a
     LEFT JOIN modal_cwd mc ON mc.session_id = a.session_id
     LEFT JOIN titles t ON t.session_id = a.session_id
     LEFT JOIN pr_links p ON p.session_id = a.session_id
     LEFT JOIN file_size fs ON fs.session_id = a.session_id
     LEFT JOIN session_connector sc ON sc.session_id = a.session_id
+    LEFT JOIN last_turn lt ON lt.session_id = a.session_id
+    LEFT JOIN compaction_counts cc ON cc.session_id = a.session_id
   `);
 
   // git_branch: most recent non-null branch seen for the session.
@@ -737,6 +781,7 @@ async function doReindex(): Promise<ReindexResponse> {
       await conn.run(`DELETE FROM titles   WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${sqlString(path)})`);
       await conn.run(`DELETE FROM pr_links WHERE session_id IN (SELECT DISTINCT session_id FROM events WHERE file_path = ${sqlString(path)})`);
       await conn.run(`DELETE FROM events WHERE file_path = ${sqlString(path)}`);
+      await conn.run(`DELETE FROM compactions WHERE file_path = ${sqlString(path)}`);
       await conn.run(`DELETE FROM files WHERE path = ${sqlString(path)}`);
       removed += 1;
     }

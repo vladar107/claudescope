@@ -80,7 +80,7 @@ export async function refreshFileEdits(
     try {
       const { mainEvents, subagents } = await loadSessionData(sessionId);
       if (mainEvents.length === 0 && subagents.length === 0) continue;
-      const thread = assembleThread(mainEvents);
+      const thread = assembleThread(mainEvents, { deriveContextSizes: false });
       const runs = buildSubagentRuns(thread, subagents);
 
       const values: string[] = [];

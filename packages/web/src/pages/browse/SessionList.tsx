@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
+import { RotateCcw } from 'lucide-react';
 import type { SessionMeta, SessionSort } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
 import { AgentBadge, agentLabel, ErrorBox, formatCost, formatCount, LocalBadge, ModelChips, SearchField, Spinner } from '../../components';
-import { formatBytes, formatDateTime, timeAgo } from './format.js';
+import { contextLevel, contextLabel, formatBytes, formatDateTime, timeAgo } from './format.js';
 import { useProjectContext } from './ProjectLayout.js';
 import { useDataVersionRefetch } from '../../status/useDataVersionRefetch.js';
 
@@ -13,6 +14,7 @@ const SORT_OPTIONS: { value: SessionSort; label: string }[] = [
   { value: 'tokens', label: 'Most tokens' },
   { value: 'cost', label: 'Highest cost' },
   { value: 'messages', label: 'Most messages' },
+  { value: 'context', label: 'Context' },
 ];
 
 /** Ignore aborted/offline fetch errors that are not user-actionable. */
@@ -169,6 +171,15 @@ function SessionRow({ session }: { session: SessionMeta }) {
               sidechain
             </span>
           ) : null}
+          {session.compactionCount ? (
+            <span
+              className="tv-chip tv-chip--compaction"
+              title={`Context was compacted ${session.compactionCount} time${session.compactionCount === 1 ? '' : 's'}`}
+            >
+              <RotateCcw size={11} aria-hidden="true" /> {session.compactionCount} compaction
+              {session.compactionCount === 1 ? '' : 's'}
+            </span>
+          ) : null}
         </div>
         <div className="tv-session-row__meta tv-muted">
           <span title={formatDateTime(session.startedAt)}>{timeAgo(session.endedAt || session.startedAt)}</span>
@@ -176,6 +187,12 @@ function SessionRow({ session }: { session: SessionMeta }) {
           <span>{session.messageCount} msgs</span>
           <span>·</span>
           <span>{session.toolCallCount} tools</span>
+          {session.contextTokens !== undefined ? (
+            <>
+              <span>·</span>
+              <ContextMeta tokens={session.contextTokens} contextWindow={session.contextWindow} />
+            </>
+          ) : null}
           {session.gitBranch ? (
             <>
               <span>·</span>
@@ -215,5 +232,18 @@ function SessionRow({ session }: { session: SessionMeta }) {
         ) : null}
       </div>
     </li>
+  );
+}
+
+/** `ctx 142K (71%)` — the percent only when pricing knows the model's window. */
+function ContextMeta({ tokens, contextWindow }: { tokens: number; contextWindow?: number }) {
+  const level = contextLevel(tokens, contextWindow);
+  return (
+    <span
+      className={level ? `tv-ctx tv-ctx--${level}` : 'tv-ctx'}
+      title="Context at the last turn (input + cache read + cache write of the last assistant response)"
+    >
+      context {contextLabel(tokens, contextWindow)}
+    </span>
   );
 }

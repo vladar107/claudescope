@@ -42,7 +42,10 @@
 // v18: current Codex exec-wrapped apply_patch calls populate canonical file edits.
 // v19: per-event tool_error_text (failed tool_result bodies) and skill_names,
 //      indexed for literal search and the skill-usage breakdown.
-export const SCHEMA_VERSION = 19;
+// v20: context & compactions — `compactions` aux table (one row per context
+//      compaction, per file) + sessions.context_tokens / context_model /
+//      compaction_count derived at rebuild.
+export const SCHEMA_VERSION = 20;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -122,7 +125,15 @@ export const SCHEMA_DDL: readonly string[] = [
      pr_url        VARCHAR,
      size_bytes    BIGINT DEFAULT 0,
      has_sidechain BOOLEAN DEFAULT FALSE,
-     connector_id  VARCHAR
+     connector_id  VARCHAR,
+     -- Prompt size (input + cache read + cache write) of the LAST main-thread
+     -- assistant row with usage — the session's context as of that turn — and
+     -- that row's model (for the window lookup). NULL when no such row.
+     context_tokens BIGINT,
+     context_model  VARCHAR,
+     -- Main-thread rows in the compactions table. 0 for agents with no marker: the API
+     -- layer turns that into "unavailable" via the connector capability map.
+     compaction_count BIGINT DEFAULT 0
    )`,
 
   `CREATE TABLE IF NOT EXISTS pr_links (
@@ -135,6 +146,23 @@ export const SCHEMA_DDL: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS titles (
      session_id VARCHAR PRIMARY KEY,
      title      VARCHAR
+   )`,
+
+  // One row per context compaction, filled by each connector's `compactions`
+  // aux projection (Claude Code reads its raw `compact_boundary` system rows;
+  // cache-backed connectors write `type: 'compaction'` rows into their NDJSON
+  // cache). Keyed by FILE, like events: a reload of one file replaces exactly
+  // its rows, so a subagent file's compactions survive the parent's reload.
+  // trigger/pre/post are NULL when the agent records no metadata.
+  `CREATE TABLE IF NOT EXISTS compactions (
+     file_path    VARCHAR NOT NULL,
+     session_id   VARCHAR NOT NULL,
+     uuid         VARCHAR,
+     ts           TIMESTAMP,
+     is_sidechain BOOLEAN DEFAULT FALSE,
+     trigger      VARCHAR,
+     pre_tokens   BIGINT,
+     post_tokens  BIGINT
    )`,
 
   // One row per edit-bearing tool call (canonical Edit/MultiEdit/Write),
@@ -160,4 +188,5 @@ export const SCHEMA_DDL: readonly string[] = [
   `CREATE INDEX IF NOT EXISTS idx_events_cwd ON events (cwd)`,
   `CREATE INDEX IF NOT EXISTS idx_events_ts ON events (ts)`,
   `CREATE INDEX IF NOT EXISTS idx_file_edits_session ON file_edits (session_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_compactions_session ON compactions (session_id)`,
 ];

@@ -18,7 +18,7 @@
 import { codexSessionsDir } from '../../settings.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
-import { canonicalProjectionSql } from '../canonical.js';
+import { canonicalProjectionSql, compactionsProjectionSql } from '../canonical.js';
 import { ndjsonCache } from '../ndjson-cache.js';
 import { codexGlobalMemory } from './memory.js';
 import { listRollouts, parseRollout, toCanonicalRows, type CodexSession } from './normalize.js';
@@ -46,8 +46,10 @@ function eventsProjectionSql(filePath: string): string {
   return canonicalProjectionSql(cache.path(filePath), { provider: true });
 }
 
-function auxProjections(_filePath: string): AuxProjections {
-  return {}; // Codex has no ai-title / pr-link records
+/** Codex has no ai-title / pr-link records — only the compaction markers the
+ *  normalizer wrote into the cache. */
+function auxProjections(filePath: string): AuxProjections {
+  return { compactions: compactionsProjectionSql(cache.path(filePath)) };
 }
 
 /**

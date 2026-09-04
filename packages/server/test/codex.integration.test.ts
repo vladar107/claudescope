@@ -283,6 +283,35 @@ function writeMalformedBootstrapRollout(): string {
   return file;
 }
 
+/**
+ * A rollout with ONE compaction, written the way Codex writes it: the top-level
+ * `compacted` record (the marker), plus the encrypted `compaction` response item
+ * and the `context_compacted` event, which must leave no trace in the thread.
+ */
+function writeCompactionRollout(): string {
+  const dir = join(codexDir, '2026', '01', '07');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'rollout-2026-01-07T09-00-00-019f7777-aaaa-7bbb-8ccc-000000000007.jsonl');
+  writeFileSync(
+    file,
+    jsonl([
+      { type: 'session_meta', timestamp: ts(0), payload: { id: 'codex-compact-1', cwd: '/tmp/codexproj' } },
+      { type: 'turn_context', timestamp: ts(1), payload: { model: 'gpt-5.4' } },
+      { type: 'response_item', timestamp: ts(2), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'grind through the long haul' }] } },
+      { type: 'response_item', timestamp: ts(3), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'context is filling up' }] } },
+      // 120000 - 20000 cached = 100000 input + 20000 cache_read → a 120000 prompt.
+      { type: 'event_msg', timestamp: ts(4), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 120000, cached_input_tokens: 20000, output_tokens: 500 } }, rate_limits: {} } },
+      { type: 'compacted', timestamp: ts(5), payload: { message: 'squeezed the long haul into this', replacement_history: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'replacement history is not a transcript' }] }], window_number: 1 } },
+      { type: 'response_item', timestamp: ts(6), payload: { type: 'compaction', id: 'cmp_leak', encrypted_content: 'COMPACTION_ENCRYPTED_BLOB' } },
+      { type: 'event_msg', timestamp: ts(7), payload: { type: 'context_compacted' } },
+      { type: 'response_item', timestamp: ts(8), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'carry on from the summary' }] } },
+      { type: 'response_item', timestamp: ts(9), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'resumed with room to spare' }] } },
+      { type: 'event_msg', timestamp: ts(10), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 9000, cached_input_tokens: 0, output_tokens: 100 } }, rate_limits: {} } },
+    ]),
+  );
+  return file;
+}
+
 /** Guardian approval reviews are internal regardless of thread-source generation. */
 function writeGuardianRollouts(): void {
   const dir = join(codexDir, '2026', '01', '06');
@@ -316,6 +345,7 @@ beforeAll(async () => {
   writeBootstrapOnlyRollout();
   writeMalformedBootstrapRollout();
   writeGuardianRollouts();
+  writeCompactionRollout();
 
   const Fastify = (await import('fastify')).default;
   const { registerRoutes } = await import('../src/routes/index.js');
@@ -342,6 +372,7 @@ describe('Codex session indexing', () => {
     // The child rollout folds into its parent (never its own session); the orphan
     // child indexes under its absent root id `codex-gone`.
     expect(sessions.map((s: { id: string }) => s.id).sort()).toEqual([
+      'codex-compact-1',
       'codex-gone',
       'codex-local-1',
       'codex-sess-1',
@@ -680,5 +711,38 @@ describe('Codex session detail', () => {
     const allText = JSON.stringify(detail.thread);
     expect(allText).toContain('orphan probe text');
     expect(allText).toContain('orphan done');
+  });
+});
+
+describe('Codex compaction markers', () => {
+  it('counts the `compacted` record once and stamps the turn that follows it', async () => {
+    const detail = (await get('/api/sessions/codex-compact-1')).json();
+    expect(detail.meta.compactionCount).toBe(1);
+
+    // The stamp lands on the first turn the transcript shows after the boundary.
+    const stamped = detail.thread.filter((t: { compaction?: unknown }) => t.compaction);
+    expect(stamped).toHaveLength(1);
+    expect(JSON.stringify(stamped[0].blocks)).toContain('carry on from the summary');
+    expect(stamped[0].compaction).toMatchObject({
+      summary: 'squeezed the long haul into this',
+      // Codex records no sizes on the marker → derived from the adjacent turns.
+      preTokens: 120000,
+      postTokens: 9000,
+    });
+  });
+
+  it('leaves the encrypted `compaction` item and `context_compacted` out of the thread', async () => {
+    const detail = (await get('/api/sessions/codex-compact-1')).json();
+    const serialized = JSON.stringify(detail.thread);
+    expect(serialized).not.toContain('COMPACTION_ENCRYPTED_BLOB');
+    expect(serialized).not.toContain('replacement history is not a transcript');
+    // The marker is not an event: 2 user + 2 assistant turns, no `system` role.
+    expect(detail.meta.messageCount).toBe(4);
+    expect(detail.thread.map((t: { role: string }) => t.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+    ]);
   });
 });

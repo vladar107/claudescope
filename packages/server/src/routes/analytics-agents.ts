@@ -11,7 +11,7 @@
  * different granularities (see AgentUsageGranularity), so metrics an agent
  * cannot honestly report are `null` ("not available") — NEVER 0. The
  * granularity is a per-connector property of the source format, declared in
- * USAGE_GRANULARITY below, not inferred from the data (a zero-usage corpus is
+ * `data/agent-capabilities.ts`, not inferred from the data (a zero-usage corpus is
  * still a real 0 for a per-response agent).
  *
  * Ride-along: PR-linked session stats (count + cost per PR-linked session).
@@ -22,35 +22,14 @@ import type { FastifyInstance } from 'fastify';
 import type {
   AgentComparisonResponse,
   AgentComparisonRow,
-  AgentUsageGranularity,
   PrLinkedStats,
 } from '@claudescope/shared';
 import { getConnection, queryRows } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { cacheHitRatio } from '../data/analytics-metrics.js';
 import { scopeFilters } from '../data/analytics-scope.js';
+import { usageGranularity } from '../data/agent-capabilities.js';
 import { errorSignalsByAgent } from './analytics-errors.js';
-
-/**
- * How each agent's source format records token usage. A property of the
- * connector (see the per-connector gotchas in CLAUDE.md), not of the data:
- * - copilot: tokens live only in `session.shutdown`, attached to the last
- *   assistant row — session totals are real, per-response ratios are not, and
- *   crashed/still-running sessions (no shutdown) carry no usage at all.
- * - antigravity: transcripts carry no token counts by design.
- * Unknown connectors default to per-response (the canonical event contract
- * carries per-event tokens).
- */
-const USAGE_GRANULARITY: Record<string, AgentUsageGranularity> = {
-  'claude-code': 'per-response',
-  codex: 'per-response',
-  pi: 'per-response',
-  opencode: 'per-response',
-  junie: 'per-response',
-  copilot: 'session-level',
-  antigravity: 'none',
-  grok: 'per-response',
-};
 
 /** Human notes behind the n/a markers, keyed by connector id. */
 const AVAILABILITY_NOTES: Record<string, string> = {
@@ -126,7 +105,7 @@ export async function registerAgentComparisonRoute(app: FastifyInstance): Promis
     const rows: AgentComparisonRow[] = rowsRaw.map((r) => {
       const rd = readRow(r, 'agent-comparison');
       const connectorId = rd.str('connector_id', 'unknown');
-      const granularity = USAGE_GRANULARITY[connectorId] ?? 'per-response';
+      const granularity = usageGranularity(connectorId);
       const sessions = rd.num('sessions');
       const responses = rd.num('responses');
       const toolCalls = rd.num('tool_calls');

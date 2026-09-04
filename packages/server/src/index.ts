@@ -30,15 +30,18 @@ import { openBrowser } from './util/open-browser.js';
 const PRICING_STALE_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Whether the fetched-pricing snapshot is missing, unparsable, or older than
- * {@link PRICING_STALE_MS} — i.e. worth refreshing on boot.
+ * Whether the fetched-pricing snapshot is missing, unparsable, older than
+ * {@link PRICING_STALE_MS}, or written by a version that kept no context
+ * windows (every session would show a bare context size for up to a day after
+ * upgrading otherwise) — i.e. worth refreshing on boot.
  */
 function pricingSnapshotIsStale(): boolean {
   try {
     const snapshot = JSON.parse(readFileSync(FETCHED_PRICING_PATH, 'utf8')) as FetchedPricing;
     const fetchedAt = Date.parse(snapshot?.fetchedAt ?? '');
     if (!Number.isFinite(fetchedAt)) return true;
-    return Date.now() - fetchedAt > PRICING_STALE_MS;
+    if (Date.now() - fetchedAt > PRICING_STALE_MS) return true;
+    return !Object.values(snapshot.models ?? {}).some((m) => m?.contextWindow !== undefined);
   } catch {
     return true; // missing or corrupt → refresh
   }

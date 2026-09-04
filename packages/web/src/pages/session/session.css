@@ -845,6 +845,55 @@
   color: var(--tv-finder-active-fg);
 }
 
+/* ── Compaction divider ────────────────────────────────────────────────── */
+
+/* Where the agent compacted its context: a rule across the thread with a
+   centered label, so the sawtooth is visible while reading. */
+.tv-compaction {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-2);
+}
+.tv-compaction__line {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-3);
+}
+.tv-compaction__line::before,
+.tv-compaction__line::after {
+  content: '';
+  flex: 1 1 0;
+  border-top: 1px dashed var(--tv-border-strong);
+}
+.tv-compaction__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tv-space-1);
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-muted);
+  white-space: nowrap;
+}
+.tv-compaction__span {
+  font-variant-numeric: tabular-nums;
+}
+.tv-compaction__toggle {
+  margin-left: var(--tv-space-1);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-accent);
+}
+.tv-compaction__toggle:hover {
+  text-decoration: underline;
+}
+.tv-compaction__summary {
+  border: 1px dashed var(--tv-border);
+  border-radius: var(--tv-radius);
+  background: var(--tv-bg-elevated);
+}
+
 /* ── System / harness turns (collapsed by default) ────────────────────── */
 
 .tv-turn--system .tv-turn__role-dot {

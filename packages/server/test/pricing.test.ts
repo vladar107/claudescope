@@ -56,9 +56,12 @@ const BASE: PricingConfig = {
   models: {
     'claude-opus-4-8': { input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.5 },
     'only-in-base': { input: 9, output: 9, cacheWrite: 9, cacheRead: 9 },
+    // A user-set window on an exact id: LiteLLM's rates for it still win.
+    'claude-opus-4-1[1m]': { input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.5, contextWindow: 1000000 },
   },
   families: {
     sonnet: { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
+    opus: { input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.5, contextWindow: 200000 },
   },
   default: { input: 1, output: 2, cacheWrite: 0, cacheRead: 0 },
 };
@@ -76,7 +79,7 @@ const bumpMtime = (path: string): void => {
   utimesSync(path, mtimeTick, mtimeTick);
 };
 
-const { loadPricing } = await import('../src/data/pricing.js');
+const { loadPricing, contextWindowFor } = await import('../src/data/pricing.js');
 const { reconcilePricingConfig, PRICING_SCHEMA_VERSION } = await import('../src/config.js');
 
 describe('loadPricing — layered merge', () => {
@@ -121,6 +124,37 @@ describe('loadPricing — layered merge', () => {
     const cfg = loadPricing();
     expect(cfg.models['claude-opus-4-8']).toEqual(BASE.models['claude-opus-4-8']);
     expect(cfg.models['gpt-5-codex']).toBeUndefined();
+  });
+
+  it('carries a fetched context window through sanitize and drops an unusable one silently', () => {
+    writeJson(fetchedPath, {
+      fetchedAt: new Date().toISOString(),
+      models: {
+        'gpt-5-codex': { input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0, contextWindow: 400000 },
+        // a hand-edited bad window keeps its rates and just loses the window
+        'gpt-5': { input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0, contextWindow: -1 },
+        // the feed's rates win, the user's window on the same id survives
+        'claude-opus-4-1[1m]': { input: 20, output: 100, cacheWrite: 25, cacheRead: 2, contextWindow: 200000 },
+      },
+    });
+    bumpMtime(fetchedPath);
+    const cfg = loadPricing();
+    expect(cfg.models['gpt-5-codex']?.contextWindow).toBe(400000);
+    expect(cfg.models['gpt-5']).toEqual({ input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0 });
+    expect(cfg.models['claude-opus-4-1[1m]']).toEqual({
+      input: 20, output: 100, cacheWrite: 25, cacheRead: 2, contextWindow: 1000000,
+    });
+  });
+
+  it('resolves a context window by exact id, then family, else unknown', () => {
+    const cfg = loadPricing();
+    expect(contextWindowFor('gpt-5-codex', cfg)).toBe(400000);
+    // no exact id: the date-suffixed opus id resolves through the family
+    expect(contextWindowFor('claude-opus-4-1-20250805', cfg)).toBe(200000);
+    // a family without a window is not a match; the default has no window
+    expect(contextWindowFor('claude-sonnet-4-5', cfg)).toBeUndefined();
+    expect(contextWindowFor('some-local-model', cfg)).toBeUndefined();
+    expect(contextWindowFor(null, cfg)).toBeUndefined();
   });
 
   it('re-reads when the fetched file mtime changes (cache invalidation)', () => {

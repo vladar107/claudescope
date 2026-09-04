@@ -8,7 +8,8 @@
  *   - pairing each `tool_use` with its later `tool_result` (by `tool_use_id`),
  *     even when the result arrives in a subsequent user turn;
  *   - attachment events;
- *   - the `isSidechain` flag and usage/model/timestamp metadata.
+ *   - the `isSidechain` flag and usage/model/timestamp metadata;
+ *   - stamping a context compaction onto the turn that follows it.
  *
  * The pairing is done in a second pass: tool_use blocks are emitted inline in
  * the assistant turn where they occur, and the matching tool_result (which the
@@ -18,10 +19,12 @@
 
 import type {
   AssistantEvent,
+  CompactionInfo,
   ContentBlock,
   MessageUsage,
   RawEvent,
   SubagentRun,
+  SystemEvent,
   ThreadBlock,
   ThreadItem,
   ToolInteraction,
@@ -32,6 +35,77 @@ import type { SubagentSource } from './session-loader.js';
 /** Narrow a raw event to a conversational (user/assistant) event. */
 function isConversational(e: RawEvent): e is UserEvent | AssistantEvent {
   return e.type === 'user' || e.type === 'assistant';
+}
+
+/**
+ * A compaction marker: Claude Code writes it natively, the Codex/pi/Copilot
+ * normalizers synthesize the same shape.
+ */
+function isCompactBoundary(e: RawEvent): e is SystemEvent {
+  return e.type === 'system' && e.subtype === 'compact_boundary';
+}
+
+/** Token counts on disk are unvalidated — only keep a sane number. */
+function tokenCount(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/** Build the display info for a compaction from its boundary event. */
+function compactionFrom(event: SystemEvent): CompactionInfo {
+  const info: CompactionInfo = {};
+  const meta = event.compactMetadata;
+  if (meta) {
+    if (typeof meta.trigger === 'string') info.trigger = meta.trigger;
+    const pre = tokenCount(meta.preTokens);
+    if (pre !== undefined) info.preTokens = pre;
+    const post = tokenCount(meta.postTokens);
+    if (post !== undefined) info.postTokens = post;
+  }
+  if (typeof event.summary === 'string' && event.summary.length > 0) info.summary = event.summary;
+  return info;
+}
+
+/**
+ * Context size (the full prompt) at an assistant turn, or 0 when the turn
+ * carries no usage — which is what "unknown" looks like here.
+ */
+function promptTokens(item: ThreadItem | undefined): number {
+  const usage = item?.role === 'assistant' ? item.usage : undefined;
+  if (!usage) return 0;
+  return (
+    (usage.input_tokens ?? 0) +
+    (usage.cache_read_input_tokens ?? 0) +
+    (usage.cache_creation_input_tokens ?? 0)
+  );
+}
+
+/** Walk `items` from `from` in `step` direction for the first known context size. */
+function nearestPromptTokens(items: ThreadItem[], from: number, step: -1 | 1): number {
+  for (let i = from; i >= 0 && i < items.length; i += step) {
+    const tokens = promptTokens(items[i]);
+    if (tokens > 0) return tokens;
+  }
+  return 0;
+}
+
+/**
+ * Fill in the context sizes the agent did not record on the boundary itself,
+ * from the turns around the compaction: the last prompt before it and the
+ * first one after it (the stamped turn counts when it is an assistant turn).
+ */
+function deriveCompactionTokens(items: ThreadItem[]): void {
+  for (const [index, item] of items.entries()) {
+    const { compaction } = item;
+    if (!compaction) continue;
+    if (compaction.preTokens === undefined) {
+      const pre = nearestPromptTokens(items, index - 1, -1);
+      if (pre > 0) compaction.preTokens = pre;
+    }
+    if (compaction.postTokens === undefined) {
+      const post = nearestPromptTokens(items, index, 1);
+      if (post > 0) compaction.postTokens = post;
+    }
+  }
 }
 
 /**
@@ -68,7 +142,19 @@ function normalizeResultContent(content: string | ContentBlock[]): ContentBlock[
  * Sidechain events should already be merged into `events` by the caller; their
  * `isSidechain` flag is preserved on each item.
  */
-export function assembleThread(events: RawEvent[]): ThreadItem[] {
+/** Options for {@link assembleThread} / {@link buildSubagentRuns}. */
+export interface AssembleOptions {
+  /**
+   * Fill a compaction's missing before/after sizes from the adjacent assistant
+   * turns' usage. Default true; the caller turns it off for an agent whose
+   * per-turn usage is not a prompt size (Copilot attaches its session total to
+   * the last turn — see data/agent-capabilities.ts), where a derived figure
+   * would be a real-looking number that measures nothing.
+   */
+  deriveContextSizes?: boolean;
+}
+
+export function assembleThread(events: RawEvent[], opts: AssembleOptions = {}): ThreadItem[] {
   const convo = events.filter(isConversational);
 
   // Pass 1: index every tool_result by tool_use_id so tool_use blocks can be
@@ -91,8 +177,32 @@ export function assembleThread(events: RawEvent[]): ThreadItem[] {
   }
 
   const items: ThreadItem[] = [];
+  // A compaction seen in the stream but not yet attached to a rendered turn.
+  // Turns that produce no blocks never consume it, so it lands on the first
+  // turn the transcript actually shows after the boundary.
+  let pending: CompactionInfo | undefined;
+  // The flagged summary turn just pushed, until another turn follows it. A
+  // mid-period Claude Code file writes BOTH a boundary and a flagged summary
+  // for ONE compaction, and subagent files are timestamp-sorted on load, which
+  // can put the summary (stamped a few hundred ms earlier) BEFORE its boundary
+  // — so the merge has to work in either order.
+  let openSummary: ThreadItem | undefined;
 
-  for (const event of convo) {
+  // Pass 2 walks the FULL stream: the compaction markers are `system` rows,
+  // which sit between the conversational ones.
+  for (const event of events) {
+    if (isCompactBoundary(event)) {
+      const info = compactionFrom(event);
+      if (openSummary) {
+        openSummary.compaction = { ...openSummary.compaction, ...info };
+        openSummary = undefined;
+      } else {
+        pending = info;
+      }
+      continue;
+    }
+    if (!isConversational(event)) continue;
+
     const blocks = parseBlocks(event, resultsByToolUseId);
 
     // Skip turns that contain only tool_result blocks (those are folded into
@@ -113,8 +223,21 @@ export function assembleThread(events: RawEvent[]): ThreadItem[] {
       if (event.message.model !== undefined) item.model = event.message.model;
       if (event.message.usage !== undefined) item.usage = event.message.usage;
     }
+    if (event.type === 'user' && event.isCompactSummary === true) {
+      item.compaction = { ...pending, isSummaryTurn: true };
+      pending = undefined;
+      openSummary = item;
+    } else {
+      openSummary = undefined;
+      if (pending) {
+        item.compaction = pending;
+        pending = undefined;
+      }
+    }
     items.push(item);
   }
+
+  if (opts.deriveContextSizes !== false) deriveCompactionTokens(items);
 
   return items;
 }
@@ -169,6 +292,7 @@ function resultText(tool: ToolInteraction): string {
 export function buildSubagentRuns(
   mainThread: ThreadItem[],
   sources: SubagentSource[],
+  opts: AssembleOptions = {},
 ): SubagentRun[] {
   const spawns: SpawnPoint[] = [];
   const workflowSpawns: WorkflowSpawn[] = [];
@@ -197,7 +321,7 @@ export function buildSubagentRuns(
 
   const runs: SubagentRun[] = [];
   for (const src of sources) {
-    const thread = assembleThread(src.events);
+    const thread = assembleThread(src.events, opts);
     const toolCallCount = thread.reduce(
       (n, t) => n + t.blocks.filter((b) => b.kind === 'tool').length,
       0,

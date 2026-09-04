@@ -1062,6 +1062,20 @@ mark {
   font-family: var(--tv-font-mono);
 }
 
+/* Context at the last turn (session header + list rows). Quiet by default, amber
+   from 80 % of the model's window and red from 95 % — see `contextLevel`. */
+.tv-ctx {
+  color: var(--tv-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.tv-ctx--warm {
+  color: var(--tv-warning);
+}
+.tv-ctx--hot {
+  color: var(--tv-danger);
+  font-weight: 600;
+}
+
 /* Summary strip — compact stat tiles anchoring a list view (portfolio / project). */
 .tv-summary {
   display: flex;

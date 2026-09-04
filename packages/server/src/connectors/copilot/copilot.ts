@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { copilotSessionsDir } from '../../settings.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
-import { canonicalProjectionSql, titlesProjectionSql } from '../canonical.js';
+import { canonicalProjectionSql, compactionsProjectionSql, titlesProjectionSql } from '../canonical.js';
 import { ndjsonCache } from '../ndjson-cache.js';
 import { parseCopilotSession, toCanonicalRows, type CopilotSession } from './normalize.js';
 import { copilotGlobalMemory } from './memory.js';
@@ -61,10 +61,14 @@ function eventsProjectionSql(filePath: string): string {
 }
 
 /** Copilot carries a real session title (workspace.yaml `name`), threaded through
- *  the cache NDJSON; the first-user-message fallback applies when it's empty. */
+ *  the cache NDJSON alongside its compaction markers; the first-user-message
+ *  fallback applies when the title is empty. */
 function auxProjections(filePath: string): AuxProjections {
   if (!existsSync(cache.path(filePath))) return {};
-  return { titles: titlesProjectionSql(cache.path(filePath)) };
+  return {
+    titles: titlesProjectionSql(cache.path(filePath)),
+    compactions: compactionsProjectionSql(cache.path(filePath)),
+  };
 }
 
 async function loadSession(_sessionId: string, paths: string[]): Promise<SessionData> {

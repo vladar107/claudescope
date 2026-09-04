@@ -18,7 +18,7 @@ import type {
   SortDir,
 } from '@claudescope/shared';
 import { AgentBadge } from '../../components/index.js';
-import { formatCost, formatPct, formatPerCost } from './format.js';
+import { formatCost, formatCount, formatPct, formatPerCost } from './format.js';
 
 /** Numeric columns share a key across the row and the summary's per-column stats. */
 type ColKey = keyof SessionEfficiencyResponse['summary']['columns'];
@@ -42,6 +42,8 @@ const COLS: Col[] = [
   { key: 'costPerResponse', label: '$/resp', sortKey: 'costPerResponse', flag: true, fmt: formatPerCost },
   { key: 'toolCallCount', label: 'Tools', sortKey: 'toolCallCount', fmt: intFmt },
   { key: 'toolCallsPerResponse', label: 'Tools/resp', sortKey: 'toolCallsPerResponse', flag: true, fmt: (n) => n.toFixed(2) },
+  { key: 'contextTokens', label: 'Context', sortKey: 'contextTokens', fmt: formatCount },
+  { key: 'compactionCount', label: 'Compactions', sortKey: 'compactionCount', fmt: intFmt },
   { key: 'cacheHitRatio', label: 'Cache', sortKey: 'cacheHitRatio', flag: true, cacheOnly: true, fmt: formatPct },
 ];
 
@@ -98,6 +100,8 @@ function NumCell({
   stat: SessionEfficiencyStat;
 }) {
   const value = row[col.key];
+  // null = the agent never records this metric (not 0) — see SessionEfficiencyRow.
+  if (value === null) return <td className="tv-eff__num tv-muted">—</td>;
   const text = col.fmt(value);
   const dir = col.flag ? outlierDir(value, stat) : null;
   if (!dir) return <td className="tv-eff__num">{text}</td>;

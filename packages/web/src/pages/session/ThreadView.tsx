@@ -1,7 +1,14 @@
-import { Fragment, memo, useContext, useEffect, useRef, useState } from 'react';
-import { Puzzle } from 'lucide-react';
-import type { SubagentRun, ThreadBlock, ThreadItem } from '@claudescope/shared';
-import { ClampedText, Collapsible, ErrorBoundary, ErrorBox, TokenChips } from '../../components';
+import { Fragment, memo, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Puzzle, RotateCcw } from 'lucide-react';
+import type { CompactionInfo, SubagentRun, ThreadBlock, ThreadItem } from '@claudescope/shared';
+import {
+  ClampedText,
+  Collapsible,
+  ErrorBoundary,
+  ErrorBox,
+  formatCount,
+  TokenChips,
+} from '../../components';
 import { formatDateTime, shortModel } from '../browse/format.js';
 import { ThreadBlockView, hasRenderableContent } from './blocks.js';
 import {
@@ -40,11 +47,16 @@ export function ThreadList({
   /** tool_use id → the subagent run(s) it spawned (Workflow fans out to many). */
   subagentsByToolUseId?: Map<string, SubagentRun[]>;
 }) {
+  // A compaction divider is a sibling of the turn it precedes (never nested in
+  // it, and never carrying its `id`), so anchors and deep links are untouched.
   return (
     <>
-      {items.map((item) => (
-        <Turn key={item.uuid} item={item} subagentsByToolUseId={subagentsByToolUseId} />
-      ))}
+      {items.flatMap((item) => [
+        item.compaction ? (
+          <CompactionDivider key={`${item.uuid}-compaction`} compaction={item.compaction} />
+        ) : null,
+        <Turn key={item.uuid} item={item} subagentsByToolUseId={subagentsByToolUseId} />,
+      ])}
     </>
   );
 }
@@ -61,6 +73,14 @@ const Turn = memo(function Turn({
   item: ThreadItem;
   subagentsByToolUseId?: Map<string, SubagentRun[]>;
 }) {
+  // Claude Code's 2025 compaction format replaces the context with a summary
+  // carried by this very turn — it reads as harness output, not as a person.
+  if (item.compaction?.isSummaryTurn && item.blocks.every((b) => b.kind === 'text')) {
+    return (
+      <SystemTurn item={item} label="Compaction summary" subtitle="replaced the compacted context" />
+    );
+  }
+
   // Harness-injected user turns (task notifications, bash I/O, slash-command
   // output) are noise in the conversation — collapse them behind a label.
   const systemLabel = item.role === 'user' ? classifySystemTurn(item) : null;
@@ -165,7 +185,16 @@ function classifySystemTurn(item: ThreadItem): string | null {
 }
 
 /** Compact, collapsed-by-default rendering for a harness/system user turn. */
-function SystemTurn({ item, label }: { item: ThreadItem; label: string }) {
+function SystemTurn({
+  item,
+  label,
+  subtitle,
+}: {
+  item: ThreadItem;
+  label: string;
+  /** Overrides the default "system / harness message" line. */
+  subtitle?: ReactNode;
+}) {
   const text = turnText(item);
   // Claude Code wraps slash/bash turns in XML-style tags; parse them into clean
   // command/terminal UI. Non-command system turns (task notifications, system
@@ -181,7 +210,7 @@ function SystemTurn({ item, label }: { item: ThreadItem; label: string }) {
           className="tv-collapsible--system"
           icon="⚙︎"
           title={label}
-          subtitle={cmd ? commandSubtitle(cmd) : 'system / harness message'}
+          subtitle={cmd ? commandSubtitle(cmd) : (subtitle ?? 'system / harness message')}
           headerExtra={
             item.timestamp ? (
               <a className="tv-turn__time tv-muted" href={`#${item.uuid}`}>
@@ -199,6 +228,51 @@ function SystemTurn({ item, label }: { item: ThreadItem; label: string }) {
       </div>
     </article>
   );
+}
+
+/**
+ * A rule marking where the agent compacted its context, rendered before the
+ * first turn that followed. `preTokens`/`postTokens` are best effort — either
+ * may be missing, in which case only the known side is shown.
+ */
+function CompactionDivider({ compaction }: { compaction: CompactionInfo }) {
+  const [open, setOpen] = useState(false);
+  const span = compactionSpan(compaction);
+  const summary = compaction.summary?.trim();
+  return (
+    <div className="tv-compaction">
+      <div className="tv-compaction__line">
+        <span className="tv-compaction__label">
+          <RotateCcw size={12} aria-hidden="true" /> Context compacted
+          {compaction.trigger ? <> · {compaction.trigger}</> : null}
+          {span ? <> · <span className="tv-compaction__span">{span}</span></> : null}
+          {summary ? (
+            <button
+              type="button"
+              className="tv-compaction__toggle"
+              aria-expanded={open}
+              onClick={() => setOpen((o) => !o)}
+            >
+              summary <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+            </button>
+          ) : null}
+        </span>
+      </div>
+      {open && summary ? (
+        <ClampedText className="tv-system-turn__pre tv-compaction__summary" text={summary} />
+      ) : null}
+    </div>
+  );
+}
+
+/** "332K → 18K", or whichever side the agent recorded, or "" for neither. */
+function compactionSpan({ preTokens, postTokens }: CompactionInfo): string {
+  if (preTokens !== undefined && postTokens !== undefined) {
+    return `${formatCount(preTokens)} → ${formatCount(postTokens)}`;
+  }
+  if (preTokens !== undefined) return `before ${formatCount(preTokens)}`;
+  if (postTokens !== undefined) return `after ${formatCount(postTokens)}`;
+  return '';
 }
 
 /** The actual command, surfaced in the collapsed header so it's legible unexpanded. */
