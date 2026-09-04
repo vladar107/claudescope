@@ -204,10 +204,13 @@ git push --follow-tags   # the tag triggers .github/workflows/release.yml
 The release workflow runs as independent jobs: a **`validate`** gate (tag matches
 `package.json` + tests) → **create the GitHub Release** → then the channels. `npm`
 (bundle + publish) and `nix` (flake build) run in parallel; **`brew`** runs after
-`npm` because its formula points at the published npm tarball. Because the channels
-are independent jobs, a failure in one (e.g. a stale Nix hash) does **not** block
-the others — just re-run that job. We follow [SemVer](https://semver.org). Do not
-re-tag an already-published version (the publish step will fail).
+`npm` because its formula points at the published npm tarball. The registry takes
+5–15 min to serve a freshly published tarball, so `brew` polls for it (up to
+~30 min); a release therefore takes 10–30 min end to end and needs no re-run.
+Because the channels are independent jobs, a failure in one (e.g. a stale Nix
+hash) does **not** block the others — just re-run that job. We follow
+[SemVer](https://semver.org). Do not re-tag an already-published version (the
+publish step will fail).
 
 ### Distribution channels
 
