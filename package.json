@@ -1,6 +1,6 @@
 {
   "name": "claudescope",
-  "version": "0.19.1",
+  "version": "0.20.0",
   "private": true,
   "description": "Local, read-only web app to browse, read, search, and analyze your AI coding-agent transcripts.",
   "keywords": [
