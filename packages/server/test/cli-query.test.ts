@@ -62,6 +62,44 @@ function writeFixtures(): void {
       { ...base2, type: 'assistant', uuid: 'q2a1', parentUuid: 'q2u1', timestamp: '2026-01-03T09:00:04.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'text', text: 'ok' }, { type: 'tool_use', id: 't1', name: 'Bash', input: {} }], usage } },
     ]),
   );
+
+  // Session 3: a subagent spawning a subagent — `session --redact`/plain
+  // Markdown must nest the grandchild under its parent, not the main thread.
+  // Kept in its own project so it doesn't shift the `/tmp/projQ`-scoped
+  // assertions above.
+  const projN = join(projectsDir, 'enc-projN');
+  const subN = join(projN, 'sessN', 'subagents');
+  mkdirSync(subN, { recursive: true });
+  const baseN = { sessionId: 'sessN', cwd: '/tmp/projN', gitBranch: 'main', version: '2.1.0' };
+  writeFileSync(
+    join(projN, 'sessN.jsonl'),
+    jsonl([
+      { type: 'ai-title', sessionId: 'sessN', aiTitle: 'Nested subagent session' },
+      { ...baseN, type: 'user', uuid: 'n-u1', parentUuid: null, timestamp: '2026-01-04T10:00:00.000Z', isSidechain: false, message: { role: 'user', content: 'go explore' } },
+      { ...baseN, type: 'assistant', uuid: 'n-a1', parentUuid: 'n-u1', timestamp: '2026-01-04T10:00:05.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'tool_use', id: 'tu_outer', name: 'Agent', input: { description: 'Outer explore', subagent_type: 'Explore', prompt: 'explore outer' } }], usage } },
+      { ...baseN, type: 'user', uuid: 'n-u2', parentUuid: 'n-a1', timestamp: '2026-01-04T10:01:00.000Z', isSidechain: false, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_outer', content: 'outer done' }] } },
+    ]),
+  );
+  const subBaseN = { sessionId: 'sessN', cwd: '/tmp/projN', isSidechain: true };
+  writeFileSync(
+    join(subN, 'agent-outer.jsonl'),
+    jsonl([
+      { ...subBaseN, type: 'user', uuid: 'so-u1', parentUuid: null, agentId: 'outer', timestamp: '2026-01-04T10:00:10.000Z', message: { role: 'user', content: 'explore outer' } },
+      { ...subBaseN, type: 'assistant', uuid: 'so-a1', parentUuid: 'so-u1', agentId: 'outer', timestamp: '2026-01-04T10:00:20.000Z', message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'tool_use', id: 'tu_inner', name: 'Agent', input: { description: 'Inner probe', subagent_type: 'general-purpose', prompt: 'probe inner' } }], usage } },
+    ]),
+  );
+  writeFileSync(join(subN, 'agent-outer.meta.json'), JSON.stringify({ agentType: 'Explore', description: 'Outer explore', toolUseId: 'tu_outer' }));
+  writeFileSync(
+    join(subN, 'agent-inner.jsonl'),
+    jsonl([
+      { ...subBaseN, type: 'user', uuid: 'si-u1', parentUuid: null, agentId: 'inner', timestamp: '2026-01-04T10:00:25.000Z', message: { role: 'user', content: 'probe inner' } },
+      { ...subBaseN, type: 'assistant', uuid: 'si-a1', parentUuid: 'si-u1', agentId: 'inner', timestamp: '2026-01-04T10:00:30.000Z', message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'text', text: 'probed' }], usage } },
+    ]),
+  );
+  writeFileSync(
+    join(subN, 'agent-inner.meta.json'),
+    JSON.stringify({ agentType: 'general-purpose', description: 'Inner probe', toolUseId: 'tu_inner', parentAgentId: 'outer' }),
+  );
 }
 
 let app: FastifyInstance;
@@ -119,7 +157,7 @@ describe('cli query subcommands', () => {
   it('sessions --json returns the raw rows', async () => {
     const out = await query.querySessions(client, { json: true });
     const rows = JSON.parse(out) as SessionMeta[];
-    expect(rows.map((r) => r.id).sort()).toEqual(['sessQ1', 'sessQ2']);
+    expect(rows.map((r) => r.id).sort()).toEqual(['sessN', 'sessQ1', 'sessQ2']);
     expect(rows[0]).toHaveProperty('totalCostUsd');
   });
 
@@ -151,6 +189,13 @@ describe('cli query subcommands', () => {
     const raw = JSON.parse(await query.querySession(client, 'sessQ1', { redact: true, json: true })) as SessionDetailResponse;
     expect(raw.window).toMatchObject({ offset: 0 });
     expect(JSON.stringify(raw)).toContain('/Users/testuser/secret/needle.txt');
+  });
+
+  it('session nests a subagent-spawned subagent under its parent, depth-first', async () => {
+    const out = await query.querySession(client, 'sessN', {});
+    expect(out).toContain('--- subagent · Explore — Outer explore ---');
+    expect(out).toContain('--- subagent · general-purpose — Inner probe · nested in Outer explore ---');
+    expect(out.indexOf('Outer explore')).toBeLessThan(out.indexOf('Inner probe'));
   });
 
   it('analytics renders rows plus a totals line', async () => {

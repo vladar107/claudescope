@@ -108,12 +108,58 @@ function turnToMd(item: ThreadItem, rr: Renderers): string {
   return `### ${who}\n\n${body}`;
 }
 
-function subagentToMd(run: SubagentRun, rr: Renderers): string {
+/**
+ * Order subagent runs depth-first — each run immediately followed by its
+ * children (in list order) — so a nested run (one spawned from another run's
+ * thread) renders right after its parent instead of scattered by discovery
+ * order. Shared by {@link sessionToMarkdown} and the server's
+ * `shapeSessionMarkdown` so both export paths nest the same way.
+ *
+ * A run whose `parentAgentId` doesn't name another run in the list (absent,
+ * or dangling — e.g. the parent fell outside a window) renders as top-level.
+ * Defensive against a corrupt parent cycle: a run is emitted at most once, so
+ * two runs pointing at each other terminate instead of recursing forever.
+ */
+export function orderSubagentRunsDepthFirst(runs: SubagentRun[]): SubagentRun[] {
+  const byId = new Map(runs.map((r) => [r.agentId, r]));
+  const children = new Map<string, SubagentRun[]>();
+  const roots: SubagentRun[] = [];
+  for (const run of runs) {
+    const parent =
+      run.parentAgentId !== undefined && run.parentAgentId !== run.agentId
+        ? byId.get(run.parentAgentId)
+        : undefined;
+    if (!parent) {
+      roots.push(run);
+      continue;
+    }
+    const siblings = children.get(parent.agentId);
+    if (siblings) siblings.push(run);
+    else children.set(parent.agentId, [run]);
+  }
+
+  const ordered: SubagentRun[] = [];
+  const visited = new Set<string>();
+  const visit = (run: SubagentRun): void => {
+    if (visited.has(run.agentId)) return;
+    visited.add(run.agentId);
+    ordered.push(run);
+    for (const child of children.get(run.agentId) ?? []) visit(child);
+  };
+  for (const root of roots) visit(root);
+  for (const run of runs) if (!visited.has(run.agentId)) visit(run); // cycle leftovers
+
+  return ordered;
+}
+
+function subagentToMd(run: SubagentRun, rr: Renderers, parent?: SubagentRun): string {
   const turns = run.thread
     .map((t) => turnToMd(t, rr))
     .join('\n\n')
     .replace(/^### /gm, '#### '); // demote one level inside a subagent
-  return `### 🧩 Subagent · ${run.agentType} — ${rr.r(run.description || run.agentId)}\n\n${turns}`;
+  const head = `### 🧩 Subagent · ${run.agentType} — ${rr.r(run.description || run.agentId)}`;
+  const nested = parent ? ` (nested in ${rr.r(parent.description || parent.agentId)})` : '';
+  return `${head}${nested}\n\n${turns}`;
 }
 
 function renderers(opts: ExportOptions): Renderers {
@@ -150,7 +196,13 @@ export function sessionToMarkdown(data: SessionDetailResponse, opts: ExportOptio
 
   const parts = [head.join('\n\n'), '---', ...thread.map((t) => turnToMd(t, rr))];
   if (subagents.length > 0) {
-    parts.push('---', '## Subagents', ...subagents.map((s) => subagentToMd(s, rr)));
+    const byId = new Map(subagents.map((s) => [s.agentId, s]));
+    const ordered = orderSubagentRunsDepthFirst(subagents);
+    parts.push(
+      '---',
+      '## Subagents',
+      ...ordered.map((s) => subagentToMd(s, rr, s.parentAgentId ? byId.get(s.parentAgentId) : undefined)),
+    );
   }
   return parts.join('\n\n') + '\n';
 }

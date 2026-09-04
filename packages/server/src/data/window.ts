@@ -37,6 +37,9 @@ export const DEFAULT_RADIUS = 10;
  *
  * `tail` returns the last N items, clamped to the thread.
  */
+/** Bound on parent-chain walks; real chains are a few hops deep. */
+const MAX_PARENT_HOPS = 32;
+
 export function resolveWindow(
   thread: ThreadItem[],
   subagents: SubagentRun[],
@@ -49,11 +52,20 @@ export function resolveWindow(
     let idx = thread.findIndex((t) => t.uuid === params.around);
     let anchorFound = idx >= 0;
     if (!anchorFound) {
-      // The uuid may belong to a subagent turn — anchor on its spawn point.
-      const run = subagents.find((r) => r.thread.some((t) => t.uuid === params.around));
-      if (run?.spawnUuid) {
-        idx = thread.findIndex((t) => t.uuid === run.spawnUuid);
-        anchorFound = idx >= 0;
+      // The uuid may belong to a subagent turn — anchor on its spawn point. A
+      // nested run's spawn turn is inside its PARENT's thread, so walk the
+      // parent chain until a spawn turn lands in the main thread (chains are
+      // acyclic, see parser.ts:breakParentCycles; the cap is belt and braces).
+      let run = subagents.find((r) => r.thread.some((t) => t.uuid === params.around));
+      for (let hop = 0; run?.spawnUuid !== undefined && hop < MAX_PARENT_HOPS; hop++) {
+        const spawnUuid = run.spawnUuid;
+        idx = thread.findIndex((t) => t.uuid === spawnUuid);
+        if (idx >= 0) {
+          anchorFound = true;
+          break;
+        }
+        const parentId = run.parentAgentId;
+        run = parentId !== undefined ? subagents.find((r) => r.agentId === parentId) : undefined;
       }
     }
     const start = anchorFound ? Math.max(0, idx - radius) : 0;
@@ -73,12 +85,30 @@ export function resolveWindow(
 
 /**
  * Subagent runs visible from a thread slice: those whose spawn turn
- * (`spawnUuid`) is inside it. Runs that never correlated to a spawn point have
- * no anchor to window against and are dropped from windowed responses.
+ * (`spawnUuid`) is inside it, plus — transitively — the runs they spawned, whose
+ * spawn turn sits in a run's thread rather than in the slice. Runs that never
+ * correlated to a spawn point have no anchor to window against and are
+ * dropped from windowed responses.
  */
 export function subagentsInWindow(slice: ThreadItem[], subagents: SubagentRun[]): SubagentRun[] {
   const uuids = new Set(slice.map((t) => t.uuid));
-  return subagents.filter((r) => r.spawnUuid !== undefined && uuids.has(r.spawnUuid));
+  const included = new Set<string>();
+  for (const r of subagents) {
+    if (r.spawnUuid !== undefined && uuids.has(r.spawnUuid)) included.add(r.agentId);
+  }
+  // Parent chains are acyclic (see parser.ts:breakParentCycles), so this
+  // terminates within `subagents.length` passes.
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const r of subagents) {
+      if (!included.has(r.agentId) && r.parentAgentId !== undefined && included.has(r.parentAgentId)) {
+        included.add(r.agentId);
+        grew = true;
+      }
+    }
+  }
+  return subagents.filter((r) => included.has(r.agentId));
 }
 
 function truncateBlock(block: ThreadBlock, max: number): ThreadBlock {

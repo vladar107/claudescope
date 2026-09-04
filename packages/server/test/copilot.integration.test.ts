@@ -186,6 +186,20 @@ function writeSession3(): void {
     // The subagent run compacts: the marker belongs to ITS stream, not the main one.
     sub(ev('session.context_changed', { reason: 'compaction' }), 'call-task'),
     sub(ev('assistant.message', { model: 'gpt-5-mini', content: 'resumed the zebrafinder scan' }), 'call-task'),
+    // The subagent spawns a subagent: the `task` call is made from ITS stream, so
+    // the inner Task block belongs to the outer run and the inner events open a
+    // stream of their own.
+    sub(ev('assistant.message', {
+      model: 'gpt-5-mini',
+      content: 'Delegating the manifest read.',
+      toolRequests: [
+        { toolCallId: 'call-inner', name: 'task', arguments: { description: 'Read the manifest', prompt: 'Read package.json and report.' } },
+      ],
+    }), 'call-task'),
+    sub(ev('subagent.started', { toolCallId: 'call-inner', agentName: 'read', agentDisplayName: 'Read Agent', model: 'gpt-5-mini' }), 'call-task'),
+    sub(ev('assistant.message', { model: 'gpt-5-mini', content: 'the narwhalmanifest names src/index.ts' }), 'call-inner'),
+    sub(ev('subagent.completed', { toolCallId: 'call-inner', agentName: 'read' }), 'call-task'),
+    sub(ev('tool.execution_complete', { toolCallId: 'call-inner', success: true, result: { content: 'The manifest names src/index.ts.' } }), 'call-task'),
     sub(ev('subagent.completed', { toolCallId: 'call-task', agentName: 'explore' }), 'call-task'),
     ev('tool.execution_complete', { toolCallId: 'call-task', success: true, result: { content: 'Entry point is src/index.ts.' } }),
     // A tagged turn with no subagent.started — tolerated as a detached run.
@@ -352,15 +366,44 @@ describe('copilot subagent embedding', () => {
 
     // The run is anchored to that Task block and carries the subagent's turns.
     const runs: Run[] = detail.subagents;
-    expect(runs).toHaveLength(2);
+    expect(runs).toHaveLength(3);
     const run = runs.find((r) => r.agentType === 'explore');
     expect(run).toMatchObject({ description: 'Inspect entry point', toolUseId: task.id });
+    expect(run.parentAgentId).toBeUndefined(); // spawned from the main thread
     expect(run.spawnUuid).toBeTruthy();
     expect(JSON.stringify(run.thread)).toContain('zebrafinder');
     const runBlocks: Block[] = run.thread.flatMap((t: { blocks: Block[] }) => t.blocks);
     const view = runBlocks.find((b) => b.kind === 'tool' && b.name === 'Read');
     expect(view.input.file_path).toBe('/tmp/cproj/package.json');
     expect(JSON.stringify(view.result.content)).toContain('src/index.ts');
+  });
+
+  it('nests a subagent spawned by a subagent under the inner Task call', async () => {
+    const detail = (await get('/api/sessions/copilot-sess-3')).json();
+    const outer = detail.subagents.find((r: Run) => r.agentId === 'call-task');
+    const outerBlocks: Block[] = outer.thread.flatMap((t: { blocks: Block[] }) => t.blocks);
+
+    // The inner `task` call is canonicalized inside the OUTER run's thread, and
+    // the main thread never sees it.
+    const innerTask = outerBlocks.find((b) => b.kind === 'tool' && b.name === 'Task');
+    expect(innerTask).toMatchObject({ id: 'call-inner' });
+    expect(innerTask.input).toMatchObject({ description: 'Read the manifest', subagent_type: 'read' });
+    expect(JSON.stringify(detail.thread)).not.toContain('narwhalmanifest');
+
+    // `agentId` IS the spawning toolCallId, so the run anchors by exact id and
+    // reports the outer run as its parent.
+    const inner = detail.subagents.find((r: Run) => r.agentId === 'call-inner');
+    expect(inner).toMatchObject({
+      agentType: 'read',
+      description: 'Read the manifest',
+      toolUseId: 'call-inner',
+      parentAgentId: 'call-task',
+    });
+    const spawnTurn = outer.thread.find((t: { blocks: Block[] }) =>
+      t.blocks.some((b: Block) => b.id === 'call-inner'),
+    );
+    expect(inner.spawnUuid).toBe(spawnTurn.uuid);
+    expect(JSON.stringify(inner.thread)).toContain('narwhalmanifest');
   });
 
   it('tolerates a tagged turn with no subagent.started as a detached run', async () => {

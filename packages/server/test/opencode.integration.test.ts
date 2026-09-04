@@ -75,6 +75,9 @@ function writeDb(): void {
   ses.run('ses_test1', '/tmp/ocproj', 'Test session', null, 1000, 3000);
   // task-spawned child — must fold into ses_test1, its title must NOT clobber the parent's.
   ses.run('ses_child1', '/tmp/ocproj', 'Inspect entry point (@explore subagent)', 'ses_test1', 2500, 2900);
+  // grandchild — spawned by ses_child1, so its `task` part lives in the CHILD's
+  // transcript and its parent is not the root.
+  ses.run('ses_gchild1', '/tmp/ocproj', 'Read the manifest (@read subagent)', 'ses_child1', 2750, 2900);
   // degraded parent links: a dangling parent_id and a two-session cycle. All three
   // must index as standalone sessions — no re-keying, no hang, no crash.
   ses.run('ses_dangling', '/tmp/ocproj', 'Dangling child', 'ses_ghost', 4000, 4100);
@@ -153,6 +156,31 @@ function writeDb(): void {
   }));
   part.run('cp2', 'ca1', 'ses_child1', 2701, 2701, JSON.stringify({
     type: 'text', text: 'The xylophone entry point is packages/server/src/index.ts',
+  }));
+
+  // The child spawns a child of its own: the only description for the grandchild
+  // lives in THIS transcript, never in the root's.
+  msg.run('ca2', 'ses_child1', 2750, 2750, JSON.stringify({
+    role: 'assistant', modelID: 'gpt-5.4-mini-fast', providerID: 'openai', time: { created: 2750 },
+    tokens: { total: 0, input: 0, output: 0, reasoning: 0, cache: { write: 0, read: 0 } },
+  }));
+  part.run('cp3', 'ca2', 'ses_child1', 2751, 2751, JSON.stringify({
+    type: 'tool', tool: 'task', callID: 'call_t2',
+    state: {
+      status: 'completed',
+      input: { description: 'Read the manifest', prompt: 'Read package.json and report.', subagent_type: 'read' },
+      output: 'The manifest names src/index.ts',
+      metadata: { sessionId: 'ses_gchild1', parentSessionId: 'ses_child1' },
+    },
+  }));
+  msg.run('gu1', 'ses_gchild1', 2800, 2800, JSON.stringify({ role: 'user', time: { created: 2800 } }));
+  part.run('gp1', 'gu1', 'ses_gchild1', 2801, 2801, JSON.stringify({ type: 'text', text: 'Read package.json and report.' }));
+  msg.run('ga1', 'ses_gchild1', 2810, 2810, JSON.stringify({
+    role: 'assistant', modelID: 'gpt-5.4-mini-fast', providerID: 'openai', time: { created: 2810 },
+    tokens: { total: 0, input: 0, output: 0, reasoning: 0, cache: { write: 0, read: 0 } },
+  }));
+  part.run('gp2', 'ga1', 'ses_gchild1', 2811, 2811, JSON.stringify({
+    type: 'text', text: 'The platypusmanifest names packages/server/src/index.ts',
   }));
 
   // Degraded sessions need at least one event row to materialize in the index.
@@ -296,7 +324,7 @@ describe('opencode session detail', () => {
     expect(task.input).toMatchObject({ description: 'Inspect entry point', subagent_type: 'explore' });
 
     // the child session rides in as a SubagentRun anchored to that block.
-    expect(detail.subagents).toHaveLength(1);
+    expect(detail.subagents).toHaveLength(2);
     const run = detail.subagents[0];
     expect(run).toMatchObject({
       agentId: 'ses_child1',
@@ -304,9 +332,32 @@ describe('opencode session detail', () => {
       description: 'Inspect entry point',
     });
     expect(run.toolUseId).toBe(task.id);
+    expect(run.parentAgentId).toBeUndefined(); // spawned by the root
     // the child's own turns render inside the run, not in the main thread.
     expect(JSON.stringify(run.thread)).toContain('xylophone');
     expect(JSON.stringify(detail.thread)).not.toContain('xylophone');
+  });
+
+  it('nests a task-spawned grandchild under the Task call in its parent run', async () => {
+    const detail = (await get('/api/sessions/ses_test1')).json();
+    const child = detail.subagents.find((r: { agentId: string }) => r.agentId === 'ses_child1');
+    // The grandchild's `task` part lives in the CHILD's transcript; opencode
+    // carries no tool id on a subagent, so `parent_id` is what scopes the
+    // description match to that run instead of the (unrelated) main thread.
+    const innerTask = child.thread
+      .flatMap((t: { blocks: Record<string, unknown>[] }) => t.blocks)
+      .find((b: Record<string, unknown>) => b.kind === 'tool' && b.name === 'Task');
+    expect(innerTask.input).toMatchObject({ description: 'Read the manifest', subagent_type: 'read' });
+
+    const grandchild = detail.subagents.find((r: { agentId: string }) => r.agentId === 'ses_gchild1');
+    expect(grandchild).toMatchObject({
+      agentType: 'read',
+      description: 'Read the manifest',
+      toolUseId: innerTask.id,
+      parentAgentId: 'ses_child1',
+    });
+    expect(JSON.stringify(grandchild.thread)).toContain('platypusmanifest');
+    expect(JSON.stringify(detail.thread)).not.toContain('platypusmanifest');
   });
 
   it('serves a degraded (dangling-parent) child as its own session', async () => {

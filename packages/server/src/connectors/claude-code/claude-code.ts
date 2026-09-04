@@ -324,17 +324,36 @@ function agentIdFromPath(path: string): string {
   return basename(path).replace(/^agent-/, '').replace(/\.jsonl$/, '');
 }
 
-/** Read the sibling `agent-<id>.meta.json` ({ agentType, description }). */
-function readSubagentMeta(jsonlPath: string): { agentType: string; description: string } {
+/**
+ * Read the sibling `agent-<id>.meta.json`. Current Claude Code writes
+ * `{agentType, description, toolUseId, spawnDepth}`, plus `parentAgentId` when
+ * a SUBAGENT made the call — a depth-2 run is a sibling file in the same
+ * `subagents/` dir, and its `toolUseId` names an `Agent` call inside the
+ * depth-1 transcript. Older metadata has only `agentType`, so every field is
+ * optional and the description/prompt fallback stays. `spawnDepth` is not read:
+ * depth follows from the parent chain.
+ */
+function readSubagentMeta(jsonlPath: string): {
+  agentType: string;
+  description: string;
+  toolUseId?: string;
+  parentAgentId?: string;
+} {
   const metaPath = jsonlPath.replace(/\.jsonl$/, '.meta.json');
   try {
     const parsed = JSON.parse(readFileSync(metaPath, 'utf8')) as {
       agentType?: unknown;
       description?: unknown;
+      toolUseId?: unknown;
+      parentAgentId?: unknown;
     };
+    const toolUseId = typeof parsed.toolUseId === 'string' ? parsed.toolUseId : '';
+    const parentAgentId = typeof parsed.parentAgentId === 'string' ? parsed.parentAgentId : '';
     return {
       agentType: typeof parsed.agentType === 'string' ? parsed.agentType : '',
       description: typeof parsed.description === 'string' ? parsed.description : '',
+      ...(toolUseId ? { toolUseId } : {}),
+      ...(parentAgentId ? { parentAgentId } : {}),
     };
   } catch {
     return { agentType: '', description: '' };
@@ -411,6 +430,8 @@ async function loadSession(sessionId: string, paths: string[]): Promise<SessionD
       agentId: agentIdFromPath(p),
       agentType: meta.agentType,
       description,
+      ...(meta.toolUseId ? { toolUseId: meta.toolUseId } : {}),
+      ...(meta.parentAgentId ? { parentAgentId: meta.parentAgentId } : {}),
       ...(slug ? { slug } : {}),
       ...(prompt ? { prompt } : {}),
       ...(workflowId ? { workflowId } : {}),

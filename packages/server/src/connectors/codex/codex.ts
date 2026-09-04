@@ -55,26 +55,39 @@ function auxProjections(filePath: string): AuxProjections {
 /**
  * Load a session's events, splitting the resolved rollouts into the main thread
  * (its own thread id equals the session id) and one subagent per re-keyed child
- * rollout. A child's metadata comes from the parent's matching `spawn_agent`
- * call, correlated by the legacy child `agent_id` or current canonical
+ * rollout. A child's metadata comes from the matching `spawn_agent` call,
+ * correlated by the legacy child `agent_id` or current canonical
  * `task_name`/`agent_path`, so the run anchors to the exact canonical `Task`.
+ *
+ * A spawn record lives in the rollout that made the call, so a subagent spawned
+ * by a subagent is described by the DEPTH-1 child's rollout, not the root's —
+ * hence the merged spawn map plus the `parent_thread_id` pointer.
  */
 async function loadSession(sessionId: string, paths: string[]): Promise<SessionData> {
   const sessions = paths
     .map((p) => parseRollout(p))
     .filter((s): s is CodexSession => s !== null);
   const main = sessions.find((s) => s.sessionId === sessionId);
+  // Root first, so it wins a key collision with a child's own spawn record.
+  const ordered = main ? [main, ...sessions.filter((s) => s !== main)] : sessions;
+  const spawned = new Map<string, { description: string; agentType: string; toolUseId: string }>();
+  for (const s of ordered) {
+    for (const [key, meta] of s.spawnedAgents) if (!spawned.has(key)) spawned.set(key, meta);
+  }
+  const childIds = new Set(sessions.filter((s) => s !== main).map((s) => s.sessionId));
   const subagents: SubagentSource[] = [];
   for (const s of sessions) {
     if (s === main) continue;
-    const meta =
-      (s.agentPath ? main?.spawnedAgents.get(s.agentPath) : undefined) ??
-      main?.spawnedAgents.get(s.sessionId);
+    const meta = (s.agentPath ? spawned.get(s.agentPath) : undefined) ?? spawned.get(s.sessionId);
+    // Only a parent that is itself a child is passed on — the root is implied.
+    const parentAgentId =
+      s.parentThreadId && childIds.has(s.parentThreadId) ? s.parentThreadId : undefined;
     subagents.push({
       agentId: s.sessionId,
       agentType: meta?.agentType ?? s.agentRole ?? '',
       description: meta?.description ?? s.agentPath ?? '',
       toolUseId: meta?.toolUseId,
+      ...(parentAgentId ? { parentAgentId } : {}),
       events: s.events,
     });
   }

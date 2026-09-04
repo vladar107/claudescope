@@ -1,4 +1,15 @@
-import { Fragment, memo, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  Fragment,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { Puzzle, RotateCcw } from 'lucide-react';
 import type { CompactionInfo, SubagentRun, ThreadBlock, ThreadItem } from '@claudescope/shared';
 import {
@@ -10,6 +21,7 @@ import {
   TokenChips,
 } from '../../components';
 import { formatDateTime, shortModel } from '../browse/format.js';
+import { holdAnchor } from './useScrollRestore.js';
 import { ThreadBlockView, hasRenderableContent } from './blocks.js';
 import {
   classifySystemText,
@@ -23,6 +35,73 @@ import { blockRevealId } from './search.js';
 /** DOM id for a subagent block, used as the jump-menu / deep-link anchor. */
 export function subagentAnchor(agentId: string): string {
   return `subagent-${agentId}`;
+}
+
+/**
+ * Hop limit for walks over `parentAgentId` chains. The server serves acyclic
+ * chains (it unlinks a run that closes a cycle), so this only bounds a corrupt
+ * or hand-edited payload.
+ */
+const MAX_PARENT_HOPS = 32;
+
+/**
+ * How many subagent panels the current one is nested inside. The server
+ * breaks parent cycles, so this only caps a corrupt payload — a stack
+ * overflow would take the whole tab down instead of one panel.
+ */
+const NestDepthContext = createContext(0);
+
+/**
+ * Ancestor run ids of `run`, nearest first — the runs whose threads it renders
+ * inside. Empty for a run spawned from the main thread or left unlinked.
+ */
+export function ancestorRunIds(run: SubagentRun, runById: Map<string, SubagentRun>): string[] {
+  const out: string[] = [];
+  let cur = run;
+  for (let hop = 0; hop < MAX_PARENT_HOPS; hop++) {
+    const parent = cur.parentAgentId ? runById.get(cur.parentAgentId) : undefined;
+    if (!parent || parent.agentId === run.agentId || out.includes(parent.agentId)) break;
+    out.push(parent.agentId);
+    cur = parent;
+  }
+  return out;
+}
+
+/**
+ * Runs in depth-first order — each run followed by the ones it spawned — with
+ * the nesting depth of each. A run whose parent isn't in the list (windowed
+ * reads keep ancestors, but be defensive) is treated as a root, and any run a
+ * broken chain would otherwise hide is appended flat rather than dropped.
+ */
+function nestedRunOrder(runs: SubagentRun[]): { run: SubagentRun; depth: number }[] {
+  const known = new Set(runs.map((r) => r.agentId));
+  const childrenOf = new Map<string, SubagentRun[]>();
+  const roots: SubagentRun[] = [];
+  for (const run of runs) {
+    const parent = run.parentAgentId;
+    if (parent && parent !== run.agentId && known.has(parent)) {
+      const list = childrenOf.get(parent);
+      if (list) list.push(run);
+      else childrenOf.set(parent, [run]);
+    } else {
+      roots.push(run);
+    }
+  }
+  const out: { run: SubagentRun; depth: number }[] = [];
+  const seen = new Set<string>();
+  const walk = (run: SubagentRun, depth: number) => {
+    if (seen.has(run.agentId) || depth > MAX_PARENT_HOPS) return;
+    seen.add(run.agentId);
+    out.push({ run, depth });
+    for (const child of childrenOf.get(run.agentId) ?? []) walk(child, depth + 1);
+  };
+  for (const run of roots) walk(run, 0);
+  for (const run of runs) {
+    if (seen.has(run.agentId)) continue;
+    seen.add(run.agentId);
+    out.push({ run, depth: 0 });
+  }
+  return out;
 }
 
 /** Track the current location hash (decoded), updating on hashchange. */
@@ -123,7 +202,11 @@ const Turn = memo(function Turn({
                   role={item.role}
                 />
                 {runs?.map((run) => (
-                  <SubagentBlock key={run.agentId} run={run} />
+                  <SubagentBlock
+                    key={run.agentId}
+                    run={run}
+                    subagentsByToolUseId={subagentsByToolUseId}
+                  />
                 ))}
               </Fragment>
             );
@@ -332,21 +415,46 @@ function CommandOutput({ stdout, stderr }: { stdout: string; stderr: string }) {
 /**
  * A collapsible, indented panel rendering a subagent's full thread. Collapsed by
  * default; opens (and scrolls into view) when the location hash targets it, so
- * the "Subagents" jump menu and deep-links land on an expanded run.
+ * the "Subagents" jump menu and deep-links land on an expanded run. It also
+ * opens when a run it (transitively) spawned is the target — SessionPage puts
+ * the ancestors of a targeted run in the reveal set, since a nested run only
+ * mounts once every panel above it is open.
  */
-export function SubagentBlock({ run }: { run: SubagentRun }) {
+export function SubagentBlock({
+  run,
+  subagentsByToolUseId,
+}: {
+  run: SubagentRun;
+  /** Passed on so a subagent that spawned a subagent nests it in turn. */
+  subagentsByToolUseId?: Map<string, SubagentRun[]>;
+}) {
   const anchor = subagentAnchor(run.agentId);
   const hashTarget = useHashTarget();
   const { subagentIds } = useContext(SessionSearchContext);
+  const depth = useContext(NestDepthContext);
   const forceOpen = subagentIds.has(run.agentId);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (hashTarget === anchor) {
-      setOpen(true);
-      ref.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    if (hashTarget !== anchor) return;
+    setOpen(true);
+    const el = ref.current;
+    if (!el) return;
+    const scroller = el.closest('main.tv-main');
+    if (!(scroller instanceof HTMLElement)) {
+      el.scrollIntoView({ block: 'start' });
+      return;
     }
+    // Not a smooth scrollIntoView: lazily sized turns above and below shrink
+    // as the viewport passes them, so an animation aimed at this block's
+    // current position lands far past it. Jump, then hold the block at the
+    // top while layout settles (the reader's own scroll cancels the hold).
+    let cancelled = false;
+    holdAnchor(scroller, el, () => 0, () => cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, [hashTarget, anchor]);
 
   const items = run.thread.filter((t) => hasRenderableContent(t.blocks));
@@ -377,7 +485,12 @@ export function SubagentBlock({ run }: { run: SubagentRun }) {
           {items.length === 0 ? (
             <p className="tv-muted">No renderable messages in this subagent run.</p>
           ) : (
-            <ThreadList items={items} />
+            <NestDepthContext.Provider value={depth + 1}>
+              <ThreadList
+                items={items}
+                subagentsByToolUseId={depth < MAX_PARENT_HOPS ? subagentsByToolUseId : undefined}
+              />
+            </NestDepthContext.Provider>
           )}
         </div>
       </Collapsible>
@@ -386,7 +499,9 @@ export function SubagentBlock({ run }: { run: SubagentRun }) {
 }
 
 /**
- * A compact dropdown listing all subagents, each linking to its anchor.
+ * A compact dropdown listing all subagents, each linking to its anchor. Runs
+ * are listed depth-first and indented by nesting depth, so a subagent spawned
+ * by a subagent reads as belonging to it.
  *
  * The native `<details>` is controlled so it closes the way users expect: on
  * selecting an item AND on clicking anywhere outside (native `<details>` does
@@ -395,6 +510,7 @@ export function SubagentBlock({ run }: { run: SubagentRun }) {
 export function SubagentJumpMenu({ subagents }: { subagents: SubagentRun[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDetailsElement>(null);
+  const ordered = useMemo(() => nestedRunOrder(subagents), [subagents]);
 
   useEffect(() => {
     if (!open) return;
@@ -425,13 +541,18 @@ export function SubagentJumpMenu({ subagents }: { subagents: SubagentRun[] }) {
         <span className="tv-subagent-menu__count">{subagents.length}</span>
       </summary>
       <ul className="tv-subagent-menu__list">
-        {subagents.map((s) => (
-          <li key={s.agentId}>
+        {ordered.map(({ run: s, depth }) => (
+          <li key={s.agentId} style={{ '--tv-menu-depth': depth } as CSSProperties}>
             <a
               href={`#${subagentAnchor(s.agentId)}`}
               className="tv-subagent-menu__item"
               onClick={() => setOpen(false)}
             >
+              {depth > 0 ? (
+                <span className="tv-subagent-menu__nest" aria-hidden="true">
+                  ↳
+                </span>
+              ) : null}
               <span className="tv-subagent-menu__type">{s.agentType || 'agent'}</span>
               <span className="tv-subagent-menu__desc">
                 {s.description || s.slug || s.agentId}

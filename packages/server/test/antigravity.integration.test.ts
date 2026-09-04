@@ -49,6 +49,8 @@ process.env.REINDEX_INTERVAL_MS = '0';
 const PARENT = '11111111-1111-1111-1111-111111111111';
 const CHILD = '22222222-2222-2222-2222-222222222222';
 const ORPHAN = '33333333-3333-3333-3333-333333333333';
+/** A subagent of the subagent: linked from the CHILD's transcript, not the root's. */
+const GRANDCHILD = '44444444-4444-4444-4444-444444444444';
 const IMG_NAME = 'uploaded_media_0_1782909688549.png';
 const IMG_ABS = join(cliDir, 'brain', PARENT, IMG_NAME);
 // A poisoned upload: textually inside the conversation dir, but a symlink whose
@@ -176,13 +178,41 @@ function writeFixtures(): void {
       tool_calls: [{ name: 'view_file', args: { AbsolutePath: '', Path: '/tmp/proj/a/README.md' } }],
     }),
     step(2, 'MODEL', 'VIEW_FILE', { content: 'File Path: `file:///tmp/proj/a/README.md`\n# A' }),
+    // The subagent spawns one of its own: the prompt (and so the description the
+    // grandchild is matched by) exists ONLY in this transcript.
     step(3, 'MODEL', 'PLANNER_RESPONSE', {
+      content: 'Delegating the manifest read.',
+      tool_calls: [
+        {
+          name: 'invoke_subagent',
+          args: {
+            Subagents: [
+              { Prompt: 'Read the manifest in /tmp/proj.', Role: 'Reader', TypeName: 'read', Workspace: 'inherit' },
+            ],
+            toolAction: 'Invoke',
+            toolSummary: 'Invoke',
+          },
+        },
+      ],
+    }),
+    step(4, 'MODEL', 'PLANNER_RESPONSE', {
+      content: `I have started the \`read\` subagent (Conversation ID: \`${GRANDCHILD}\`) to read the manifest.`,
+    }),
+    step(5, 'MODEL', 'PLANNER_RESPONSE', {
       content: 'Reporting back.',
       tool_calls: [
         { name: 'send_message', args: { ConversationId: PARENT, Message: '### Workspace Summary\nProjects found: 3.' } },
       ],
     }),
-    step(4, 'MODEL', 'GENERIC', { content: `Message sent to "${PARENT}".` }),
+    step(6, 'MODEL', 'GENERIC', { content: `Message sent to "${PARENT}".` }),
+  ]);
+
+  // Grandchild: its own conversation, linked only from the CHILD's transcript.
+  writeTranscript(GRANDCHILD, [
+    step(0, 'USER_EXPLICIT', 'USER_INPUT', {
+      content: '<USER_REQUEST>\nRead the manifest in /tmp/proj.\n</USER_REQUEST>',
+    }),
+    step(1, 'MODEL', 'PLANNER_RESPONSE', { content: 'The platypusmanifest lists 3 packages.' }),
   ]);
 
   // Orphan: a top-level conversation with NO history entry → unknown-cwd bucket.
@@ -306,8 +336,8 @@ describe('antigravity session indexing', () => {
 describe('antigravity session detail', () => {
   it('nests the subagent under its invoke_subagent (Task) call', async () => {
     const detail = (await get(`/api/sessions/${PARENT}`)).json();
-    expect(detail.subagents).toHaveLength(1);
-    const run = detail.subagents[0];
+    expect(detail.subagents).toHaveLength(2);
+    const run = detail.subagents.find((r: { agentId: string }) => r.agentId === CHILD);
     expect(run.agentType).toBe('research');
     expect(run.description).toBe('Inspect all subdirectories inside /tmp/proj.');
     expect(run.thread.length).toBeGreaterThan(0);
@@ -323,6 +353,32 @@ describe('antigravity session detail', () => {
     const task = flat.find((b: Record<string, unknown>) => b.kind === 'tool' && b.name === 'Task');
     expect(task).toBeTruthy();
     expect(run.toolUseId).toBe(task.id);
+    expect(run.parentAgentId).toBeUndefined(); // spawned by the root conversation
+  });
+
+  it('nests a subagent of the subagent under the call in its parent run', async () => {
+    const detail = (await get(`/api/sessions/${PARENT}`)).json();
+    const child = detail.subagents.find((r: { agentId: string }) => r.agentId === CHILD);
+    // The spawning `invoke_subagent` → Task lives in the CHILD's thread, and its
+    // description exists nowhere else — only the parent pointer scopes the match
+    // there instead of the root's (differently described) Task call.
+    const innerTask = child.thread
+      .flatMap((t: { blocks: Record<string, unknown>[] }) => t.blocks)
+      .find((b: Record<string, unknown>) => b.kind === 'tool' && b.name === 'Task');
+    expect(innerTask.input).toMatchObject({
+      description: 'Read the manifest in /tmp/proj.',
+      subagent_type: 'read',
+    });
+
+    const grandchild = detail.subagents.find((r: { agentId: string }) => r.agentId === GRANDCHILD);
+    expect(grandchild).toMatchObject({
+      agentType: 'read',
+      description: 'Read the manifest in /tmp/proj.',
+      toolUseId: innerTask.id,
+      parentAgentId: CHILD,
+    });
+    expect(JSON.stringify(grandchild.thread)).toContain('platypusmanifest');
+    expect(JSON.stringify(detail.thread)).not.toContain('platypusmanifest');
   });
 
   it('renders plaintext thinking, a canonical Write, a synthesized Read, and the image', async () => {

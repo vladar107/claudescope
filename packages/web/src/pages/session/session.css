@@ -415,9 +415,17 @@
   align-items: baseline;
   gap: var(--tv-space-2);
   padding: var(--tv-space-2);
+  /* Runs are listed depth-first; `--tv-menu-depth` (set per item) indents a
+     run spawned by another run under it. */
+  padding-left: calc(var(--tv-space-2) + var(--tv-menu-depth, 0) * var(--tv-space-4));
   border-radius: var(--tv-radius-sm);
   text-decoration: none;
   color: inherit;
+}
+.tv-subagent-menu__nest {
+  flex: 0 0 auto;
+  margin-left: calc(-1 * var(--tv-space-1));
+  color: var(--tv-fg-muted);
 }
 .tv-subagent-menu__item:hover {
   background: var(--tv-bg-inset);

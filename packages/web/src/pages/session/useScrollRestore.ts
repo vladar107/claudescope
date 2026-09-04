@@ -98,9 +98,12 @@ const HOLD_MS = 1200;
  * Keep `el` at `targetDelta()` px below the scroller top until layout settles.
  * Any scroll the hold didn't make itself — user wheel/touch, a hash
  * navigation, finder jumps, Chrome's own scroll anchoring — cancels it
- * immediately, so it only ever counteracts silent layout shift.
+ * immediately, so it only ever counteracts silent layout shift. Also the way
+ * to *navigate* to an element in this transcript: turns are sized lazily
+ * (`content-visibility`), so a one-shot smooth scroll aims at a position that
+ * moves by tens of thousands of pixels while the animation runs.
  */
-function holdAnchor(
+export function holdAnchor(
   scroller: HTMLElement,
   el: HTMLElement,
   targetDelta: () => number,

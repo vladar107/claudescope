@@ -63,6 +63,9 @@ export interface CodexSession {
   agentRole?: string;
   /** Current Codex's canonical task path from `thread_spawn.agent_path`. */
   agentPath?: string;
+  /** `thread_spawn.parent_thread_id` — the thread that made the spawning call.
+   *  Equals the root only at depth 1; deeper, it names another subagent. */
+  parentThreadId?: string;
   cwd: string;
   gitBranch?: string;
   /** `model_provider` from session_meta — session-level, applied to every
@@ -721,11 +724,13 @@ export function parseRollout(path: string): CodexSession | null {
   let isSidechain = false;
   let agentRole: string | undefined;
   let agentPath: string | undefined;
+  let parentThreadId: string | undefined;
   if (str(meta.thread_source) === 'subagent') {
     const spawn = rec(subagentSource.thread_spawn);
     const parentId = str(spawn.parent_thread_id);
     agentRole = str(spawn.agent_role) || undefined;
     agentPath = str(spawn.agent_path) || undefined;
+    parentThreadId = parentId || undefined;
     if (parentId) {
       isSidechain = true;
       indexSessionId = rootThreadId(parentId, getCodexContext().parents);
@@ -1013,6 +1018,7 @@ export function parseRollout(path: string): CodexSession | null {
     isSidechain,
     agentRole,
     agentPath,
+    parentThreadId,
     cwd,
     gitBranch,
     modelProvider,

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { SessionDetailResponse, ThreadItem } from '../src/index.js';
-import { redactText, sessionToMarkdown, threadItemsToMarkdown, truncateText } from '../src/index.js';
+import type { SessionDetailResponse, SubagentRun, ThreadItem } from '../src/index.js';
+import {
+  orderSubagentRunsDepthFirst,
+  redactText,
+  sessionToMarkdown,
+  threadItemsToMarkdown,
+  truncateText,
+} from '../src/index.js';
 
 describe('redactText', () => {
   it('masks home-dir paths to ~', () => {
@@ -73,6 +79,70 @@ describe('sessionToMarkdown', () => {
     expect(red).not.toContain('/Users/me/');
     expect(red).toContain('~/app/settings.ts');
     expect(red).toContain('redaction');
+  });
+});
+
+function subagentRun(agentId: string, description: string, parentAgentId?: string): SubagentRun {
+  return {
+    agentId,
+    agentType: 'general-purpose',
+    description,
+    ...(parentAgentId ? { parentAgentId } : {}),
+    messageCount: 0,
+    toolCallCount: 0,
+    totalTokens: 0,
+    thread: [],
+  };
+}
+
+describe('orderSubagentRunsDepthFirst', () => {
+  it('places each run immediately after its parent, children in list order', () => {
+    const parent = subagentRun('parent', 'Explore X');
+    const unlinked = subagentRun('unlinked', 'separate task');
+    const child = subagentRun('child', 'nested probe', 'parent');
+    // The child is listed AFTER the unrelated root run — it must still be
+    // promoted to sit right after its own parent, not stay where it was.
+    expect(orderSubagentRunsDepthFirst([parent, unlinked, child]).map((r) => r.agentId)).toEqual([
+      'parent',
+      'child',
+      'unlinked',
+    ]);
+  });
+
+  it('renders a run with a dangling parentAgentId as top-level', () => {
+    const orphan = subagentRun('orphan', 'ghost parent', 'missing');
+    const other = subagentRun('other', 'unrelated');
+    expect(orderSubagentRunsDepthFirst([orphan, other]).map((r) => r.agentId)).toEqual(['orphan', 'other']);
+  });
+
+  it('terminates on a parent cycle instead of hanging', () => {
+    const a = subagentRun('a', 'A', 'b');
+    const b = subagentRun('b', 'B', 'a');
+    const ordered = orderSubagentRunsDepthFirst([a, b]);
+    expect(ordered.map((r) => r.agentId).sort()).toEqual(['a', 'b']);
+  });
+});
+
+describe('sessionToMarkdown — nested subagents', () => {
+  const parentRun: SubagentRun = {
+    ...subagentRun('parent', 'Explore X'),
+    thread: [turn('assistant', [{ kind: 'text', type: 'text', text: 'parent work' }])],
+  };
+  const childRun: SubagentRun = {
+    ...subagentRun('child', 'nested probe', 'parent'),
+    thread: [turn('assistant', [{ kind: 'text', type: 'text', text: 'child work' }])],
+  };
+  const data: SessionDetailResponse = {
+    meta: baseMeta,
+    thread: [],
+    subagents: [childRun, parentRun], // list order is not depth-first
+  };
+
+  it('orders runs depth-first and labels the nested one with its parent', () => {
+    const md = sessionToMarkdown(data, { redact: false });
+    expect(md).toContain('### 🧩 Subagent · general-purpose — Explore X');
+    expect(md).toContain('### 🧩 Subagent · general-purpose — nested probe (nested in Explore X)');
+    expect(md.indexOf('Explore X')).toBeLessThan(md.indexOf('nested probe'));
   });
 });
 
