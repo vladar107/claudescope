@@ -60,7 +60,9 @@ npm-workspaces monorepo (`packages/*`):
   restart), the daemon PID file, and logs. State lives outside the package dir
   so global installs survive upgrades — do not move it back into the package.
 - App-owned state is created **owner-only** — always via `ensureStateDir()` from
-  `config.ts`, never a bare `mkdirSync`.
+  `config.ts`, never a bare `mkdirSync`. Every file writer passes
+  `STATE_FILE_MODE`, and the server sets `umask 0077` at boot for the files
+  DuckDB creates itself.
 - The normalize cache (`cache/<agent>/*.ndjson`, written by `prepare()`) holds
   transcript text **verbatim**, so it is pruned every pass once its source file is
   gone — `ndjsonCache` owns the layout and `pruneNdjsonCaches` the sweep. A
@@ -323,6 +325,20 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   `clear` asks for a fresh one) — that is the history skill's job, on demand.
   `plugins/claudescope/hooks/hooks.json` is shared by Claude Code and Codex:
   matcher `compact` only, no plugin-root variables, always exit 0.
+- **Source paths reach DuckDB through `sqlPath()`, never `sqlString()`.**
+  `read_ndjson` treats its path literal as a glob (`x[1].jsonl` reads
+  `x1.jsonl`), so the path that is *read* is glob-escaped, while the
+  `file_path` column and every `WHERE file_path =` keep the raw path because
+  `files.path` is compared literally. Only the Claude Code connector reads
+  source paths directly; the normalize cache's sha1 names carry no
+  metacharacters.
+- **Every SIGTERM of a recorded daemon PID goes through `terminateDaemon`**,
+  which checks ownership first (`daemonOwnsPid` → `planWedgeAction`): a crashed
+  daemon's PID can be recycled by an unrelated process, so `stop`, `restart`,
+  `update`, the wedged path, and the version-skew heal must never
+  `process.kill` the pid from `daemon.json` directly. The record is written by
+  the server after a successful bind (`CLAUDESCOPE_DAEMON=1`), not by the
+  spawner, so a losing concurrent spawn can never clobber it.
 - **Release is maintainer-only** and tag-triggered (npm Trusted Publishing /
   OIDC). See `CONTRIBUTING.md`.
 

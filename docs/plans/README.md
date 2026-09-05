@@ -109,3 +109,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0082 | [Brew release waits for the npm tarball](./0082-brew-release-waits-for-npm-tarball.md) | done |
 | 0083 | [Context size and compaction count per session](./0083-context-window-and-compactions.md) | done |
 | 0084 | [Nested subagents (a subagent spawning a subagent)](./0084-nested-subagents.md) | done |
+| 0085 | [Security review hardening](./0085-security-review-hardening.md) | done |
