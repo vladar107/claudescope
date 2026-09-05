@@ -251,7 +251,8 @@ async function loadFile(
       ${costExpr} AS cost_usd,
       ev.text_content,
       ev.message_id, ev.forked_from_session_id, TRUE AS usage_canonical,
-      ev.tool_error_count, ev.tool_error_text, ev.skill_names
+      ev.tool_error_count, ev.tool_error_text, ev.skill_names,
+      hash(ev.file_path, ev.uuid) AS doc_id
     FROM (
       ${connector.eventsProjectionSql(file.path)}
     ) AS ev
@@ -601,12 +602,16 @@ async function applyFallbackTitles(conn: DuckDBConnection): Promise<void> {
 
 /** (Re)build the BM25 full-text index over event text. */
 async function rebuildFtsIndex(conn: DuckDBConnection): Promise<void> {
+  // Keyed by `doc_id`, not `uuid`: the generated match_bm25 macro looks a
+  // document up with a scalar subquery on that column, so it must be unique per
+  // row — a fork/resume copy repeats every uuid (see schema.ts).
+  //
   // DuckDB's default ignore expression drops every non-letter, which makes
   // versions, issue numbers, and other identifiers impossible to find. Keep
   // digits as terms while punctuation remains a token boundary.
   await conn.run(`
     PRAGMA create_fts_index(
-      'events', 'uuid', 'text_content', ignore='[^a-z0-9]+', overwrite=1
+      'events', 'doc_id', 'text_content', ignore='[^a-z0-9]+', overwrite=1
     )
   `);
   // Force a CHECKPOINT so the FTS index DDL is merged into the main DB file

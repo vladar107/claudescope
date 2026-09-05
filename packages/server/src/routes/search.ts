@@ -2,7 +2,7 @@
  * GET /api/search — full-text search over transcripts and/or agent memory.
  *
  * Transcripts use the BM25 `fts` index on `events.text_content` (keyed by
- * `uuid`); memory is searched live (it isn't indexed). The `scope` param picks
+ * `doc_id`); memory is searched live (it isn't indexed). The `scope` param picks
  * which: `sessions` (default), `all` (both), or `memory` (memory only). Both
  * kinds carry a snippet with matched terms highlighted via `<mark>`. Optional
  * filters: `project` (slug) and `type` (user|assistant|all; sessions only).
@@ -41,13 +41,11 @@ async function searchSessions(
   project: string | undefined,
   format: SnippetFormat,
 ): Promise<SearchResult[]> {
-  // NOTE: this query depends on `scalar_subquery_error_on_multiple_rows = false`,
-  // which is applied once when the connection opens (see db/duckdb.ts) rather than
-  // here — it is a connection-level setting, and the connection is shared.
+  // The FTS index is keyed by `events.doc_id`, unique per row (see schema.ts).
   const conn = await getConnection();
   const identifierQuery = /\d/.test(q);
   const matchExpression = `fts_main_events.match_bm25(
-    e.uuid,
+    e.doc_id,
     ${sqlString(q)}${identifierQuery ? ', conjunctive := true' : ''}
   )`;
 

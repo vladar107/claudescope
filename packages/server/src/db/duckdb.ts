@@ -99,20 +99,6 @@ async function prepare(inst: DuckDBInstance): Promise<{
   await conn.run('INSTALL json; LOAD json;');
   await conn.run('INSTALL fts; LOAD fts;');
 
-  // `events.uuid` is NOT unique: fork/resume copies re-list the same lines under
-  // a new session id. `fts_main_events.match_bm25(uuid, …)` looks the document up
-  // with a scalar subquery keyed by uuid, so it legitimately hits multiple rows,
-  // and newer DuckDB raises on that. The duplicates are identical copies, so
-  // picking a representative is correct (see routes/search.ts).
-  //
-  // Applied here, at open time, rather than inside the search handler: this is a
-  // CONNECTION-level setting on a connection shared with the indexer and every
-  // other route, so setting it per request meant an unrelated HTTP call silently
-  // changed query semantics process-wide — and left them changed. Doing it once
-  // makes the connection's behaviour deterministic instead of depending on
-  // whether a search has run yet.
-  await conn.run('SET scalar_subquery_error_on_multiple_rows = false');
-
   // A schema-version mismatch means the persisted shape is outdated. The index
   // is a derived cache, so signal a discard+rebuild rather than migrate in place.
   if (await isStaleSchema(conn)) {
