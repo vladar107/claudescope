@@ -5,11 +5,16 @@
  */
 
 import { createHash } from 'node:crypto';
-import { rmSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
 import type { DuckDBConnection } from '@duckdb/node-api';
-import { DUCKDB_PATH, ensureStateDir } from '../config.js';
+import {
+  DEFAULT_DUCKDB_EXTENSION_DIR,
+  DUCKDB_EXTENSION_DIR,
+  DUCKDB_PATH,
+  ensureStateDir,
+} from '../config.js';
 import { SCHEMA_DDL, SCHEMA_VERSION } from './schema.js';
 
 /**
@@ -59,8 +64,38 @@ async function openAndPrepare(): Promise<{ conn: DuckDBConnection; inst: DuckDBI
   // Owner-only: DuckDB creates index.duckdb itself (we can't pass a mode), so
   // the 0700 directory is what keeps the indexed transcript corpus private.
   ensureStateDir(dirname(DUCKDB_PATH));
+  // The default extension dir is app-owned state and gets the owner-only mode;
+  // an override may be a shared cache (the tests point at ~/.duckdb/extensions)
+  // whose mode is not ours to change — create it, never chmod it.
+  if (DUCKDB_EXTENSION_DIR === DEFAULT_DUCKDB_EXTENSION_DIR) ensureStateDir(DUCKDB_EXTENSION_DIR);
+  else mkdirSync(DUCKDB_EXTENSION_DIR, { recursive: true });
   const inst = await DuckDBInstance.create(DUCKDB_PATH);
+  try {
+    return await prepare(inst);
+  } catch (err) {
+    // Anything that throws past the open must release the file lock: the caller
+    // either discards the file (which needs it closed) or rethrows to a process
+    // that may retry later.
+    try {
+      inst.closeSync();
+    } catch {
+      /* already closed */
+    }
+    throw err;
+  }
+}
+
+/** Configure the open instance and apply the schema. Split out of
+ *  {@link openAndPrepare} so every failure below shares one lock-release path. */
+async function prepare(inst: DuckDBInstance): Promise<{
+  conn: DuckDBConnection;
+  inst: DuckDBInstance;
+}> {
   const conn = await inst.connect();
+  // The node client bundles neither extension, so DuckDB downloads them the
+  // first time (and after each DuckDB version bump). Redirect that write into
+  // our own state dir — see DUCKDB_EXTENSION_DIR.
+  await conn.run(`SET extension_directory = ${sqlString(DUCKDB_EXTENSION_DIR)}`);
   await conn.run('INSTALL json; LOAD json;');
   await conn.run('INSTALL fts; LOAD fts;');
 
@@ -81,7 +116,6 @@ async function openAndPrepare(): Promise<{ conn: DuckDBConnection; inst: DuckDBI
   // A schema-version mismatch means the persisted shape is outdated. The index
   // is a derived cache, so signal a discard+rebuild rather than migrate in place.
   if (await isStaleSchema(conn)) {
-    inst.closeSync();
     throw new Error(`index schema is stale (expected v${SCHEMA_VERSION}); rebuilding`);
   }
 
@@ -93,6 +127,75 @@ async function openAndPrepare(): Promise<{ conn: DuckDBConnection; inst: DuckDBI
     `INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_signature', '${SCHEMA_SIGNATURE}')`,
   );
   return { conn, inst };
+}
+
+/** DuckDB's single-writer guard, e.g. `IO Error: Could not set lock on file
+ *  "…/index.duckdb": Conflicting lock is held in …/bin/node (PID 66590) by user
+ *  …`. Another live process owns the index; the file itself is fine. */
+const LOCK_CONFLICT = /Could not set lock on file/i;
+
+/** OS-level failures to open/write the file: no permission, or no space. */
+const OS_FAILURE = /\b(EACCES|EPERM|ENOSPC)\b/;
+
+/**
+ * Whether an open failure came from installing/loading the `json`/`fts`
+ * extensions rather than from the database file. DuckDB downloads them from its
+ * extension repository, so an offline or proxy-blocked machine fails here with a
+ * perfectly healthy index. The generic network markers only count when the
+ * message also mentions an extension — a corrupt-file message quoting a path
+ * must never be mistaken for a download failure.
+ */
+function isExtensionFailure(message: string): boolean {
+  if (/Failed to download extension/i.test(message)) return true;
+  if (/IO Error: Extension/i.test(message)) return true;
+  if (/Could not establish connection/i.test(message)) return true;
+  if (!/extension/i.test(message)) return false;
+  return /could not be loaded|not found|\bHTTP\b/i.test(message);
+}
+
+/**
+ * Whether an open failure is something OTHER than a corrupt index — a lock held
+ * by another process, an extension that couldn't be installed, or an OS-level
+ * permission/disk error. None of those are fixed by deleting the index, and
+ * deleting it on a lock conflict destroys the *live* daemon's database (a second
+ * server — a stray `npm run dev` beside the global daemon, or a racing
+ * `claudescope mcp` — shares the same state dir). Everything else, including the
+ * stale-schema sentinel and an unreplayable WAL, stays rebuildable.
+ */
+export function isNonCorruptionOpenError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null | undefined)?.code;
+  if (typeof code === 'string' && OS_FAILURE.test(code)) return true;
+
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  if (LOCK_CONFLICT.test(message) || OS_FAILURE.test(message)) return true;
+  return isExtensionFailure(message);
+}
+
+/** Wrap a non-corruption open failure in an actionable error (original kept as
+ *  `cause`), naming what to do about it instead of silently rebuilding. */
+function describeOpenFailure(err: unknown): Error {
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  let hint: string;
+  if (LOCK_CONFLICT.test(message)) {
+    const holder = message.match(/Conflicting lock is held in (.+?) by user/)?.[1];
+    hint =
+      `another Claudescope (or other DuckDB) process already holds the index lock — ` +
+      `${holder ?? 'holder unknown'}. Stop it (\`claudescope stop\`) or run this one ` +
+      `against a different DUCKDB_PATH; the index was left untouched.`;
+  } else if (isExtensionFailure(message)) {
+    hint =
+      `the DuckDB \`json\`/\`fts\` extensions could not be installed. They are ` +
+      `downloaded once from DuckDB's extension repository into ${DUCKDB_EXTENSION_DIR} ` +
+      `(override: DUCKDB_EXTENSION_DIR), so this needs network access — or a copy of ` +
+      `that directory. The index was left untouched.`;
+  } else {
+    hint =
+      `the index file is not usable (check permissions and free disk space). ` +
+      `It was left untouched.`;
+  }
+  return new Error(`[duckdb] cannot open index at ${DUCKDB_PATH}: ${hint} Cause: ${message}`, {
+    cause: err,
+  });
 }
 
 /** Delete the persistent DB file and its WAL/temp siblings. Used by the
@@ -114,6 +217,12 @@ export function discardDbFiles(): void {
  * killed mid-write, a known hazard with FTS index DDL), we discard the file and
  * rebuild from scratch rather than wedging startup. The subsequent reindex
  * repopulates it.
+ *
+ * That discard applies ONLY to evidence of corruption. A failure the index isn't
+ * to blame for — another process holding the lock, an extension that couldn't be
+ * downloaded, a permission/disk error ({@link isNonCorruptionOpenError}) — is
+ * rethrown with an actionable message and leaves every file on disk alone.
+ * Rebuilding there would delete a healthy (possibly live) index.
  */
 export async function getConnection(): Promise<DuckDBConnection> {
   if (connection) return connection;
@@ -124,6 +233,7 @@ export async function getConnection(): Promise<DuckDBConnection> {
     try {
       opened = await openAndPrepare();
     } catch (err) {
+      if (isNonCorruptionOpenError(err)) throw describeOpenFailure(err);
       console.warn(
         `[duckdb] failed to open index at ${DUCKDB_PATH}; discarding and rebuilding. Cause:`,
         err instanceof Error ? err.message : err,

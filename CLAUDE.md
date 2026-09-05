@@ -63,6 +63,17 @@ npm-workspaces monorepo (`packages/*`):
   `config.ts`, never a bare `mkdirSync`. Every file writer passes
   `STATE_FILE_MODE`, and the server sets `umask 0077` at boot for the files
   DuckDB creates itself.
+- DuckDB downloads the `json`/`fts` extensions itself (~31 MB, first run and
+  after every DuckDB bump), so `openAndPrepare` points `extension_directory` at
+  `DUCKDB_EXTENSION_DIR` (`~/.claudescope/duckdb-extensions`) — never the default
+  `~/.duckdb`, which would write outside the state dir. Tests pin it to the
+  machine's shared cache via `vitest.config.ts`. Only the default dir gets the
+  owner-only mode; an override is created but never chmod'ed (a shared cache's
+  mode is not ours to change).
+- **A lock conflict or an extension-install failure must never discard the
+  index** — only evidence of corruption may (`isNonCorruptionOpenError` in
+  `db/duckdb.ts`). A second process opening the same DB is normal, and deleting
+  it there wipes the live daemon's index.
 - The normalize cache (`cache/<agent>/*.ndjson`, written by `prepare()`) holds
   transcript text **verbatim**, so it is pruned every pass once its source file is
   gone — `ndjsonCache` owns the layout and `pruneNdjsonCaches` the sweep. A

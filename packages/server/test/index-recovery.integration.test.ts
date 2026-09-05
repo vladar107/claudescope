@@ -7,6 +7,11 @@
  *  - (2b) a valid DB whose persisted schema signature no longer matches →
  *         isStaleSchema throws → discarded → rebuilt.
  *
+ * Plus the boundary of that contract: a failure the index is NOT to blame for
+ * must never reach the discard. A second process holding the DuckDB write lock
+ * (the real-world case: `npm run dev` next to the installed daemon) used to be
+ * read as corruption and deleted the live daemon's database.
+ *
  * Each scenario uses its own DUCKDB_PATH and re-imports the db/index modules
  * after vi.resetModules(), because DUCKDB_PATH / SCHEMA_SIGNATURE / the
  * connection singleton are all frozen at module import. closeConnection() fully
@@ -15,10 +20,12 @@
  */
 
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { type ChildProcess, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // --- temp locations (decided before any server module is imported) ----------
 const work = mkdtempSync(join(tmpdir(), 'claudescope-recovery-'));
@@ -77,6 +84,40 @@ async function snapshot(db: DbModules): Promise<{ ids: unknown[]; events: number
 
 /** The catch in getConnection logs this when it discards a bad DB. */
 const RECOVERY_LOG = 'discarding and rebuilding';
+
+/** Standalone script that holds the DuckDB write lock from another process —
+ *  DuckDB's lock is per-process, so an in-process open can't reproduce it. */
+const LOCK_HOLDER = fileURLToPath(new URL('./duckdb-lock-holder.mjs', import.meta.url));
+
+/** Spawn the lock holder and resolve once it reports the lock is held. */
+async function holdLock(dbPath: string): Promise<ChildProcess> {
+  const child = spawn(process.execPath, [LOCK_HOLDER, dbPath], {
+    stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('lock holder never reported ready')), 20_000);
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => {
+      if (chunk.includes('locked')) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`lock holder exited early (${code})`));
+    });
+  });
+  return child;
+}
+
+/** Release the lock and wait for the holder to actually be gone. */
+async function releaseLock(child: ChildProcess): Promise<void> {
+  const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+  child.stdin?.end();
+  child.kill();
+  await exited;
+}
 
 afterAll(() => rmSync(work, { recursive: true, force: true }));
 
@@ -141,6 +182,64 @@ describe('stale schema signature', () => {
     const rows = await db.queryRows(conn2, "SELECT value FROM meta WHERE key = 'schema_signature'");
     expect(rows[0]?.value).not.toBe('STALE-DOES-NOT-MATCH');
     expect(String(rows[0]?.value)).toMatch(/^[0-9a-f]{40}$/);
+    await db.closeConnection();
+  });
+});
+
+// Windows: DuckDB's Windows build let a second read-write open through in CI
+// (no "Could not set lock" error was raised), so the conflict this scenario
+// provokes never happens there. The classification itself is platform-neutral
+// and covered by duckdb-open.test.ts; this proves the end-to-end behaviour on
+// the POSIX builds that do enforce the single-writer lock.
+describe.skipIf(process.platform === 'win32')('index locked by another process', () => {
+  it('reports the conflict and leaves the database on disk', async () => {
+    const dbPath = join(work, 'locked.duckdb');
+
+    // Build a valid index, then fully flush + close so the holder sees a
+    // settled file (nothing left for it to replay and rewrite).
+    let db = await loadDbModules(dbPath);
+    await db.reindex();
+    const before = await snapshot(db);
+    expect(before.ids).toEqual(['sessR']);
+    const conn = await db.getConnection();
+    await conn.run('CHECKPOINT');
+    await db.closeConnection();
+    const sizeBefore = statSync(dbPath).size;
+
+    const holder = await holdLock(dbPath);
+    try {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      db = await loadDbModules(dbPath);
+      // The old behaviour: treat this as corruption, delete the daemon's index.
+      await expect(db.getConnection()).rejects.toThrow(/lock/i);
+      expect(warn).not.toHaveBeenCalledWith(
+        expect.stringContaining(RECOVERY_LOG),
+        expect.anything(),
+      );
+      warn.mockRestore();
+
+      expect(existsSync(dbPath)).toBe(true);
+      expect(statSync(dbPath).size).toBe(sizeBefore);
+    } finally {
+      await releaseLock(holder);
+    }
+
+    // `connecting` was reset in the finally, so the next call really retries —
+    // and finds the same index, never rebuilt.
+    expect(await snapshot(db)).toEqual(before);
+    await db.closeConnection();
+  });
+});
+
+describe('DuckDB extension directory', () => {
+  it('is redirected to the configured dir, not DuckDB’s default', async () => {
+    const dbPath = join(work, 'extdir.duckdb');
+    const db = await loadDbModules(dbPath);
+    const { DUCKDB_EXTENSION_DIR } = await import('../src/config.js');
+
+    const conn = await db.getConnection();
+    const rows = await db.queryRows(conn, "SELECT current_setting('extension_directory') AS dir");
+    expect(rows[0]?.dir).toBe(DUCKDB_EXTENSION_DIR);
     await db.closeConnection();
   });
 });
