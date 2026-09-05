@@ -48,11 +48,22 @@ function pricingSnapshotIsStale(): boolean {
 }
 
 async function main(): Promise<void> {
+  // DuckDB creates index.duckdb/WAL itself with no mode parameter, so the
+  // umask is what keeps those owner-only; explicit modes on our own writers
+  // below stay as belt-and-braces.
+  process.umask(0o077);
+
   // Create ~/.claudescope and seed the user-editable pricing file before any
   // module touches the index or pricing.
   initStateDir();
 
-  const app = Fastify({ logger: true });
+  const app = Fastify({
+    logger: true,
+    // Request URLs carry search queries (/api/search?q=…) and the log is
+    // long-lived; failed requests are still logged by the error handler in
+    // routes/index.ts.
+    disableRequestLogging: true,
+  });
 
   // Reject non-loopback Host headers (anti DNS-rebinding) before anything routes,
   // block cross-origin mutations (CSRF), and lock down what the served SPA may

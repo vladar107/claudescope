@@ -14,6 +14,7 @@
  */
 
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   readFileSync,
@@ -313,6 +314,7 @@ export function saveSettings(patch: Partial<Record<SettingKey, SettingValue | nu
       }
     } catch {
       copyFileSync(SETTINGS_PATH, `${SETTINGS_PATH}.bak`);
+      chmodSync(`${SETTINGS_PATH}.bak`, STATE_FILE_MODE);
       console.warn(`[settings] backed up corrupt ${SETTINGS_PATH} to settings.json.bak`);
     }
   }
