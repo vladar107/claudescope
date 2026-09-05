@@ -170,10 +170,30 @@ export async function fetchDaemonHealth(port: number): Promise<HealthResponse | 
   }
 }
 
-/** SIGTERM the recorded daemon, wait for it to actually exit, and clear
- *  daemon.json (so a follow-up spawn can rebind the port). Throws with a
- *  kill -9 hint when the process refuses to die within {@link EXIT_WAIT_MS}. */
-export async function terminateDaemon(record: DaemonRecord): Promise<void> {
+/**
+ * The single choke point for signalling a PID recorded in daemon.json: every
+ * caller (`stop`, `restart`, `update`, the wedged path, the version-skew heal)
+ * goes through here, so ownership is checked exactly once and in one place —
+ * {@link planWedgeAction} decides, and only a `replace` verdict is ever
+ * signalled. `discard` drops the recycled record without touching the process.
+ * `refuse` comes back unsignalled with the record kept, and the caller decides
+ * how to report it: `stop` fails, while the version-skew heal adopts the daemon
+ * it just saw answer /api/health — only killing needs certainty. On `replace`:
+ * SIGTERM, wait for the process to actually exit, and clear daemon.json (so a
+ * follow-up spawn can rebind the port). Throws only when a signalled process
+ * refuses to die within {@link EXIT_WAIT_MS} (with a kill -9 hint). Callers
+ * that already hold a verdict pass `() => verdict` so the `ps` probe runs once.
+ */
+export async function terminateDaemon(
+  record: DaemonRecord,
+  owns: (pid: number) => boolean | 'unknown' = daemonOwnsPid,
+): Promise<WedgeAction> {
+  const action = planWedgeAction(record, owns(record.pid));
+  if (action.kind === 'refuse') return action;
+  if (action.kind === 'discard') {
+    rmSync(DAEMON_FILE, { force: true });
+    return action;
+  }
   try {
     process.kill(record.pid, 'SIGTERM');
   } catch {
@@ -186,6 +206,7 @@ export async function terminateDaemon(record: DaemonRecord): Promise<void> {
     );
   }
   rmSync(DAEMON_FILE, { force: true });
+  return action;
 }
 
 /** What the recorded daemon (if any) currently is, so callers can decide whether
@@ -249,36 +270,39 @@ export function rotateLogIfLarge(): void {
   }
 }
 
-/** Spawn the server detached (stdio → daemon log) and record it in daemon.json.
- *  Fire-and-forget: callers wait for health themselves. */
+/** Spawn the server detached (stdio → daemon log). Fire-and-forget: callers wait
+ *  for health themselves. The spawned server writes daemon.json itself once it
+ *  holds the port (CLAUDESCOPE_DAEMON=1 → {@link writeDaemonRecord}), so a spawn
+ *  that loses a concurrent race for the port never leaves a record behind
+ *  claiming the PID that is about to die with EADDRINUSE. */
 export function spawnDaemon(port: number): void {
   ensureStateDir();
   rotateLogIfLarge();
-  const logFd = openSync(LOG_FILE, 'a');
+  const logFd = openSync(LOG_FILE, 'a', STATE_FILE_MODE);
   // Detached + stdio→log + unref: the server keeps running after this CLI exits.
   // OPEN_BROWSER=0 so the daemon never opens a browser; the CLI owns that.
   const child = spawn(process.execPath, [SERVER_ENTRY], {
     detached: true,
     stdio: ['ignore', logFd, logFd],
-    env: { ...process.env, PORT: String(port), OPEN_BROWSER: '0' },
+    env: { ...process.env, PORT: String(port), OPEN_BROWSER: '0', CLAUDESCOPE_DAEMON: '1' },
   });
   child.unref();
+}
 
-  writeFileSync(
-    DAEMON_FILE,
-    JSON.stringify(
-      {
-        pid: child.pid,
-        port,
-        url: `http://localhost:${port}`,
-        version: APP_VERSION,
-        startedAt: new Date().toISOString(),
-      },
-      null,
-      2,
-    ),
-    { mode: STATE_FILE_MODE },
-  );
+/** Write daemon.json, atomically and owner-only. Called by the server after a
+ *  successful bind, so the record always names the process that holds the port. */
+export function writeDaemonRecord(port: number, pid: number = process.pid): void {
+  ensureStateDir();
+  const record: DaemonRecord = {
+    pid,
+    port,
+    url: `http://localhost:${port}`,
+    version: APP_VERSION,
+    startedAt: new Date().toISOString(),
+  };
+  const tmp = `${DAEMON_FILE}.${process.pid}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(record, null, 2)}\n`, { mode: STATE_FILE_MODE });
+  renameSync(tmp, DAEMON_FILE);
 }
 
 /** A running daemon's address, as ensured by {@link ensureDaemon}. */
@@ -295,7 +319,10 @@ export interface DaemonProbes {
   owns: (pid: number) => boolean | 'unknown';
   healthy: (port: number) => Promise<boolean>;
   health: (port: number) => Promise<HealthResponse | null>;
-  terminate: (record: DaemonRecord) => Promise<void>;
+  terminate: (
+    record: DaemonRecord,
+    owns?: (pid: number) => boolean | 'unknown',
+  ) => Promise<WedgeAction>;
   spawn: (port: number) => void;
   waitHealthy: (port: number, timeoutMs: number) => Promise<boolean>;
 }
@@ -313,9 +340,10 @@ const realProbes: DaemonProbes = {
 /**
  * Make sure a daemon of THIS package version is running and return its address
  * — the MCP server (and the query subcommands) call this before proxying.
- * Adopts a healthy daemon; when its version differs from this CLI's, restarts
- * it into the current install (unless CLAUDESCOPE_AUTO_RESTART=0, which keeps
- * the old warn-and-adopt behavior). Clears a stale record, replaces a wedged
+ * Adopts a healthy daemon; when its version differs from this CLI's, terminates
+ * it (ownership-gated, like every other signal) and spawns the current install
+ * instead — unless CLAUDESCOPE_AUTO_RESTART=0, or ownership cannot be verified,
+ * both of which warn and adopt. Clears a stale record, replaces a wedged
  * process, and spawns a fresh server otherwise. All progress goes to `log`
  * (stderr by default); throws with a user-actionable message when a daemon
  * can't be had.
@@ -341,8 +369,17 @@ export async function ensureDaemon(
     log(
       `claudescope daemon is v${runningVersion}, this CLI is v${APP_VERSION} — restarting it…`,
     );
-    await p.terminate(existing);
-    // Fall through to the spawn below, which starts the current version.
+    const action = await p.terminate(existing);
+    if (action.kind === 'refuse') {
+      // Safe to use, not safe to kill: it just answered /api/health, and failing
+      // here would break every MCP/query call on a machine without `ps`.
+      log(`⚠ ${action.message}`);
+      log('adopting the running daemon without aligning versions');
+      return { port: existing.port, url: existing.url };
+    }
+    // A `discard` means the PID was recycled: nothing was signalled and the
+    // record is gone. Either way, fall through to the spawn below.
+    if (action.kind === 'discard') log(action.message);
   }
   if (state === 'stale') rmSync(DAEMON_FILE, { force: true });
   if (state === 'wedged' && existing) {
@@ -356,7 +393,7 @@ export async function ensureDaemon(
       rmSync(DAEMON_FILE, { force: true });
     } else {
       log(`claudescope daemon (pid ${existing.pid}) is unresponsive; replacing it…`);
-      await p.terminate(existing);
+      await p.terminate(existing, () => true);
     }
   }
 

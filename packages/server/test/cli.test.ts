@@ -10,9 +10,18 @@
  */
 
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+// Only `spawn` is faked (spawnDaemon must not launch a real server); the rest of
+// the module stays real — daemonOwnsPid's execFileSync probe is under test too.
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
+  spawn: vi.fn(),
+}));
 
 // --- temp state dir (decided before importing the module under test) ---------
 const work = mkdtempSync(join(tmpdir(), 'claudescope-cli-'));
@@ -23,6 +32,7 @@ const DAEMON_FILE = join(home, 'daemon.json');
 
 const cli = await import('../src/cli.js');
 const daemon = await import('../src/daemon.js');
+const { APP_VERSION } = await import('../src/config.js');
 
 const record = (over: Partial<import('../src/cli.js').DaemonRecord> = {}) => ({
   pid: 4242,
@@ -32,6 +42,10 @@ const record = (over: Partial<import('../src/cli.js').DaemonRecord> = {}) => ({
   startedAt: '2026-06-15T00:00:00.000Z',
   ...over,
 });
+
+/** A terminate probe that reports the daemon was ours and is gone. */
+const terminateProbe = () =>
+  vi.fn(async (): Promise<import('../src/daemon.js').WedgeAction> => ({ kind: 'replace' }));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -193,7 +207,7 @@ describe('ensureDaemon version healing', () => {
     alive: () => true,
     owns: () => true as boolean | 'unknown',
     healthy: async () => true,
-    terminate: vi.fn(async () => {}),
+    terminate: terminateProbe(),
     spawn: vi.fn(),
     waitHealthy: async () => true,
     ...over,
@@ -255,6 +269,22 @@ describe('ensureDaemon version healing', () => {
     expect(logs.join('\n')).toContain('claudescope restart');
   });
 
+  it('adopts a skewed daemon when its PID cannot be verified, rather than failing', async () => {
+    // Only killing needs certainty: the daemon just answered /api/health, and a
+    // machine without `ps` must not lose every MCP/query call over a version gap.
+    writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    const logs: string[] = [];
+    const p = probes({
+      health: async () => ({ status: 'ok' as const, version: '9.9.9' }),
+      terminate: vi.fn(async () => ({ kind: 'refuse' as const, message: 'could not verify pid 4242' })),
+    });
+    const d = await daemon.ensureDaemon((m) => logs.push(m), p);
+    expect(d).toMatchObject({ port: 4317, url: 'http://localhost:4317' });
+    expect(p.spawn).not.toHaveBeenCalled();
+    expect(existsSync(DAEMON_FILE)).toBe(true);
+    expect(logs.join('\n')).toContain('could not verify pid 4242');
+  });
+
   it('a health probe failure (null) is treated as no-skew and adopts', async () => {
     // The daemon was healthy a moment ago; a race on the second fetch must not
     // trigger a restart of a perfectly good process.
@@ -300,13 +330,86 @@ describe('wedged-daemon ownership (never SIGTERM a PID we do not own)', () => {
   });
 });
 
+describe('terminateDaemon ownership gate', () => {
+  // Every SIGTERM of a recorded PID funnels through terminateDaemon, so the gate
+  // has to live INSIDE it: `stop`/`restart`/`update` never see the verdict
+  // themselves, and a PID recycled after a crash belongs to the user's own
+  // unrelated process.
+  const killSpy = () =>
+    vi.spyOn(process, 'kill').mockImplementation((_pid: number, signal?: string | number) => {
+      if (signal === 0) throw new Error('ESRCH'); // waitForExit: already exited
+      return true;
+    });
+  const sigterms = (kill: ReturnType<typeof killSpy>) =>
+    kill.mock.calls.filter(([, signal]) => signal === 'SIGTERM');
+
+  it('discards a recycled record without signalling the process', async () => {
+    writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    const kill = killSpy();
+    const action = await daemon.terminateDaemon(record(), () => false);
+    expect(action.kind).toBe('discard');
+    expect(existsSync(DAEMON_FILE)).toBe(false);
+    expect(sigterms(kill)).toEqual([]);
+  });
+
+  it('refuses, and keeps the record, when ownership cannot be determined', async () => {
+    writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    const kill = killSpy();
+    const action = await daemon.terminateDaemon(record(), () => 'unknown');
+    expect(action.kind).toBe('refuse');
+    expect(action.kind !== 'replace' && action.message).toMatch(/kill 4242/);
+    // The record survives: we could not prove it stale, so dropping it would
+    // orphan a daemon that may well still be serving.
+    expect(existsSync(DAEMON_FILE)).toBe(true);
+    expect(sigterms(kill)).toEqual([]);
+  });
+
+  it('SIGTERMs once and clears the record when the PID is ours', async () => {
+    writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    const kill = killSpy();
+    const action = await daemon.terminateDaemon(record(), () => true);
+    expect(action.kind).toBe('replace');
+    expect(sigterms(kill)).toEqual([[4242, 'SIGTERM']]);
+    expect(existsSync(DAEMON_FILE)).toBe(false);
+  });
+});
+
+describe('daemon.json is written by the process that holds the port', () => {
+  it('records the given pid, port and this version', () => {
+    daemon.writeDaemonRecord(4317, 999);
+    expect(cli.readDaemon()).toMatchObject({
+      pid: 999,
+      port: 4317,
+      url: 'http://localhost:4317',
+      version: APP_VERSION,
+    });
+  });
+
+  it.skipIf(process.platform === 'win32')('writes it owner-only', () => {
+    daemon.writeDaemonRecord(4317, 999);
+    expect(statSync(DAEMON_FILE).mode & 0o777).toBe(0o600);
+  });
+
+  it('spawnDaemon writes no record — a spawn that loses the port race must not', () => {
+    // Two CLIs racing (Claude Code and Codex both starting `claudescope mcp`)
+    // both spawn; the loser dies with EADDRINUSE, and its record used to
+    // overwrite the winner's — leaving `stop` reporting "not running".
+    vi.mocked(spawn).mockReturnValue({ pid: 12345, unref: () => {} } as unknown as ChildProcess);
+    daemon.spawnDaemon(4317);
+    expect(existsSync(DAEMON_FILE)).toBe(false);
+    expect(vi.mocked(spawn).mock.calls[0]?.[2]).toMatchObject({
+      env: expect.objectContaining({ CLAUDESCOPE_DAEMON: '1' }),
+    });
+  });
+});
+
 describe('ensureDaemon on a wedged record', () => {
   const base = (over: Partial<import('../src/daemon.js').DaemonProbes> = {}) => ({
     alive: () => true,
     owns: () => true as boolean | 'unknown',
     healthy: async () => false, // wedged: alive but not answering
     health: async () => null,
-    terminate: vi.fn(async () => {}),
+    terminate: terminateProbe(),
     spawn: vi.fn(),
     waitHealthy: async () => true,
     ...over,
