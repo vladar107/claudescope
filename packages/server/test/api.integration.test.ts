@@ -63,6 +63,9 @@ function writeFixtures(): string[] {
       // deterministic arg_max/max(prUrl) must still resolve to #7 — verified by the
       // prUrl assertion in the project listing test below.
       { type: 'pr-link', sessionId: 'sessA', prNumber: 3, prRepository: 'me/repo', prUrl: 'https://example/pr/3' },
+      // A non-http(s) URL that lexicographically outranks both ('j' > 'h'), so
+      // max(prUrl) would pick it over #7 unless the scheme filter excludes it.
+      { type: 'pr-link', sessionId: 'sessA', prNumber: 9, prRepository: 'me/repo', prUrl: 'javascript:alert(1)' },
     ]),
   );
 

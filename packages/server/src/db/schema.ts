@@ -45,7 +45,8 @@
 // v20: context & compactions — `compactions` aux table (one row per context
 //      compaction, per file) + sessions.context_tokens / context_model /
 //      compaction_count derived at rebuild.
-export const SCHEMA_VERSION = 20;
+// v21: pr_links admits only http(s) URLs (pr_url is rendered as a link).
+export const SCHEMA_VERSION = 21;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
