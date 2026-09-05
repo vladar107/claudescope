@@ -79,6 +79,59 @@ const row = (session: string, uuid: string, cwd = '/tmp/projD'): string =>
     },
   }) + '\n';
 
+/** Unique term for the FTS assertion below — must not collide with any other
+ *  fixture's prose in this file. */
+const UNIQUE_WORD = 'zzyzxquokka';
+
+/**
+ * A user turn (carrying {@link UNIQUE_WORD}) followed by an Edit tool call and
+ * its result — exercises `sessions`, `file_edits`, and FTS in one fixture, all
+ * of which only get (re)built by `doReindex`'s finalize step.
+ */
+const editSessionLines = (session: string, cwd = '/tmp/projE'): string => {
+  const base = { sessionId: session, cwd, isSidechain: false };
+  const lines = [
+    {
+      ...base,
+      type: 'user',
+      uuid: 'eu1',
+      parentUuid: null,
+      timestamp: '2026-01-01T11:00:00.000Z',
+      message: { role: 'user', content: `please handle ${UNIQUE_WORD} now` },
+    },
+    {
+      ...base,
+      type: 'assistant',
+      uuid: 'ea1',
+      parentUuid: 'eu1',
+      timestamp: '2026-01-01T11:00:01.000Z',
+      message: {
+        role: 'assistant',
+        id: 'msg-ea1',
+        model: 'some-unlisted-model',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'toolu_e1',
+            name: 'Edit',
+            input: { file_path: `${cwd}/src/app.ts`, old_string: 'one', new_string: 'ONE' },
+          },
+        ],
+        usage: { input_tokens: 100, output_tokens: 10 },
+      },
+    },
+    {
+      ...base,
+      type: 'user',
+      uuid: 'eu2',
+      parentUuid: 'ea1',
+      timestamp: '2026-01-01T11:00:02.000Z',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_e1', content: 'ok' }] },
+    },
+  ];
+  return lines.map((l) => JSON.stringify(l)).join('\n') + '\n';
+};
+
 /** `default.input` is injectable so a test can make it unusable. */
 const pricingWith = (defaultInput: unknown): string =>
   JSON.stringify(
@@ -94,13 +147,27 @@ const pricingWith = (defaultInput: unknown): string =>
   );
 
 let reindex: () => Promise<ReindexResponse>;
+let failNextFinalizeForTests: () => void;
 let conn: DuckDBConnection;
 let queryRows: typeof import('../src/db/duckdb.js').queryRows;
+let sqlString: typeof import('../src/db/duckdb.js').sqlString;
 let closeConnection: () => Promise<void>;
 
 const countEvents = async (file?: string): Promise<number> => {
   const where = file ? ` WHERE file_path = '${file}'` : '';
   return Number((await queryRows(conn, `SELECT count(*) AS n FROM events${where}`))[0]?.n ?? 0);
+};
+
+/** Whether the BM25 index over `events.text_content` finds `term` in `sessionId`. */
+const ftsFinds = async (term: string, sessionId: string): Promise<boolean> => {
+  const rows = await queryRows(
+    conn,
+    `SELECT session_id FROM (
+       SELECT session_id, fts_main_events.match_bm25(uuid, ${sqlString(term)}) AS score
+       FROM events WHERE text_content IS NOT NULL
+     ) WHERE score IS NOT NULL AND session_id = ${sqlString(sessionId)}`,
+  );
+  return rows.length > 0;
 };
 
 beforeAll(async () => {
@@ -109,9 +176,9 @@ beforeAll(async () => {
   writeFileSync(pricingPath, pricingWith(3));
   writeFileSync(keepFile, row('sessKeep', 'k1') + row('sessKeep', 'k2') + row('sessKeep', 'k3'));
 
-  ({ reindex } = await import('../src/data/index.js'));
+  ({ reindex, failNextFinalizeForTests } = await import('../src/data/index.js'));
   const duck = await import('../src/db/duckdb.js');
-  ({ queryRows, closeConnection } = duck);
+  ({ queryRows, sqlString, closeConnection } = duck);
   conn = await duck.getConnection();
 });
 
@@ -219,6 +286,36 @@ describe('a projection failure validation cannot foresee', () => {
       await reindex();
     },
   );
+});
+
+describe('a finalize failure after `files` bookkeeping already advanced', () => {
+  it('is repaired by the next pass even with no further file changes', async () => {
+    const editFile = join(projDir, 'sessEdit.jsonl');
+    writeFileSync(editFile, editSessionLines('sessEdit'));
+
+    failNextFinalizeForTests();
+    await expect(reindex()).rejects.toThrow('injected finalize failure');
+
+    // `files`/`events` already reflect the new file (staged before finalize
+    // ran), but the derived tables the finalize step owns do not yet.
+    expect(await countEvents(editFile)).toBe(3);
+    const beforeSessions = await queryRows(conn, "SELECT count(*) AS n FROM sessions WHERE id = 'sessEdit'");
+    expect(Number(beforeSessions[0]?.n ?? 0)).toBe(0);
+
+    // No further file changes on disk — this must NOT read as an idle pass.
+    const recovered = await reindex();
+    expect(recovered.reindexed).toBe(0);
+    expect(recovered.failed).toBe(0);
+
+    const sessions = await queryRows(conn, "SELECT count(*) AS n FROM sessions WHERE id = 'sessEdit'");
+    expect(Number(sessions[0]?.n ?? 0)).toBe(1);
+    const edits = await queryRows(
+      conn,
+      "SELECT count(*) AS n FROM file_edits WHERE session_id = 'sessEdit' AND edit_canonical",
+    );
+    expect(Number(edits[0]?.n ?? 0)).toBe(1);
+    expect(await ftsFinds(UNIQUE_WORD, 'sessEdit')).toBe(true);
+  });
 });
 
 describe('modal project cwd', () => {
