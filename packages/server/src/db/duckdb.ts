@@ -195,3 +195,23 @@ export function sqlString(value: string): string {
 export function sqlLikeEscape(value: string): string {
   return value.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
+
+/**
+ * Escape a filesystem path for safe use as the pattern argument of
+ * `read_ndjson`/`read_json` (and friends), which treat that string as a GLOB,
+ * not a literal path: `*`, `?`, and `[` are metacharacters. A path containing
+ * one — e.g. a Claude Code project dir encoded from a cwd with `[1]` in it —
+ * silently reads whichever OTHER file matches the resulting glob instead of
+ * itself (`read_ndjson('/x/x[1].jsonl')` returns the contents of `/x/x1.jsonl`).
+ * Wrapping each metacharacter in its own single-char bracket class makes it
+ * literal (`x[1].jsonl` → `x[[]1].jsonl`); `]` needs no escaping here since it
+ * only acts as a metacharacter when paired with an opening `[`, which this
+ * function already neutralizes.
+ *
+ * Only for the glob argument itself — anywhere the path is COMPARED (e.g. the
+ * `file_path` column, or a `DELETE … WHERE file_path = …`) must keep using the
+ * raw path via {@link sqlString}, or file identity breaks.
+ */
+export function sqlPath(path: string): string {
+  return sqlString(path.replace(/[*?[]/g, (c) => `[${c}]`));
+}

@@ -14,7 +14,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { RawEvent } from '@claudescope/shared';
 import { claudeProjectsDir } from '../../settings.js';
-import { sqlString } from '../../db/duckdb.js';
+import { sqlPath, sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
 import { MAX_TOOL_ERROR_TEXT } from '../tool-errors.js';
@@ -191,7 +191,8 @@ function discover(): DiscoveredFile[] {
 /** Project a Claude transcript file into the canonical `events` columns. */
 function eventsProjectionSql(filePath: string): string {
   const path = sqlString(filePath);
-  const readFn = `read_ndjson(${path}, ${READ_OPTS}, columns={
+  const readPath = sqlPath(filePath);
+  const readFn = `read_ndjson(${readPath}, ${READ_OPTS}, columns={
     type:'VARCHAR', uuid:'VARCHAR', parentUuid:'VARCHAR', sessionId:'VARCHAR',
     timestamp:'VARCHAR', cwd:'VARCHAR', gitBranch:'VARCHAR', isSidechain:'BOOLEAN',
     message:'JSON', forkedFrom:'JSON'
@@ -232,13 +233,14 @@ function eventsProjectionSql(filePath: string): string {
 /** ai-title and pr-link projections (session-keyed) plus compactions (file-keyed). */
 function auxProjections(filePath: string): AuxProjections {
   const path = sqlString(filePath);
-  const readFn = `read_ndjson(${path}, ${READ_OPTS}, columns={
+  const readPath = sqlPath(filePath);
+  const readFn = `read_ndjson(${readPath}, ${READ_OPTS}, columns={
     type:'VARCHAR', sessionId:'VARCHAR', aiTitle:'VARCHAR',
     prNumber:'BIGINT', prRepository:'VARCHAR', prUrl:'VARCHAR'
   })`;
   // Compaction markers live on records the events projection filters out
   // (`system`) or on a flagged user turn, so they need their own column map.
-  const compactionReadFn = `read_ndjson(${path}, ${READ_OPTS}, columns={
+  const compactionReadFn = `read_ndjson(${readPath}, ${READ_OPTS}, columns={
     type:'VARCHAR', subtype:'VARCHAR', isCompactSummary:'BOOLEAN', uuid:'VARCHAR',
     sessionId:'VARCHAR', timestamp:'VARCHAR', isSidechain:'BOOLEAN',
     compactMetadata:'JSON'
@@ -255,6 +257,7 @@ function auxProjections(filePath: string): AuxProjections {
     // across reindexes and stitch fields from different rows. Keying all three on
     // the same max(prUrl) row (prUrl is always present per the WHERE) is a stable
     // total order, so the fields always come from one record and never drop a link.
+    // The web UI renders pr_url verbatim as an `<a href>`, so only http(s) is admitted.
     prLinks: `
       SELECT sessionId,
              arg_max(prNumber, prUrl) AS pr_number,
@@ -262,6 +265,7 @@ function auxProjections(filePath: string): AuxProjections {
              max(prUrl) AS pr_url
       FROM ${readFn}
       WHERE type = 'pr-link' AND sessionId IS NOT NULL AND prUrl IS NOT NULL
+        AND regexp_matches(prUrl, '^https?://')
       GROUP BY sessionId`,
     // One row per compaction. Current Claude Code writes a `compact_boundary`
     // system record; the 2025 format instead flagged the summary user turn with
