@@ -50,15 +50,20 @@ None of these are misused; they're listed here so you can verify that.
   `pricing.json`, the daemon PID/port file, and logs.
 - **Creates that state dir owner-only** (`0700`, files `0600`) — the index, and
   the normalized per-session copies under `cache/`, hold transcript text verbatim.
-  Those copies are removed automatically once the source session is gone.
-  A directory an older version created with the default umask is tightened at
-  startup; files already written keep their mode, so run
-  `chmod -R go-rwx ~/.claudescope` to tighten those.
+  Those copies are removed automatically once the source session is gone. The
+  daemon also sets `umask 0077` on startup, so files DuckDB creates itself (the
+  index and its WAL, written with no explicit mode) come out owner-only too.
+  A directory or file an older version created with the default umask keeps its
+  old mode, so run `chmod -R go-rwx ~/.claudescope` to tighten those.
 
 ### Network
 
 - **Binds to `127.0.0.1` only** (`packages/server/src/index.ts`) — the server is
   never exposed to your LAN or the internet.
+- **No authentication** — the API trusts any request that reaches it, so any
+  process running under any account on the machine can query it. Claudescope
+  assumes a single-user machine; on a shared multi-account host, other local
+  users could read your transcripts through it.
 - **Rejects non-loopback `Host` headers** (`packages/server/src/security.ts`) —
   a request whose `Host` isn't `localhost`/`127.0.0.1`/`[::1]` gets a `403`. This
   blocks DNS-rebinding attacks, where a malicious site you visit rebinds its own

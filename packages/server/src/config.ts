@@ -191,7 +191,10 @@ export function reconcilePricingConfig(
 ): void {
   // First run: no user copy yet → seed from the default (which carries the version).
   if (!existsSync(userPath)) {
-    if (existsSync(defaultPath)) copyFileSync(defaultPath, userPath);
+    if (existsSync(defaultPath)) {
+      copyFileSync(defaultPath, userPath);
+      chmodSync(userPath, STATE_FILE_MODE);
+    }
     return;
   }
   if (!existsSync(defaultPath)) return; // nothing to reconcile against (dev without a build)
@@ -218,6 +221,7 @@ export function reconcilePricingConfig(
   // Back up the current file (single rollback copy), then merge: new shipped keys
   // are added, but every value the user set wins (user edits are preserved).
   copyFileSync(userPath, `${userPath}.bak`);
+  chmodSync(`${userPath}.bak`, STATE_FILE_MODE);
   const merged: PricingConfig = {
     schemaVersion: shippedV,
     models: { ...shipped.models, ...user.models },
@@ -228,7 +232,7 @@ export function reconcilePricingConfig(
   // Atomic write: stage to a temp file then rename, so a reader never sees a torn
   // file (same idiom as the pricing-refresh snapshot writer).
   const tmp = `${userPath}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(merged, null, 2)}\n`);
+  writeFileSync(tmp, `${JSON.stringify(merged, null, 2)}\n`, { mode: STATE_FILE_MODE });
   renameSync(tmp, userPath);
   console.warn(
     `[pricing] migrated ${userPath} schema v${userV} → v${shippedV}; ` +

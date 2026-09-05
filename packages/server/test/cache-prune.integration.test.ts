@@ -15,7 +15,16 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -102,6 +111,12 @@ describe('a deleted session leaves no plaintext copy behind', () => {
     expect(cacheFiles()).toHaveLength(2);
     // The whole reason this matters: the cache holds the transcript verbatim.
     expect(secretOnDisk()).toBe(true);
+  });
+
+  it.skipIf(process.platform === 'win32')('writes cache files owner-only (0600)', () => {
+    for (const f of cacheFiles()) {
+      expect(statSync(join(codexCache, f)).mode & 0o777).toBe(0o600);
+    }
   });
 
   it('prunes the cache entry when its source file is deleted', async () => {

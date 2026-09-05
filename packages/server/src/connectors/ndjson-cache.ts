@@ -11,7 +11,7 @@
 import { createHash } from 'node:crypto';
 import { readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CLAUDESCOPE_HOME, ensureStateDir } from '../config.js';
+import { CLAUDESCOPE_HOME, STATE_FILE_MODE, ensureStateDir } from '../config.js';
 import type { CanonicalRow } from './canonical.js';
 
 /** Root of the normalize cache. Everything under it is derived and rebuildable. */
@@ -87,9 +87,14 @@ export function ndjsonCache(agentId: string): NdjsonCache {
     path,
     write(sourcePath: string, rows: CanonicalRow[]): void {
       // Owner-only, like the rest of the state dir: these files hold transcript
-      // text verbatim (see the state-dir rules in CLAUDE.md).
+      // text verbatim (see the state-dir rules in CLAUDE.md). ensureStateDir only
+      // tightens the directory it is given, and a cache/ root created by an older
+      // version with the default umask is 0755 — so the root gets its own pass.
+      ensureStateDir(CACHE_ROOT);
       ensureStateDir(dir);
-      writeFileSync(path(sourcePath), rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+      writeFileSync(path(sourcePath), rows.map((r) => JSON.stringify(r)).join('\n') + '\n', {
+        mode: STATE_FILE_MODE,
+      });
     },
   };
 }
