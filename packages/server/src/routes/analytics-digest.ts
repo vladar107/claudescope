@@ -31,6 +31,7 @@ import {
 } from '../data/analytics-scope.js';
 import { readRow } from '../db/row.js';
 import { projectIdFromCwd } from '../data/project-id.js';
+import { toolCallRowsSql } from '../data/analytics-metrics.js';
 import { errorSignalsByAgent } from './analytics-errors.js';
 import { computeStreaks } from './analytics-activity.js';
 import { timestampParam } from '../params.js';
@@ -140,7 +141,7 @@ export async function registerDigestRoute(app: FastifyInstance): Promise<void> {
        FROM (
          SELECT unnest(string_split(e.tool_names, ',')) AS tool
          FROM events e JOIN scoped s ON e.session_id = s.id
-         WHERE e.type = 'assistant' AND e.usage_canonical AND e.tool_names <> ''
+         WHERE e.type = 'assistant' AND ${toolCallRowsSql()} AND e.tool_names <> ''
        ) t
        WHERE tool <> ''
        GROUP BY tool ORDER BY count DESC, tool LIMIT ${TOP_LIMIT}`,

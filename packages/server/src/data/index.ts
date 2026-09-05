@@ -391,7 +391,10 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
         min(ts) AS started_at,
         max(ts) AS ended_at,
         count(*) AS message_count,
-        sum(tool_use_count) AS tool_call_count,
+        -- Per-row count: fork copies excluded, the usage election NOT applied
+        -- (it would drop the tool_use rows of every split message). See THE RULE
+        -- in data/analytics-metrics.ts.
+        COALESCE(sum(tool_use_count) FILTER (WHERE forked_from_session_id IS NULL), 0) AS tool_call_count,
         -- Usage/cost SUMs filter on usage_canonical so a single billed API call
         -- (written as many content-block rows, or copied by a fork) is counted
         -- once; COALESCE guards a session whose every usage row is non-canonical.
