@@ -65,6 +65,8 @@ export function StatusProvider({ children }: { children: ReactNode }) {
     let timer: number | undefined;
 
     const tick = async () => {
+      // Hidden tab: go idle without fetching — visibilitychange re-kicks below.
+      if (document.hidden) return;
       try {
         const h = await api.health();
         if (cancelled) return;
@@ -85,11 +87,22 @@ export function StatusProvider({ children }: { children: ReactNode }) {
         timer = window.setTimeout(() => void tick(), UNREACHABLE_POLL_MS);
       }
     };
+
+    // Returning to the tab probes once, catching up on anything missed while
+    // hidden and reviving the poll loop.
+    const onVisibility = () => {
+      if (!document.hidden) {
+        window.clearTimeout(timer);
+        void tick();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     void tick();
 
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
 

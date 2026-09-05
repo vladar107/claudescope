@@ -238,10 +238,10 @@ export function SearchPage() {
     }
 
     const controller = new AbortController();
-    setLoading(true);
     setError(null);
 
     debounceRef.current = setTimeout(() => {
+      setLoading(true);
       api
         .search(
           { q: trimmed, project: project || undefined, type, scope, literal: exact },
@@ -376,10 +376,12 @@ export function SearchPage() {
 
       {error ? (
         <ErrorBox error={error} title="Search failed" onRetry={() => patchParams({ q: query })} />
-      ) : loading ? (
-        <Spinner label="Searching…" />
       ) : !hasQuery ? (
         <p className="tv-search__empty">Type a query above to search across all transcripts.</p>
+      ) : loading && totalCount === 0 ? (
+        // Nothing to show yet (first search, or the last one came back empty):
+        // the full spinner is the only useful thing on screen.
+        <Spinner label="Searching…" />
       ) : searched && totalCount === 0 ? (
         <p className="tv-search__empty">
           No {exact ? 'exact ' : ''}matches for <strong>{query}</strong>
@@ -387,6 +389,9 @@ export function SearchPage() {
         </p>
       ) : (
         <>
+          {/* A new query is in flight: keep the previous results on screen and
+              surface progress as a small indicator instead of blanking them. */}
+          {loading ? <Spinner label="Searching…" /> : null}
           <div className="tv-search__meta">
             {showSessions && sessions.length > 0 ? (
               <>
