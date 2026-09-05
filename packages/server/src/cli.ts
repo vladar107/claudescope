@@ -32,7 +32,6 @@ import {
 import { claudeProjectsDir, openBrowserOnStart } from './settings.js';
 import {
   DAEMON_FILE,
-  EXIT_WAIT_MS,
   LOG_FILE,
   classifyExisting,
   daemonOwnsPid,
@@ -43,8 +42,8 @@ import {
   readDaemon,
   spawnDaemon,
   terminateDaemon,
-  waitForExit,
   waitForHealth,
+  type DaemonRecord,
 } from './daemon.js';
 import { runMcpServer } from './agent/mcp.js';
 import { sessionStartHookMain } from './agent/hook.js';
@@ -96,13 +95,20 @@ async function start(port: number, open: boolean): Promise<void> {
             '(auto-restart disabled — run `claudescope restart` to align them)',
         );
       }
-      console.log(`✓ claudescope is already running → ${existing.url}`);
-      if (open) openBrowser(existing.url);
+      announceRunning(existing, open);
       return;
     }
     console.log(`› Running daemon is v${runningVersion}, this CLI is v${APP_VERSION} — restarting it…`);
     try {
-      await terminateDaemon(existing);
+      const action = await terminateDaemon(existing);
+      if (action.kind === 'refuse') {
+        // Safe to use, not safe to kill (see terminateDaemon): adopt it.
+        console.log(`⚠ ${action.message}`);
+        announceRunning(existing, open);
+        return;
+      }
+      // Nothing was signalled: the PID had been recycled. Spawn regardless.
+      if (action.kind === 'discard') console.log(`› ${action.message}`);
     } catch (err) {
       console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
       process.exitCode = 1;
@@ -130,7 +136,7 @@ async function start(port: number, open: boolean): Promise<void> {
     } else {
       console.log(`claudescope (pid ${existing.pid}) is unresponsive; restarting it…`);
       try {
-        await terminateDaemon(existing);
+        await terminateDaemon(existing, () => true);
       } catch (err) {
         console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
         process.exitCode = 1;
@@ -161,23 +167,45 @@ async function start(port: number, open: boolean): Promise<void> {
   await maybeNotifyUpdate(false);
 }
 
-/** Stop the background server. Waits for the process to actually exit before
- *  clearing the record so a following `restart`/`update` can rebind the port. */
-async function stop(): Promise<void> {
+/** Stop the background server. Signalling goes through {@link terminateDaemon},
+ *  which verifies the recorded PID is ours and waits for it to actually exit
+ *  before clearing the record. Returns whether the daemon is gone, so a
+ *  following `restart`/`update` only spawns once the port is free. */
+async function stop(): Promise<boolean> {
   const d = readDaemon();
   if (!d || !isAlive(d.pid)) {
     console.log('claudescope is not running.');
     rmSync(DAEMON_FILE, { force: true });
-    return;
+    return true;
   }
   try {
-    process.kill(d.pid, 'SIGTERM');
-  } catch {
-    /* already gone */
+    const action = await terminateDaemon(d);
+    if (action.kind === 'refuse') {
+      console.error(`✗ ${action.message}`);
+      process.exitCode = 1;
+      return false;
+    }
+    if (action.kind === 'discard') console.log(`› ${action.message}`);
+    else console.log(`✓ Stopped claudescope (pid ${d.pid}).`);
+    return true;
+  } catch (err) {
+    console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+    return false;
   }
-  await waitForExit(d.pid, EXIT_WAIT_MS);
-  rmSync(DAEMON_FILE, { force: true });
-  console.log(`✓ Stopped claudescope (pid ${d.pid}).`);
+}
+
+/** Report an adopted daemon and open it. daemon.json is local state but not a
+ *  trusted navigation target, so the URL is rebuilt from the recorded port
+ *  (same rule as `open`). */
+function announceRunning(existing: DaemonRecord, open: boolean): void {
+  const runningUrl = loopbackUrl(existing.port);
+  console.log(`✓ claudescope is already running${runningUrl ? ` → ${runningUrl}` : ''}`);
+  if (!runningUrl) {
+    console.log('⚠ daemon.json records an invalid port — run `claudescope restart`.');
+  } else if (open) {
+    openBrowser(runningUrl);
+  }
 }
 
 /** Report whether the server is running and whether an update is available. */
@@ -205,16 +233,22 @@ async function openApp(session: string | undefined, around: string | undefined):
   }
 
   const d = await ensureDaemon();
-  if (!Number.isInteger(d.port) || d.port < 1 || d.port > 65535) {
+  const baseUrl = loopbackUrl(d.port);
+  if (!baseUrl) {
     throw new UsageError('claudescope daemon returned an invalid port; run `claudescope restart`');
   }
-  // daemon.json is local state but not a trusted navigation target. Rebuild the
-  // URL from the ensured, validated port so `open` can only reach loopback.
-  const baseUrl = `http://127.0.0.1:${d.port}`;
   const url = session
     ? `${baseUrl}/sessions/${encodeURIComponent(session)}${around ? `#${encodeURIComponent(around)}` : ''}`
     : baseUrl;
   openBrowser(url);
+}
+
+/** Loopback URL for a recorded port, or null when the port is unusable. A port
+ *  read back from daemon.json is local state but not a trusted navigation
+ *  target, so every URL handed to the browser is rebuilt from a validated one. */
+function loopbackUrl(port: number): string | null {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return `http://127.0.0.1:${port}`;
 }
 
 /** Last `n` lines of the daemon log, or '' when there is nothing to show.
@@ -302,7 +336,7 @@ async function update(skipConfirm: boolean): Promise<void> {
   }
   // Stop the old daemon, then start via PATH so the freshly-installed binary
   // (new code) supervises the new server, not this now-stale process.
-  await stop();
+  if (!(await stop())) return; // stop() already reported why and set the exit code
   console.log('✓ Updated. Restarting…');
   spawnSync('claudescope', ['start'], {
     stdio: 'inherit',
@@ -502,8 +536,7 @@ async function main(): Promise<void> {
       await stop();
       break;
     case 'restart':
-      await stop();
-      await start(port, open);
+      if (await stop()) await start(port, open);
       break;
     case 'status':
       await status();

@@ -18,6 +18,7 @@ import {
   initStateDir,
 } from './config.js';
 import { claudeProjectsDir } from './settings.js';
+import { writeDaemonRecord } from './daemon.js';
 import { registerRoutes } from './routes/index.js';
 import { registerHostGuard, registerMutationGuard, registerSecurityHeaders } from './security.js';
 import { startIndexer, stopIndexerTimer } from './indexer-lifecycle.js';
@@ -152,6 +153,9 @@ async function main(): Promise<void> {
     );
   }
   await app.listen({ port: PORT, host: '127.0.0.1' });
+  // Only a CLI-spawned daemon owns daemon.json; a foreground `npm start` or a
+  // dev run must not register itself as the daemon the CLI signals.
+  if (process.env.CLAUDESCOPE_DAEMON === '1') writeDaemonRecord(PORT);
 
   const url = `http://localhost:${PORT}`;
   // A human-friendly banner so the app reads like a real local tool, not a
