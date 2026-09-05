@@ -256,6 +256,39 @@ function usageTokens(usage?: MessageUsage): number {
   );
 }
 
+/**
+ * Sum usage across a subagent's raw events, one addend per billed API call.
+ *
+ * Claude Code writes one row per content block of an assistant message, and
+ * every row of that message shares the same `message.id` and repeats the
+ * FULL `usage` object — summing per-row (as the assembled thread does per
+ * {@link ThreadItem}) multiplies a single API call's usage by its block
+ * count. Mirrors the SQL election in `electCanonicalUsage` (index.ts): within
+ * a `message.id` group, the row with the largest `output_tokens` wins, since
+ * only output grows across a streamed group (ties keep the first seen).
+ * Events without a `message.id` count individually.
+ */
+function subagentUsageTokens(events: RawEvent[]): number {
+  const byMessageId = new Map<string, MessageUsage>();
+  let total = 0;
+  for (const e of events) {
+    // Like messageContent(), tolerate a row with no `message` at all.
+    if (e.type !== 'assistant' || !e.message?.usage) continue;
+    const usage = e.message.usage;
+    const id = e.message.id;
+    if (id === undefined) {
+      total += usageTokens(usage);
+      continue;
+    }
+    const current = byMessageId.get(id);
+    if (!current || (usage.output_tokens ?? 0) > (current.output_tokens ?? 0)) {
+      byMessageId.set(id, usage);
+    }
+  }
+  for (const usage of byMessageId.values()) total += usageTokens(usage);
+  return total;
+}
+
 interface SpawnPoint {
   toolUseId: string;
   spawnUuid: string;
@@ -377,7 +410,7 @@ export function buildSubagentRuns(
       (n, t) => n + t.blocks.filter((b) => b.kind === 'tool').length,
       0,
     );
-    const totalTokens = thread.reduce((n, t) => n + usageTokens(t.usage), 0);
+    const totalTokens = subagentUsageTokens(src.events);
     return { src, thread, toolCallCount, totalTokens };
   });
   const runIds = new Set(sources.map((s) => s.agentId));

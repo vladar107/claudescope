@@ -29,7 +29,7 @@ function user(uuid: string, content: unknown, isSidechain = false): RawEvent {
 function assistant(
   uuid: string,
   content: unknown,
-  opts: { usage?: Record<string, number>; model?: string; isSidechain?: boolean } = {},
+  opts: { usage?: Record<string, number>; model?: string; isSidechain?: boolean; id?: string } = {},
 ): RawEvent {
   return {
     type: 'assistant',
@@ -44,6 +44,7 @@ function assistant(
       content,
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.usage ? { usage: opts.usage } : {}),
+      ...(opts.id ? { id: opts.id } : {}),
     },
   } as unknown as RawEvent;
 }
@@ -461,6 +462,44 @@ describe('buildSubagentRuns', () => {
     expect(run?.toolCallCount).toBe(1);
     expect(run?.totalTokens).toBe(17); // 10 + 5 + 2
     expect(run?.messageCount).toBe(2);
+  });
+
+  it('elects the max-output row per message id instead of summing every block row', () => {
+    // Claude Code writes one row per content block of an assistant message,
+    // all sharing `message.id` and repeating the FULL usage object.
+    const blockUsage = (output: number) => ({
+      input_tokens: 100,
+      output_tokens: output,
+      cache_read_input_tokens: 10,
+      cache_creation_input_tokens: 5,
+    });
+    const events: RawEvent[] = [
+      user('su', 'do it', true),
+      assistant('sa1', [{ type: 'text', text: 'thinking' }], {
+        usage: blockUsage(5),
+        id: 'msg1',
+        isSidechain: true,
+      }),
+      assistant('sa2', [{ type: 'tool_use', id: 't1', name: 'Bash', input: {} }], {
+        usage: blockUsage(20),
+        id: 'msg1',
+        isSidechain: true,
+      }),
+      assistant('sa3', [{ type: 'tool_use', id: 't2', name: 'Bash', input: {} }], {
+        usage: blockUsage(30),
+        id: 'msg1',
+        isSidechain: true,
+      }),
+      assistant('sa4', [{ type: 'text', text: 'done' }], {
+        usage: { input_tokens: 7, output_tokens: 3, cache_read_input_tokens: 1, cache_creation_input_tokens: 2 },
+        isSidechain: true,
+      }),
+    ];
+    const [run] = buildSubagentRuns(mainThreadWithSpawns(), [
+      source({ agentId: 'a', agentType: 'Explore', description: 'Explore X', events }),
+    ]);
+    // max-output row of msg1 (100 + 30 + 10 + 5 = 145) + the id-less row (7 + 3 + 1 + 2 = 13).
+    expect(run?.totalTokens).toBe(158);
   });
 
   it('consumes each Agent spawn at most once for duplicate descriptions', () => {
