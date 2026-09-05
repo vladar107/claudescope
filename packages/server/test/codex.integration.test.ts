@@ -162,6 +162,10 @@ function writeRollout(): string {
       { type: 'response_item', timestamp: ts(46), payload: { type: 'custom_tool_call_output', call_id: 'call_exec_concat', is_error: false, output: 'Script completed\nWall time 0.1 seconds\nOutput:\n{}' } },
       { type: 'response_item', timestamp: ts(47), payload: { type: 'custom_tool_call', name: 'exec', call_id: 'call_exec_unconfirmed', input: execApplyPatch(directNestedPatch, true) } },
       { type: 'response_item', timestamp: ts(48), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'waiting for the patch result' }] } },
+      // A FAILED shell command: `function_call_output` carries no `is_error`, so
+      // the envelope's non-zero exit code is the only failure signal there is.
+      { type: 'response_item', timestamp: ts(49), payload: { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"grepper needle"}', call_id: 'call_fail1' } },
+      { type: 'response_item', timestamp: ts(50), payload: { type: 'function_call_output', call_id: 'call_fail1', output: 'Chunk ID: b12f9c\nWall time: 0.0100 seconds\nProcess exited with code 127\nOriginal token count: 12\nOutput:\nsh: grepper: command not found' } },
     ]),
   );
   return file;
@@ -380,6 +384,8 @@ function writeGuardianRollouts(): void {
 
 let app: FastifyInstance;
 let closeConnection: () => Promise<void>;
+let getConnection: typeof import('../src/db/duckdb.js').getConnection;
+let queryRows: typeof import('../src/db/duckdb.js').queryRows;
 
 beforeAll(async () => {
   mkdirSync(claudeDir, { recursive: true });
@@ -398,7 +404,7 @@ beforeAll(async () => {
   const Fastify = (await import('fastify')).default;
   const { registerRoutes } = await import('../src/routes/index.js');
   const { reindex } = await import('../src/data/index.js');
-  ({ closeConnection } = await import('../src/db/duckdb.js'));
+  ({ getConnection, queryRows, closeConnection } = await import('../src/db/duckdb.js'));
 
   app = Fastify();
   await registerRoutes(app);
@@ -510,6 +516,23 @@ describe('Codex session indexing', () => {
     const ids = results.map((r: { sessionId: string }) => r.sessionId);
     expect(ids).toContain('codex-sess-1');
     expect(ids).not.toContain('019f2222-aaaa-7bbb-8ccc-000000000001');
+  });
+
+  it("counts a shell command's non-zero exit as a failed tool call", async () => {
+    const conn = await getConnection();
+    const [row] = await queryRows(
+      conn,
+      `SELECT count(*) FILTER (WHERE tool_error_text LIKE '%grepper: command not found%') AS failed,
+              COALESCE(sum(tool_error_count) FILTER (WHERE tool_error_text LIKE '%grepper%'), 0) AS errors,
+              count(*) FILTER (WHERE tool_error_text LIKE '%exited with code 0%') AS false_positives
+         FROM events WHERE session_id = 'codex-sess-1'`,
+    );
+    // `function_call_output` carries no `is_error`, so before the exit code was
+    // read every failed shell command indexed as a success.
+    expect(Number(row!.failed)).toBe(1);
+    expect(Number(row!.errors)).toBe(1);
+    // …and a SUCCEEDING envelope must not be dragged in with it.
+    expect(Number(row!.false_positives)).toBe(0);
   });
 });
 

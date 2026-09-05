@@ -344,17 +344,27 @@ function toolOutputText(output: unknown): string {
   }
 }
 
+/** The shell tool's exec-output envelope (`Chunk ID: … / Wall time: … / Process
+ *  exited with code N / … / Output:`) — group 1 is the exit code, group 2 the
+ *  captured stdout. */
+const EXEC_ENVELOPE_RE =
+  /^Chunk ID: [^\n]*\nWall time: [^\n]*\nProcess exited with code (-?\d+)\n(?:[^\n]*\n)*?Output:\n?([\s\S]*)$/;
+
+/** The exec envelope's exit code, or null when the output carries no envelope
+ *  (nothing to conclude — a failure there is unknowable, not absent). */
+function execExitCode(output: string): number | null {
+  const m = output.match(EXEC_ENVELOPE_RE);
+  return m ? Number(m[1]) : null;
+}
+
 /**
- * Strip Codex's exec-output envelope (`Chunk ID: … / Wall time: … / Process exited
- * with code N / … / Output:`) down to the captured stdout, so a command's output
- * renders clean — and, for a file read (`cat`/`sed`/…), highlights like a file. A
- * non-zero exit keeps the full envelope (the exit code is then the failure signal),
- * and non-envelope output passes through untouched.
+ * Strip Codex's exec-output envelope down to the captured stdout, so a command's
+ * output renders clean — and, for a file read (`cat`/`sed`/…), highlights like a
+ * file. A non-zero exit keeps the full envelope (the exit code is then the failure
+ * signal), and non-envelope output passes through untouched.
  */
 function stripExecEnvelope(output: string): string {
-  const m = output.match(
-    /^Chunk ID: [^\n]*\nWall time: [^\n]*\nProcess exited with code (-?\d+)\n(?:[^\n]*\n)*?Output:\n?([\s\S]*)$/,
-  );
+  const m = output.match(EXEC_ENVELOPE_RE);
   if (!m) return output;
   return Number(m[1]) === 0 ? m[2]! : output;
 }
@@ -912,10 +922,16 @@ export function parseRollout(path: string): CodexSession | null {
           /* unparseable spawn output — the child will render detached */
         }
       }
+      // A failed shell command is the commonest Codex tool failure, and it is
+      // reported ONLY by the envelope's exit code — without this the connector
+      // would report a fabricated zero errors for every session.
+      const exitCode = execExitCode(output);
+      const isError = pl.is_error === true || (exitCode !== null && exitCode !== 0);
       blocks.push({
         type: 'tool_result',
         tool_use_id: callId,
         content: stripExecEnvelope(output),
+        ...(isError ? { is_error: true } : {}),
       });
     } else if (kind === 'custom_tool_call') {
       // Direct apply_patch and the current statically recoverable exec wrapper

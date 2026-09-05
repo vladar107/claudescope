@@ -49,6 +49,7 @@ const ts4 = (s: number) => `2026-06-15T14:00:${String(s).padStart(2, '0')}.000Z`
 const CALL_A = 'call_AAA|fc_aaa';
 const CALL_B = 'call_BBB|fc_bbb';
 const CALL_C = 'call_CCC|fc_ccc';
+const CALL_D = 'call_DDD|fc_ddd'; // the FAILED call (`isError: true` on its result)
 const CALL_M = 'call_MMM|fc_mmm'; // management-mode subagent call
 const CALL_S = 'call_SSS|fc_sss'; // spawning subagent call
 // The dispatched task; the run must anchor on its FIRST LINE (subagentLabel).
@@ -80,13 +81,17 @@ function writeSession(): string {
           { type: 'toolCall', id: CALL_B, name: 'edit', arguments: { path: '/tmp/piproj/hay.txt', edits: [{ oldText: 'hay', newText: 'needle' }] } },
           // pi reads a pasted screenshot from a temp file; the image rides the RESULT.
           { type: 'toolCall', id: CALL_C, name: 'read', arguments: { path: '/tmp/pi-clipboard-x.png' } },
+          { type: 'toolCall', id: CALL_D, name: 'bash', arguments: { command: 'npm run build' } },
         ],
         usage: { input: 1000, output: 300, cacheRead: 200, cacheWrite: 0, totalTokens: 1500 },
       } },
-      // Three consecutive tool results → coalesce into ONE user turn carrying all.
+      // Four consecutive tool results → coalesce into ONE user turn carrying all.
       { type: 'message', id: 'tr1', parentId: 'a1', timestamp: ts(3), message: { role: 'toolResult', toolCallId: CALL_A, toolName: 'bash', content: [{ type: 'text', text: 'needle found at line 42' }] } },
       { type: 'message', id: 'tr2', parentId: 'a1', timestamp: ts(3), message: { role: 'toolResult', toolCallId: CALL_B, toolName: 'edit', content: [{ type: 'text', text: 'edited hay.txt' }] } },
       { type: 'message', id: 'tr3', parentId: 'a1', timestamp: ts(3), message: { role: 'toolResult', toolCallId: CALL_C, toolName: 'read', content: [{ type: 'text', text: 'Read image file [image/png]' }, { type: 'image', data: PNG_B64, mimeType: 'image/png' }] } },
+      // The ONE failed result: pi-ai's `ToolResultMessage.isError` is the only
+      // failure signal in the format, so tr1–tr3 (no flag) must stay uncounted.
+      { type: 'message', id: 'tr4', parentId: 'a1', timestamp: ts(3), message: { role: 'toolResult', toolCallId: CALL_D, toolName: 'bash', isError: true, content: [{ type: 'text', text: 'sh: vitest: command not found' }] } },
       { type: 'message', id: 'a2', parentId: 'tr2', timestamp: ts(4), message: {
         role: 'assistant', model: 'gpt-5.4-mini', provider: 'openai-codex',
         content: [{ type: 'text', text: 'Found the needle.' }],
@@ -261,6 +266,8 @@ function writeCompactionSession(): void {
 
 let app: FastifyInstance;
 let closeConnection: () => Promise<void>;
+let getConnection: typeof import('../src/db/duckdb.js').getConnection;
+let queryRows: typeof import('../src/db/duckdb.js').queryRows;
 
 beforeAll(async () => {
   mkdirSync(claudeDir, { recursive: true });
@@ -273,7 +280,7 @@ beforeAll(async () => {
   const Fastify = (await import('fastify')).default;
   const { registerRoutes } = await import('../src/routes/index.js');
   const { reindex } = await import('../src/data/index.js');
-  ({ closeConnection } = await import('../src/db/duckdb.js'));
+  ({ getConnection, queryRows, closeConnection } = await import('../src/db/duckdb.js'));
 
   app = Fastify();
   await registerRoutes(app);
@@ -362,9 +369,11 @@ describe('pi session detail', () => {
     expect(thinking).toBeTruthy();
     expect(thinking.thinking).toContain('let me search the haystack');
 
-    // All three tool calls pair to their results by the verbatim composite id.
+    // All four tool calls pair to their results by the verbatim composite id.
     const tools = flat.filter((b: Record<string, unknown>) => b.kind === 'tool');
-    expect(tools.map((t: { id: string }) => t.id).sort()).toEqual([CALL_A, CALL_B, CALL_C].sort());
+    expect(tools.map((t: { id: string }) => t.id).sort()).toEqual(
+      [CALL_A, CALL_B, CALL_C, CALL_D].sort(),
+    );
 
     // pi `bash` → canonical `Bash` (renders command + output).
     const bash = tools.find((t: { name: string }) => t.name === 'Bash');
@@ -478,6 +487,24 @@ describe('pi provider-aware cost', () => {
     expect(s.totalCostUsd).toBeCloseTo(0.0006, 6);
     // A zero-rated provider on the session sets the local marker.
     expect(s.hasLocalProvider).toBe(true);
+  });
+});
+
+describe('pi tool errors', () => {
+  it('counts only the `isError` result, never the unflagged ones', async () => {
+    const conn = await getConnection();
+    const [row] = await queryRows(
+      conn,
+      `SELECT COALESCE(sum(tool_error_count), 0) AS errors,
+              count(*) FILTER (WHERE tool_error_count IS NULL) AS unknowns,
+              max(tool_error_text) AS text
+         FROM events WHERE session_id = 'pi-sess-1'`,
+    );
+    // One flagged result out of four — a format WITH a signal must never report
+    // NULL, and the three unflagged results must not inflate the count.
+    expect(Number(row!.errors)).toBe(1);
+    expect(Number(row!.unknowns)).toBe(0);
+    expect(row!.text).toBe('sh: vitest: command not found');
   });
 });
 

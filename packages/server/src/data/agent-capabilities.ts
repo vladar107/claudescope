@@ -67,3 +67,32 @@ export function hasCompactionSignal(connectorId: string): boolean {
 export function connectorsWithCompactionSignal(): string[] {
   return [...COMPACTION_SIGNAL];
 }
+
+/**
+ * Agents whose format marks a tool call as FAILED, so `events.tool_error_count`
+ * carries a real number: Claude Code (`tool_result.is_error`, derived in SQL),
+ * Codex (`is_error` plus the exec/custom envelope's exit code), pi
+ * (`toolResult.isError`), opencode (`state.status === 'error'`), Copilot
+ * (`tool.execution_complete.success === false`). Junie's "modified: path" result
+ * strings, Antigravity's typed result records and Grok's bare `tool_result`
+ * bodies carry no such flag — their normalizers emit NULL so analytics reads
+ * "unavailable" rather than a fabricated 0.
+ */
+const TOOL_ERROR_SIGNAL = new Set(['claude-code', 'codex', 'pi', 'opencode', 'copilot']);
+
+/** The other side of {@link TOOL_ERROR_SIGNAL} — every remaining connector must
+ *  be listed here, so adding an agent forces a deliberate classification
+ *  (enforced by `connector-error-signal.test.ts`). */
+const NO_TOOL_ERROR_SIGNAL = new Set(['junie', 'antigravity', 'grok']);
+
+export function hasToolErrorSignal(connectorId: string): boolean {
+  return TOOL_ERROR_SIGNAL.has(connectorId);
+}
+
+export function connectorsWithToolErrorSignal(): string[] {
+  return [...TOOL_ERROR_SIGNAL];
+}
+
+export function connectorsWithoutToolErrorSignal(): string[] {
+  return [...NO_TOOL_ERROR_SIGNAL];
+}

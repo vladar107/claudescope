@@ -232,6 +232,8 @@ interface PiLine {
     toolCallId?: string;
     /** Set on `toolResult` records — the tool the result belongs to. */
     toolName?: string;
+    /** `toolResult` records only: pi-ai's `ToolResultMessage.isError`. */
+    isError?: unknown;
     /** `subagent` toolResult metadata: `{mode, runId, results:[{agent, task}]}`. */
     details?: unknown;
   };
@@ -378,6 +380,9 @@ export function parsePiSession(path: string): PiSession | null {
         type: 'tool_result',
         tool_use_id: str(msg.toolCallId),
         content: contentBlocks(msg.content),
+        // Without this the row's `tool_error_count` would be a fabricated 0 —
+        // pi is a signal-carrying format, so the flag must be read.
+        ...(msg.isError === true ? { is_error: true } : {}),
       });
       if (!toolResultTs) toolResultTs = ts;
       continue;
