@@ -13,14 +13,24 @@
  * Detection spawns `<bin> version` (prints the bare version, no side effects)
  * rather than walking the filesystem for a package.json — that works the same
  * across npm symlinks, Homebrew Cellar symlinks, and Nix makeWrapper scripts.
+ * Because the daemon inherits its PATH from whoever spawned it, only a bin whose
+ * real path lies inside this install's own root is ever executed — see
+ * {@link vetInstalledBin}.
  */
 
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
-import { APP_VERSION, CLAUDESCOPE_HOME, autoRestartEnabled } from './config.js';
+import { APP_VERSION, CLAUDESCOPE_HOME, STATE_FILE_MODE, autoRestartEnabled } from './config.js';
 import { LOG_FILE } from './daemon.js';
 import { isIndexReady, isReindexInFlight } from './data/index.js';
+import {
+  detectInstallMethod,
+  installedPackageRoot,
+  isWithinInstallRoot,
+  trustedInstallRoot,
+  type InstallMethod,
+} from './install-method.js';
 
 /** Records the last restart attempt (target version + timestamp) so a failed
  *  hand-off or an in-progress install never turns into a restart loop. */
@@ -41,6 +51,10 @@ const VERSION_RE = /^\d+\.\d+\.\d+$/;
 
 /** Set once a hand-off has been spawned so a slow CLI is never spawned twice. */
 let restartInitiated = false;
+
+/** Set once an untrusted bin has been reported, so a hostile (or merely exotic)
+ *  PATH doesn't repeat the same line every five minutes. */
+let untrustedBinLogged = false;
 
 /** Resolve the `claudescope` bin from PATH. Null when it isn't installed there
  *  (e.g. npx-only usage) — the caller skips silently and retries next tick. */
@@ -77,6 +91,30 @@ export function readInstalledVersion(bin: string, timeoutMs = 5000): Promise<str
   });
 }
 
+/** Vet the bin found on PATH before executing it: the daemon inherits its PATH
+ *  from whatever spawned it (often an MCP client), so any writable directory on
+ *  it would otherwise be silent code execution as the user. Null when the real
+ *  path can't be resolved (the bin vanished after the PATH scan) — nothing to
+ *  report; otherwise the resolved path, the root it was checked against, and the
+ *  verdict. Trust is a prefix match, so a Volta shim (which lives in
+ *  `~/.volta/bin`, outside the package's own `node_modules` parent) is not
+ *  trusted and such installs simply never self-restart. */
+export function vetInstalledBin(
+  bin: string,
+  packageRoot: string,
+  method: InstallMethod,
+  realpath: (p: string) => string = realpathSync,
+): { real: string; root: string | null; trusted: boolean } | null {
+  let real: string;
+  try {
+    real = realpath(bin);
+  } catch {
+    return null;
+  }
+  const root = trustedInstallRoot(packageRoot, method);
+  return { real, root, trusted: root !== null && isWithinInstallRoot(real, root) };
+}
+
 /** Read the loop-guard marker, or null if absent/corrupt. */
 export function readMarker(): RestartMarker | null {
   if (!existsSync(SELF_RESTART_MARKER)) return null;
@@ -111,7 +149,8 @@ export function shouldSelfRestart(
  * `<bin> restart --no-open` (detached, output → daemon log) and let the new
  * CLI SIGTERM this process. Skips: dev builds, CLAUDESCOPE_AUTO_RESTART=0, a
  * hand-off already in flight, a reindex pass in progress (never interrupt a
- * build), an unresolvable install, and the marker's retry window.
+ * build), an unresolvable install, a bin outside this install's root, and the
+ * marker's retry window.
  */
 export async function maybeSelfRestart(log: (msg: string) => void): Promise<void> {
   if (APP_VERSION === '0.0.0-dev' || !autoRestartEnabled()) return;
@@ -120,6 +159,20 @@ export async function maybeSelfRestart(log: (msg: string) => void): Promise<void
 
   const bin = resolveInstalledBin();
   if (!bin) return;
+  // Vet once, up front: `bin` never changes below, so this covers both the
+  // `version` probe and the `restart` hand-off.
+  const vetted = vetInstalledBin(bin, installedPackageRoot(), detectInstallMethod());
+  if (!vetted) return;
+  if (!vetted.trusted) {
+    if (!untrustedBinLogged) {
+      untrustedBinLogged = true;
+      log(
+        `installed claudescope at ${vetted.real} is outside this install's root ` +
+          `(${vetted.root ?? 'unknown layout'}); not restarting into it`,
+      );
+    }
+    return;
+  }
   const installed = await readInstalledVersion(bin);
   if (!installed) return;
   if (!shouldSelfRestart(installed, APP_VERSION, readMarker(), Date.now())) return;
@@ -133,6 +186,7 @@ export async function maybeSelfRestart(log: (msg: string) => void): Promise<void
   writeFileSync(
     SELF_RESTART_MARKER,
     JSON.stringify({ target: installed, at: new Date().toISOString() }, null, 2),
+    { mode: STATE_FILE_MODE },
   );
   log(
     `installed claudescope is v${installed}, this daemon is v${APP_VERSION} — ` +
