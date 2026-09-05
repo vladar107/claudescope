@@ -38,6 +38,24 @@ let progress: IndexingProgress | null = null;
  *  moves. Resets on daemon restart, so clients compare by inequality. */
 let dataVersion = 0;
 
+/** True from the moment a pass finds file changes until its finalize step
+ *  (electCanonicalUsage → refreshFileEdits → electCanonicalEdits →
+ *  rebuildSessions → rebuildFtsIndex) actually completes. Files bookkeeping
+ *  (the `files`/`events` tables) advances per file *before* finalize runs, so
+ *  a failed finalize must be remembered — otherwise the next pass would see
+ *  no changed files, take the idle early-return, and leave `sessions`,
+ *  `file_edits`, and the FTS index permanently stale versus `events`. */
+let derivedDirty = false;
+/** Sessions whose `file_edits` are owed a refresh, carried across a failed
+ *  finalize so a later pass with no file changes still repairs them. */
+let pendingEditSessions = new Set<string>();
+/** Test seam: makes the NEXT finalize step throw once, so the recovery path
+ *  above can be exercised without fabricating a broken table state. */
+let failNextFinalize = false;
+export function failNextFinalizeForTests(): void {
+  failNextFinalize = true;
+}
+
 /** Min interval between mid-first-build partial `sessions` rebuilds (ms).
  *  Env-overridable so tests can force a rebuild after every file. */
 const PARTIAL_REBUILD_MS = Number(process.env.PARTIAL_REBUILD_MS ?? 3000);
@@ -796,6 +814,10 @@ async function doReindex(): Promise<ReindexResponse> {
     return !(prev && prev.mtime === file.mtimeMs && prev.size === file.size);
   });
 
+  // Latch as soon as we know this pass has work: `files`/`events` start
+  // advancing per file below, ahead of finalize (see {@link derivedDirty}).
+  if (changed.length > 0 || removed > 0) derivedDirty = true;
+
   let reindexed = 0;
   // Files this pass could not load. Reported on ReindexResponse so a pass that
   // failed on everything is distinguishable from an idle one — otherwise both
@@ -865,20 +887,40 @@ async function doReindex(): Promise<ReindexResponse> {
     // tables untouched and skipping the rebuild is correct today. The guard is
     // belt-and-braces — if a future non-atomic path ever half-applies a load,
     // this must not report a clean idle pass over an inconsistent index.
-    if (reindexed === 0 && removed === 0 && failed === 0) {
+    // `!derivedDirty`: a prior pass's finalize may have thrown after `files`
+    // already advanced — this pass must still run finalize even though it
+    // sees no changes of its own.
+    if (reindexed === 0 && removed === 0 && failed === 0 && !derivedDirty) {
       ready = true;
       return { reindexed, failed, durationMs: Date.now() - start };
     }
 
-    // Something changed: re-elect the usage-canonical rows globally, then rebuild
-    // derived tables + FTS so additions, edits, and removals are all reflected.
+    // Carry this pass's touched sessions forward before finalize can throw,
+    // so a failed finalize doesn't lose track of what it still owes.
+    for (const s of editSessions) pendingEditSessions.add(s);
+
+    // Test seam (see {@link failNextFinalizeForTests}): throw before finalize
+    // does anything, to exercise the recovery path above.
+    if (failNextFinalize) {
+      failNextFinalize = false;
+      throw new Error('injected finalize failure');
+    }
+
+    // Something changed (or a prior finalize never completed): re-elect the
+    // usage-canonical rows globally, then rebuild derived tables + FTS so
+    // additions, edits, and removals are all reflected.
     await electCanonicalUsage(conn);
-    // Refresh code-impact rows for the touched sessions, then re-elect the
-    // canonical edit per (uuid, tool_use_id) globally (fork copies dedup).
-    await refreshFileEdits(conn, editSessions);
+    // Refresh code-impact rows for every session still owed one (this pass's,
+    // plus any left over from a failed finalize), then re-elect the canonical
+    // edit per (uuid, tool_use_id) globally (fork copies dedup).
+    await refreshFileEdits(conn, pendingEditSessions);
     await electCanonicalEdits(conn);
     await rebuildSessions(conn);
     await rebuildFtsIndex(conn);
+
+    // Only clear once finalize has fully succeeded.
+    derivedDirty = false;
+    pendingEditSessions.clear();
 
     ready = true;
     dataVersion += 1;
