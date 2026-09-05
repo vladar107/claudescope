@@ -64,7 +64,7 @@ await build({
   bundle: true,
   platform: 'node',
   format: 'esm',
-  target: 'node20',
+  target: 'node22',
   external: ['@duckdb/node-api'],
   // Ship a compact, non-source-mapped bundle: smaller, and it doesn't expose
   // readable source. No .map files are emitted (sourcemap defaults off; set

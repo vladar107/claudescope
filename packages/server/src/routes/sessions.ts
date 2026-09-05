@@ -1,6 +1,6 @@
 /**
  * GET /api/sessions — list sessions with optional project filter, sort, and a
- * lightweight title/text query (`q`).
+ * lightweight title query (`q`).
  *
  * GET /api/sessions/:id — full session detail: derived meta + the assembled
  * thread (parsed directly from the session's JSONL on disk).
