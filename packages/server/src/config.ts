@@ -49,6 +49,29 @@ function resolvePort(raw: string | undefined): number {
 
 export const PORT = resolvePort(process.env.PORT);
 
+/**
+ * Validate an interval-in-milliseconds env var shared by the pricing-refresh
+ * and self-restart timers: undefined uses `dflt`, `0` disables the timer, and
+ * anything else must be an integer ≥ 1000 — a typo silently disabling a
+ * feature (NaN) or a tiny value hammering the network/spawning processes on
+ * every tick are both worse than falling back to the default.
+ */
+export function resolveIntervalMs(name: string, raw: string | undefined, dflt: number): number {
+  if (raw === undefined) return dflt;
+  // Number('') is 0, not NaN — an empty value must fall through to the warning,
+  // not be mistaken for an explicit "0" (disabled).
+  const n = raw.trim() === '' ? NaN : Number(raw);
+  if (n === 0) return 0;
+  if (!Number.isInteger(n) || n < 1000) {
+    console.warn(
+      `[config] ignoring ${name}='${raw}' — expected 0 (disabled) or an integer ≥ 1000 ms; ` +
+        `using ${dflt}`,
+    );
+    return dflt;
+  }
+  return n;
+}
+
 /** Root directory of the server package (resolved from dist or src at runtime). */
 export const PACKAGE_ROOT = join(__dirname, '..');
 
@@ -120,11 +143,13 @@ export const LITELLM_PRICING_URL =
 
 /**
  * How often (ms) the daemon re-fetches pricing from LiteLLM. Set
- * PRICING_REFRESH_INTERVAL_MS=0 to disable. Default 24h. (The timer itself is
- * wired up in a later wave; this constant only declares the interval.)
+ * PRICING_REFRESH_INTERVAL_MS=0 to disable. Default 24h. The timer itself is
+ * wired up in index.ts, next to the boot-time staleness check.
  */
-export const PRICING_REFRESH_INTERVAL_MS = Number(
-  process.env.PRICING_REFRESH_INTERVAL_MS ?? 24 * 60 * 60 * 1000,
+export const PRICING_REFRESH_INTERVAL_MS = resolveIntervalMs(
+  'PRICING_REFRESH_INTERVAL_MS',
+  process.env.PRICING_REFRESH_INTERVAL_MS,
+  24 * 60 * 60 * 1000,
 );
 
 /**
@@ -133,8 +158,10 @@ export const PRICING_REFRESH_INTERVAL_MS = Number(
  * into the new code (post-update self-heal — see self-restart.ts). Set
  * SELF_RESTART_INTERVAL_MS=0 to disable. Default 5 min.
  */
-export const SELF_RESTART_INTERVAL_MS = Number(
-  process.env.SELF_RESTART_INTERVAL_MS ?? 5 * 60 * 1000,
+export const SELF_RESTART_INTERVAL_MS = resolveIntervalMs(
+  'SELF_RESTART_INTERVAL_MS',
+  process.env.SELF_RESTART_INTERVAL_MS,
+  5 * 60 * 1000,
 );
 
 /**

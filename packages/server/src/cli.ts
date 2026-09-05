@@ -30,6 +30,8 @@ import {
   ensureStateDir,
 } from './config.js';
 import { claudeProjectsDir, openBrowserOnStart } from './settings.js';
+import { detectedConnectors } from './connectors/registry.js';
+import { contractHome } from './util/paths.js';
 import {
   DAEMON_FILE,
   LOG_FILE,
@@ -162,7 +164,7 @@ async function start(port: number, open: boolean): Promise<void> {
     return;
   }
   console.log(`\n✓ claudescope running → ${url}`);
-  console.log(`  Sessions: ${claudeProjectsDir()} (read-only)`);
+  console.log(`  ${sourcesLine()}`);
   if (open) openBrowser(url);
   await maybeNotifyUpdate(false);
 }
@@ -251,6 +253,15 @@ function loopbackUrl(port: number): string | null {
   return `http://127.0.0.1:${port}`;
 }
 
+/** One-line summary of the agent transcript sources found on this machine, for
+ *  the post-start banner. Falls back to the (always-configured) Claude Code
+ *  dir when nothing is detected yet, so the line is never empty. */
+function sourcesLine(): string {
+  const dirs = detectedConnectors().map((c) => contractHome(c.sourceDir));
+  const shown = dirs.length > 0 ? dirs : [contractHome(claudeProjectsDir())];
+  return `Sources: ${shown.join(', ')} (read-only)`;
+}
+
 /** Last `n` lines of the daemon log, or '' when there is nothing to show.
  *  Used to explain a startup failure instead of just reporting the timeout. */
 function logTail(n: number): string {
@@ -294,8 +305,11 @@ async function confirm(question: string, defaultYes: boolean): Promise<boolean> 
  *  Resolves the target version and confirms before installing; `--yes` (or a
  *  non-interactive stdin) skips the prompt. Installs the hardcoded package only.
  *  For package-manager-managed installs (brew/nix), defers to that manager. */
-async function update(skipConfirm: boolean): Promise<void> {
-  const latest = await getLatestVersion(true);
+export async function update(skipConfirm: boolean): Promise<void> {
+  // getLatestVersion only returns null for a non-OK registry response — a
+  // network failure (offline) rejects instead, which must fall into the same
+  // "could not reach the registry" branch below rather than crash with a stack.
+  const latest = await getLatestVersion(true).catch(() => null);
   if (latest && !isNewer(latest, APP_VERSION)) {
     console.log(`✓ Already on the latest version (v${APP_VERSION}).`);
     return;
@@ -370,7 +384,7 @@ async function pricingUpdate(): Promise<void> {
 }
 
 /** A bad flag value or missing argument on a query subcommand. */
-class UsageError extends Error {}
+export class UsageError extends Error {}
 
 /**
  * Parse `--port`. Rejects everything the server cannot listen on, because an
@@ -431,7 +445,7 @@ Subcommands:
 }
 
 function help(): void {
-  console.log(`claudescope v${APP_VERSION} — local viewer for Claude Code transcripts
+  console.log(`claudescope v${APP_VERSION} — local viewer for AI coding-agent transcripts
 
 Usage: claudescope [command] [options]
 
@@ -476,49 +490,63 @@ Options:
   -y, --yes        Skip the confirmation prompt (for \`update\`)
 
 State (index, pricing, logs, PID) lives in ${CLAUDESCOPE_HOME}
-(override with $CLAUDESCOPE_HOME). Sessions are read from
-${claudeProjectsDir()} (override with $CLAUDE_PROJECTS_DIR).
+(override with $CLAUDESCOPE_HOME). Source directories are per agent and
+configurable in the web UI's Settings page, or via env vars (see README).
 Settings edited in the web UI persist to settings.json in the state dir
 (env vars always win over saved settings).
 CLAUDESCOPE_AUTO_RESTART=0 disables automatic daemon restarts on version skew.`);
 }
 
-async function main(): Promise<void> {
-  const { values, positionals } = parseArgs({
-    allowPositionals: true,
-    options: {
-      port: { type: 'string' },
-      follow: { type: 'boolean', short: 'f' },
-      help: { type: 'boolean', short: 'h' },
-      version: { type: 'boolean', short: 'v' },
-      yes: { type: 'boolean', short: 'y' },
-      // parseArgs has no built-in negation, so the flag is literally `no-open`.
-      'no-open': { type: 'boolean' },
-      // Query subcommand flags (search/sessions/session/projects/analytics).
-      project: { type: 'string' },
-      cwd: { type: 'string' },
-      agent: { type: 'string' },
-      branch: { type: 'string' },
-      role: { type: 'string' },
-      scope: { type: 'string' },
-      literal: { type: 'boolean' },
-      sort: { type: 'string' },
-      q: { type: 'string' },
-      limit: { type: 'string' },
-      offset: { type: 'string' },
-      session: { type: 'string' },
-      around: { type: 'string' },
-      radius: { type: 'string' },
-      tail: { type: 'string' },
-      'max-tool-chars': { type: 'string' },
-      redact: { type: 'boolean' },
-      json: { type: 'boolean' },
-      'group-by': { type: 'string' },
-      from: { type: 'string' },
-      to: { type: 'string' },
-      timezone: { type: 'string' },
-    },
-  });
+/** Parse process.argv into flags/positionals. A thin wrapper so the inline
+ *  `options` literal keeps parseArgs' precise per-flag type inference (a bare
+ *  try/catch around the call would widen `values` to the generic fallback
+ *  type) while still converting parseArgs' strict-mode throw on an
+ *  unknown/malformed flag (ERR_PARSE_ARGS_UNKNOWN_OPTION, a stack) into a
+ *  UsageError like every other usage mistake. */
+function parseCliArgs() {
+  try {
+    return parseArgs({
+      allowPositionals: true,
+      options: {
+        port: { type: 'string' },
+        follow: { type: 'boolean', short: 'f' },
+        help: { type: 'boolean', short: 'h' },
+        version: { type: 'boolean', short: 'v' },
+        yes: { type: 'boolean', short: 'y' },
+        // parseArgs has no built-in negation, so the flag is literally `no-open`.
+        'no-open': { type: 'boolean' },
+        // Query subcommand flags (search/sessions/session/projects/analytics).
+        project: { type: 'string' },
+        cwd: { type: 'string' },
+        agent: { type: 'string' },
+        branch: { type: 'string' },
+        role: { type: 'string' },
+        scope: { type: 'string' },
+        literal: { type: 'boolean' },
+        sort: { type: 'string' },
+        q: { type: 'string' },
+        limit: { type: 'string' },
+        offset: { type: 'string' },
+        session: { type: 'string' },
+        around: { type: 'string' },
+        radius: { type: 'string' },
+        tail: { type: 'string' },
+        'max-tool-chars': { type: 'string' },
+        redact: { type: 'boolean' },
+        json: { type: 'boolean' },
+        'group-by': { type: 'string' },
+        from: { type: 'string' },
+        to: { type: 'string' },
+        timezone: { type: 'string' },
+      },
+    });
+  } catch (err) {
+    throw new UsageError(err instanceof Error ? err.message : String(err));
+  }
+}
+
+export async function main(): Promise<void> {
+  const { values, positionals } = parseCliArgs();
 
   const port = parsePort(values.port, DEFAULT_PORT);
   // Flag wins, then the persisted setting (which itself folds settings.json >
