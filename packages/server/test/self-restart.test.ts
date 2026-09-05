@@ -1,9 +1,11 @@
 /**
  * Unit tests for the post-update self-heal helpers in self-restart.ts: bin
- * resolution from PATH, installed-version probing via `<bin> version` (the
- * channel-agnostic detection that works for npm symlinks, brew Cellar, and nix
- * makeWrapper scripts alike), and the marker-based loop guard that keeps a
- * failed hand-off or an in-progress install from becoming a restart storm.
+ * resolution from PATH, the trust check that keeps a bin from an attacker-owned
+ * PATH dir from ever being executed, installed-version probing via
+ * `<bin> version` (the channel-agnostic detection that works for npm symlinks,
+ * brew Cellar, and nix makeWrapper scripts alike), and the marker-based loop
+ * guard that keeps a failed hand-off or an in-progress install from becoming a
+ * restart storm.
  *
  * CLAUDESCOPE_HOME is set before importing the module (config.ts reads env at
  * import time). No real daemon is ever spawned — only tiny fake bin scripts.
@@ -66,6 +68,43 @@ describe('resolveInstalledBin', () => {
     const dir = binDir('path-cmd', 'claudescope.cmd');
     expect(sr.resolveInstalledBin(dir, 'win32')).toBe(join(dir, 'claudescope.cmd'));
     expect(sr.resolveInstalledBin(dir, 'linux')).toBeNull();
+  });
+});
+
+describe('vetInstalledBin', () => {
+  const pkg = '/opt/homebrew/lib/node_modules/@vladar107/claudescope';
+
+  it('trusts a bin whose real path is inside this install', () => {
+    const real = `${pkg}/cli.js`;
+    expect(sr.vetInstalledBin('/opt/homebrew/bin/claudescope', pkg, 'npm', () => real)).toEqual({
+      real,
+      root: '/opt/homebrew/lib/',
+      trusted: true,
+    });
+  });
+
+  it('distrusts a bin from a writable PATH dir, even one shaped like a package', () => {
+    const real = '/tmp/evil/node_modules/@vladar107/claudescope/cli.js';
+    expect(sr.vetInstalledBin('/tmp/evil/claudescope', pkg, 'npm', () => real)).toMatchObject({
+      real,
+      trusted: false,
+    });
+  });
+
+  it('distrusts everything when the layout yields no root (dev checkout)', () => {
+    const dev = '/Users/me/src/claudescope/packages/server/dist';
+    expect(sr.vetInstalledBin(`${dev}/cli.js`, dev, 'npm', (b) => b)).toMatchObject({
+      root: null,
+      trusted: false,
+    });
+  });
+
+  it('reports nothing when the bin vanished between the PATH scan and here', () => {
+    expect(
+      sr.vetInstalledBin('/gone/claudescope', pkg, 'npm', () => {
+        throw new Error('ENOENT');
+      }),
+    ).toBeNull();
   });
 });
 

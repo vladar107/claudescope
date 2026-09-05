@@ -99,6 +99,12 @@ no user-controlled input → no shell-injection surface):
 - open your browser on `start` (`open` / `xdg-open` / `start`)
 - self-update (`npm install -g …`)
 - tail logs (`tail -f …`)
+- post-upgrade self-restart: every 5 minutes the daemon runs the installed
+  `claudescope version` and, if it differs from the running version,
+  `claudescope restart --no-open` — but only when that binary's real path lies
+  inside the daemon's own install root (`packages/server/src/self-restart.ts`),
+  so a writable directory on `PATH` can never be executed. Disable with
+  `SELF_RESTART_INTERVAL_MS=0` or `CLAUDESCOPE_AUTO_RESTART=0`.
 
 `shell: true` is set **only on Windows**, where the `start` builtin and `.cmd`
 shims require it.
