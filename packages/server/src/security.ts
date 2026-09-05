@@ -48,6 +48,12 @@ export const CONTENT_SECURITY_POLICY = [
 export function registerSecurityHeaders(app: FastifyInstance): void {
   app.addHook('onSend', async (_req, reply, payload) => {
     reply.header('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+    // Stops a browser from MIME-sniffing a response into an executable type
+    // (e.g. treating a transcript-derived download as HTML/JS).
+    reply.header('X-Content-Type-Options', 'nosniff');
+    // Never leak this app's URLs (session ids, search queries) to an external
+    // site a rendered link points at.
+    reply.header('Referrer-Policy', 'no-referrer');
     return payload;
   });
 }

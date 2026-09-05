@@ -17,7 +17,6 @@ import {
   WEB_DIST_DIR,
   initStateDir,
 } from './config.js';
-import { claudeProjectsDir } from './settings.js';
 import { writeDaemonRecord } from './daemon.js';
 import { registerRoutes } from './routes/index.js';
 import { registerHostGuard, registerMutationGuard, registerSecurityHeaders } from './security.js';
@@ -26,6 +25,8 @@ import { refreshPricing } from './data/pricing-refresh.js';
 import { maybeSelfRestart } from './self-restart.js';
 import { refreshLatestVersion } from './update-check.js';
 import { openBrowser } from './util/open-browser.js';
+import { connectorById, connectors, detectedConnectors } from './connectors/registry.js';
+import { contractHome } from './util/paths.js';
 
 /** How old a fetched-pricing snapshot may be before a boot refresh fires. */
 const PRICING_STALE_MS = 24 * 60 * 60 * 1000;
@@ -146,10 +147,12 @@ async function main(): Promise<void> {
     });
   }
 
-  if (!existsSync(claudeProjectsDir())) {
+  const detected = detectedConnectors();
+  if (detected.length === 0) {
     app.log.warn(
-      `sessions directory not found: ${claudeProjectsDir()} — the app will be empty. ` +
-        'Set CLAUDE_PROJECTS_DIR to point at your Claude Code transcripts.',
+      'no agent source directories found — the app will be empty. Checked: ' +
+        connectors.map((c) => `${c.label} (${contractHome(c.sourceDir)})`).join(', ') +
+        '. Configure a source on the Settings page or via its env var.',
     );
   }
   await app.listen({ port: PORT, host: '127.0.0.1' });
@@ -159,12 +162,17 @@ async function main(): Promise<void> {
 
   const url = `http://localhost:${PORT}`;
   // A human-friendly banner so the app reads like a real local tool, not a
-  // bare server log. Shows the resolved (configurable) sessions directory.
+  // bare server log. Shows the detected (configurable) source directories,
+  // falling back to the Claude Code dir when nothing was detected yet.
+  const sourcesLabel =
+    detected.length > 0
+      ? detected.map((c) => contractHome(c.sourceDir)).join(', ')
+      : contractHome(connectorById(undefined).sourceDir);
   app.log.info(
     '\n' +
       `  Claudescope v${APP_VERSION}\n` +
       `  ▸ URL:      ${url}\n` +
-      `  ▸ Sessions: ${claudeProjectsDir()} (read-only)\n` +
+      `  ▸ Sources:  ${sourcesLabel} (read-only)\n` +
       (servesWeb ? '' : '  ▸ Note:     web build not found — run `npm run build` to serve the UI\n'),
   );
 

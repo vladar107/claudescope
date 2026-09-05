@@ -42,6 +42,9 @@ describe('security headers', () => {
     expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
     expect(csp).not.toContain("'unsafe-eval'"); // bare unsafe-eval (note: != wasm-unsafe-eval)
 
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['referrer-policy']).toBe('no-referrer');
+
     await app.close();
   });
 
