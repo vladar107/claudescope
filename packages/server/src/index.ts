@@ -23,6 +23,7 @@ import { registerHostGuard, registerMutationGuard, registerSecurityHeaders } fro
 import { startIndexer, stopIndexerTimer } from './indexer-lifecycle.js';
 import { refreshPricing } from './data/pricing-refresh.js';
 import { maybeSelfRestart } from './self-restart.js';
+import { installShutdownHandlers } from './shutdown.js';
 import { refreshLatestVersion } from './update-check.js';
 import { openBrowser } from './util/open-browser.js';
 import { connectorById, connectors, detectedConnectors } from './connectors/registry.js';
@@ -159,6 +160,9 @@ async function main(): Promise<void> {
   // Only a CLI-spawned daemon owns daemon.json; a foreground `npm start` or a
   // dev run must not register itself as the daemon the CLI signals.
   if (process.env.CLAUDESCOPE_DAEMON === '1') writeDaemonRecord(PORT);
+  // `claudescope stop`/`restart` SIGTERM this process: drain, close the server
+  // and the index cleanly instead of dying mid-write. See shutdown.ts.
+  installShutdownHandlers(app);
 
   const url = `http://localhost:${PORT}`;
   // A human-friendly banner so the app reads like a real local tool, not a

@@ -38,7 +38,10 @@ export const LOG_FILE = join(CLAUDESCOPE_HOME, 'daemon.log');
 /** Roll the append-only daemon log once it grows past this, so a long-lived or
  *  crash-looping daemon doesn't grow the log without bound. */
 const LOG_MAX_BYTES = 5 * 1024 * 1024;
-/** How long to wait for a signalled process to actually exit before giving up. */
+/** How long to wait for a signalled process to actually exit before giving up.
+ *  The server's own SIGTERM handler drains an in-flight index pass before it
+ *  exits, so its drain budget (`DRAIN_MS` in shutdown.ts) is deliberately sized
+ *  to fit inside this window — a graceful stop must never look like a hang. */
 export const EXIT_WAIT_MS = 5000;
 
 export interface DaemonRecord {
