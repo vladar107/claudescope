@@ -3,16 +3,15 @@
  *
  * `events.uuid` is NOT unique: forking or resuming a session copies the whole
  * history into a new file with the uuids preserved, so the same uuid exists under
- * two session ids. `fts_main_events.match_bm25(uuid, …)` looks the document up by
- * that key with a scalar subquery, which therefore returns multiple rows — and
- * newer DuckDB raises `More than one row returned by a subquery` for that.
+ * two session ids. `match_bm25` looks its document up by the FTS key with a
+ * scalar subquery, so a uuid-keyed index returned multiple rows there — which
+ * newer DuckDB raises `More than one row returned by a subquery` for.
  *
- * The search route relies on `scalar_subquery_error_on_multiple_rows = false` to
- * keep working (the duplicates are identical copies, so picking either is fine).
- * Nothing tested that: deleting the setting outright left the whole suite green,
- * which meant the one reason it exists was unverified — and it is a
- * connection-level setting on the connection the indexer shares, so where it gets
- * applied matters.
+ * The fix is a key that really is unique per row (`events.doc_id`), not a
+ * connection-wide `scalar_subquery_error_on_multiple_rows = false` that would
+ * turn every genuine multi-row scalar subquery in the app into a silent
+ * arbitrary pick. This asserts both halves: the key is distinct per row, the
+ * shared connection keeps the strict default, and search still crosses forks.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -123,6 +122,27 @@ describe('a duplicated events.uuid', () => {
     );
     expect(Number(rows[0]?.n)).toBe(2);
   });
+
+  it('still yields a doc_id that is unique per row — the FTS key', async () => {
+    const conn = await (await import('../src/db/duckdb.js')).getConnection();
+    const rows = await queryRows(
+      conn,
+      'SELECT count(*) AS n, count(DISTINCT doc_id) AS distinct_ids FROM events',
+    );
+    expect(Number(rows[0]?.n)).toBeGreaterThan(0);
+    expect(Number(rows[0]?.distinct_ids)).toBe(Number(rows[0]?.n));
+  });
+});
+
+describe('the shared connection', () => {
+  it('keeps scalar subqueries strict — no connection-wide relaxation', async () => {
+    const conn = await (await import('../src/db/duckdb.js')).getConnection();
+    const rows = await queryRows(
+      conn,
+      "SELECT current_setting('scalar_subquery_error_on_multiple_rows') AS strict",
+    );
+    expect(rows[0]?.strict).toBe(true);
+  });
 });
 
 describe('GET /api/search over forked sessions', () => {
@@ -134,14 +154,16 @@ describe('GET /api/search over forked sessions', () => {
     // broken FTS lookup shows up here — assert we actually got hits.
     expect(body.sessions.length).toBeGreaterThan(0);
     expect(body.sessions[0].snippet).toContain('<mark>');
+    // Both copies are their own documents under the per-row key, so neither the
+    // original nor the fork is swallowed by the other.
+    const hitSessions = new Set(body.sessions.map((s: { sessionId: string }) => s.sessionId));
+    expect(hitSessions).toEqual(new Set(['sessOrig', 'sessFork']));
   });
 
   it('works on a connection that has served no prior search', async () => {
-    // The setting used to be applied inside the search handler, so the FIRST
-    // search on a fresh process was the one that armed it. Sequencing that way
-    // means a different first query could have hit the error instead. Search from
-    // a second app on the same (already-open) connection to make the point that
-    // the setting is a property of the connection, not of having searched before.
+    // A search must never depend on some earlier query having prepared the
+    // connection for it. Search from a second app on the same (already-open)
+    // connection, which the first test has since used, to keep that honest.
     const Fastify = (await import('fastify')).default;
     const { registerRoutes } = await import('../src/routes/index.js');
     const fresh = Fastify();

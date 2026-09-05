@@ -163,7 +163,7 @@ const ftsFinds = async (term: string, sessionId: string): Promise<boolean> => {
   const rows = await queryRows(
     conn,
     `SELECT session_id FROM (
-       SELECT session_id, fts_main_events.match_bm25(uuid, ${sqlString(term)}) AS score
+       SELECT session_id, fts_main_events.match_bm25(doc_id, ${sqlString(term)}) AS score
        FROM events WHERE text_content IS NOT NULL
      ) WHERE score IS NOT NULL AND session_id = ${sqlString(sessionId)}`,
   );

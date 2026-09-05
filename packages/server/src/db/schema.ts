@@ -46,7 +46,9 @@
 //      compaction, per file) + sessions.context_tokens / context_model /
 //      compaction_count derived at rebuild.
 // v21: pr_links admits only http(s) URLs (pr_url is rendered as a link).
-export const SCHEMA_VERSION = 21;
+// v22: FTS keyed by a unique per-row doc_id = hash(file_path, uuid) so the
+//      connection-wide scalar-subquery relaxation can go.
+export const SCHEMA_VERSION = 22;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -100,7 +102,11 @@ export const SCHEMA_DDL: readonly string[] = [
      tool_error_text VARCHAR,
      -- Comma-joined skill argument of canonical Skill tool calls, shaped like
      -- tool_names, which on its own only ever says "Skill".
-     skill_names     VARCHAR DEFAULT ''
+     skill_names     VARCHAR DEFAULT '',
+     -- FTS document key: hash(file_path, uuid), unique per row because
+     -- (file_path, uuid) is — a fork/resume copy repeats the uuid, but in
+     -- ANOTHER file. Keep it LAST: loadFile stages by column order.
+     doc_id          UBIGINT
    )`,
 
   `CREATE TABLE IF NOT EXISTS sessions (
