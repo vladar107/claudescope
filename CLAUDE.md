@@ -139,6 +139,14 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   dedup-by-`message.id`, stale-cache / index-corruption recovery, pricing refresh
   and fallback, connector normalization quirks. Don't pad coverage with trivial
   cases that can't realistically fail.
+- **Fitness functions:** some tests encode a *rule* rather than an instance —
+  `architecture-rules.test.ts` (no agent ids under `data/`/`routes/`),
+  `connector-error-signal.test.ts` (declared vs emitted error signal per
+  connector), `analytics-tool-counts.integration.test.ts` (every route counts
+  tool calls the same way), `duckdb-open.test.ts` (open-failure
+  classification), the finalize-recovery and shutdown tests. When a review
+  finds a *class* of bug, land the rule test with the fix and extend these
+  when adding a connector or route.
 - **Commits:** [Conventional Commits](https://www.conventionalcommits.org)
   (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`). **Do not add AI
   co-author / "Generated with" trailers** — keep history clean and human-authored.
@@ -350,6 +358,37 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   `process.kill` the pid from `daemon.json` directly. The record is written by
   the server after a successful bind (`CLAUDESCOPE_DAEMON=1`), not by the
   spawner, so a losing concurrent spawn can never clobber it.
+- **Two counting rules for `events` aggregates** (`data/analytics-metrics.ts`):
+  token/cost SUMs filter on `usage_canonical`; per-row COUNTS
+  (`tool_use_count`, the `tool_names`/`skill_names` unnest,
+  `tool_error_count`) exclude fork copies only (`toolCallRowsSql`) and never
+  go through the usage election — Claude Code splits one message across rows
+  and the elected row rarely carries the tool blocks. The parser applies the
+  same per-`message.id` election to subagent run totals.
+- **Tool-error signal is a declared capability** (`TOOL_ERROR_SIGNAL` in
+  `data/agent-capabilities.ts`): a connector either sets `is_error` from its
+  format's failure shape or emits `tool_error_count: null` — a real-looking 0
+  is never fabricated. A new connector must be declared there; the conformance
+  test walks the registry.
+- **Agent knowledge stays behind the connector seam.** Per-agent facts live in
+  `data/agent-capabilities.ts`; format-specific SQL or encodings (Codex's
+  fallback-title stripping, Claude Code's memory dir slug) go through
+  `AgentConnector` hooks (`fallbackTitleCandidateSql`, `projectMemorySlug`).
+  `architecture-rules.test.ts` fails on any connector-id literal or
+  `connectors/<id>/` import under `src/data/` or `src/routes/`.
+- **A failed finalize is remembered.** `files` bookkeeping advances per loaded
+  file, so `doReindex` latches `derivedDirty` (plus the touched session ids)
+  until the FTS rebuild completes, and the idle early-return requires it
+  clear. Never add an early exit that bypasses that flag.
+- **Shutdown drains, then closes DuckDB** (`shutdown.ts`): SIGTERM/SIGINT wait
+  up to `DRAIN_MS` (3.5 s) for an in-flight pass, close Fastify, then
+  `closeConnection()` so the WAL is checkpointed; a pass still running skips
+  the DB close. `DRAIN_MS` must stay under `daemon.ts` `EXIT_WAIT_MS` (5 s) or
+  every `claudescope stop` reports a hung daemon.
+- **FTS is keyed by `events.doc_id`** (`hash(file_path, uuid)`, unique per
+  row). `uuid` repeats across fork copies, and the old fix — relaxing
+  `scalar_subquery_error_on_multiple_rows` connection-wide — masked genuine
+  multi-row scalar-subquery bugs everywhere; never reintroduce it.
 - **Release is maintainer-only** and tag-triggered (npm Trusted Publishing /
   OIDC). See `CONTRIBUTING.md`.
 
