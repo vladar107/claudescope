@@ -16,11 +16,21 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// Only `spawn` is faked (spawnDaemon must not launch a real server); the rest of
+// `spawn` and `spawnSync` are faked (spawnDaemon must not launch a real server,
+// and `update` must never shell out to a real `npm install -g`); the rest of
 // the module stays real — daemonOwnsPid's execFileSync probe is under test too.
 vi.mock('node:child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:child_process')>()),
   spawn: vi.fn(),
+  spawnSync: vi.fn(() => ({ status: 0 }) as unknown as ReturnType<typeof import('node:child_process').spawnSync>),
+}));
+
+// getLatestVersion rejects on a network error (it only returns null for a
+// non-OK registry response) — faked here so the `update` offline test never
+// touches the real npm registry.
+vi.mock('../src/update-check.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/update-check.js')>()),
+  getLatestVersion: vi.fn(() => Promise.reject(new Error('offline'))),
 }));
 
 // --- temp state dir (decided before importing the module under test) ---------
@@ -455,5 +465,32 @@ describe('parsePort', () => {
   // the OS picks the port and the recorded one can never answer.
   it.each(['abc', '0', '-1', '99999', '80.5', '', ' '])('rejects %s', (v) => {
     expect(() => cli.parsePort(v, 4317)).toThrow(/between 1 and 65535/);
+  });
+});
+
+describe('update — offline registry lookup', () => {
+  // getLatestVersion (mocked above) rejects instead of resolving null, the way
+  // a real network failure does; `update` must fall into the same "could not
+  // reach the registry" branch a non-OK response takes, not crash with a stack.
+  it('prints the friendly notice instead of throwing', async () => {
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => void logs.push(msg));
+    await expect(cli.update(true)).resolves.toBeUndefined();
+    expect(logs).toContain('⚠ Could not reach the npm registry to confirm the latest version.');
+  });
+});
+
+describe('main — unknown flag', () => {
+  // parseArgs is strict, so an unrecognized flag throws ERR_PARSE_ARGS_UNKNOWN_OPTION;
+  // that must surface as a UsageError (message only, no stack) like every other
+  // usage mistake, not escape as a raw exception.
+  it('surfaces as a UsageError rather than a raw parseArgs exception', async () => {
+    const originalArgv = process.argv;
+    process.argv = [process.execPath, 'cli.js', '--bogus'];
+    try {
+      await expect(cli.main()).rejects.toBeInstanceOf(cli.UsageError);
+    } finally {
+      process.argv = originalArgv;
+    }
   });
 });
