@@ -4,8 +4,10 @@
  *
  * Same aggregation semantics as /api/analytics (assistant events,
  * usage_canonical dedup, the shared cache-hit denominator), grouped by the
- * session's connector. Date bounds filter on the session START — a session is
- * atomic here, like /api/analytics/sessions.
+ * session's connector — except the tool-call count, which is a per-row count and
+ * dedups fork copies only (THE RULE in `data/analytics-metrics.ts`). Date bounds
+ * filter on the session START — a session is atomic here, like
+ * /api/analytics/sessions.
  *
  * Data-gap semantics are the point of this endpoint: agents record usage at
  * different granularities (see AgentUsageGranularity), so metrics an agent
@@ -26,7 +28,7 @@ import type {
 } from '@claudescope/shared';
 import { getConnection, queryRows } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
-import { cacheHitRatio } from '../data/analytics-metrics.js';
+import { cacheHitRatio, toolCallRowsSql } from '../data/analytics-metrics.js';
 import { scopeFilters } from '../data/analytics-scope.js';
 import { usageGranularity } from '../data/agent-capabilities.js';
 import { errorSignalsByAgent } from './analytics-errors.js';
@@ -71,7 +73,8 @@ export async function registerAgentComparisonRoute(app: FastifyInstance): Promis
            sum(e.cache_read_tokens)  FILTER (WHERE e.usage_canonical) AS cache_read_tokens,
            sum(e.cache_write_tokens) FILTER (WHERE e.usage_canonical) AS cache_write_tokens,
            sum(e.cost_usd)           FILTER (WHERE e.usage_canonical) AS cost_usd,
-           sum(e.tool_use_count)     FILTER (WHERE e.usage_canonical) AS tool_calls,
+           -- Per-row count: fork copies only (THE RULE in data/analytics-metrics.ts).
+           sum(e.tool_use_count)     FILTER (WHERE ${toolCallRowsSql()}) AS tool_calls,
            count(*)                  FILTER (WHERE e.usage_canonical) AS responses
          FROM events e
          JOIN scoped sc ON e.session_id = sc.id

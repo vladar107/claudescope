@@ -3,6 +3,11 @@
  * sessions in scope (optional project + date bounds on the session START —
  * sessions are atomic here, like /api/analytics/sessions).
  *
+ * Tool calls and tool errors are both per-row counts, so they dedup fork copies
+ * only — never through `usage_canonical`, which would drop the tool_use blocks
+ * of every split message. See THE RULE in `data/analytics-metrics.ts`; this is
+ * what keeps the numbers here equal to /api/analytics/tools.
+ *
  * Two signals with very different availability, both exposed n/a-aware:
  *  - Tool errors: sums of `events.tool_error_count` (whichever rows carry the
  *    tool_result — user rows for Claude Code/Codex, see the SQL comment).
@@ -25,6 +30,7 @@ import type { ErrorAnalyticsResponse, ErrorAnalyticsRow } from '@claudescope/sha
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { scopeFilters } from '../data/analytics-scope.js';
+import { toolCallRowsSql } from '../data/analytics-metrics.js';
 
 /** Prefix of the user-message text Claude Code stores on an interrupt (both
  *  variants: `…by user]` and `…by user for tool use]`). */
@@ -72,13 +78,12 @@ export async function errorSignalsByAgent(
      SELECT
        COALESCE(sc.connector_id, 'unknown') AS connector_id,
        count(DISTINCT sc.id) AS sessions,
-       COALESCE(sum(e.tool_use_count) FILTER (WHERE e.type = 'assistant' AND e.usage_canonical), 0) AS tool_calls,
+       COALESCE(sum(e.tool_use_count) FILTER (WHERE e.type = 'assistant' AND ${toolCallRowsSql()}), 0) AS tool_calls,
        -- Errors live wherever the connector recorded the tool_result (user rows
-       -- for Claude Code/Codex), so no type filter. Fork copies of result rows
-       -- have NULL message ids (all elected canonical), so they are excluded by
-       -- origin instead; if the original file is later deleted the surviving
-       -- copy goes uncounted — an accepted edge, same as the interrupt count.
-       sum(e.tool_error_count) FILTER (WHERE e.usage_canonical AND e.forked_from_session_id IS NULL) AS tool_errors,
+       -- for Claude Code/Codex), so no type filter — only the fork exclusion. If
+       -- the original file is later deleted the surviving copy goes uncounted —
+       -- an accepted edge, same as the interrupt count.
+       sum(e.tool_error_count) FILTER (WHERE ${toolCallRowsSql()}) AS tool_errors,
        count(*) FILTER (
          WHERE e.type = 'user' AND NOT e.is_sidechain AND e.forked_from_session_id IS NULL
            AND e.text_content LIKE ${sqlString(`${INTERRUPT_PREFIX}%`)}

@@ -42,3 +42,43 @@ export function cacheHitRatioSql(cacheRead: string, cacheWrite: string, input: s
   const denominator = `(${read} + COALESCE(${cacheWrite}, 0) + COALESCE(${input}, 0))`;
   return `CASE WHEN ${denominator} > 0 THEN ${read}::DOUBLE / ${denominator} ELSE 0 END`;
 }
+
+/**
+ * THE RULE — an aggregate over `events` deduplicates one of two ways, and which
+ * one depends on what the column measures:
+ *
+ *  - **Token/cost SUMs dedup by billed API call** ({@link usageRowsSql}). Claude
+ *    Code writes one row per content block of an assistant message; every row
+ *    shares the `message.id` and repeats the FULL `usage`, and a fork copies the
+ *    lot into a second file. `electCanonicalUsage` (see `data/index.ts`) elects
+ *    exactly one row per `message_id`, so summing only elected rows counts each
+ *    billed call once.
+ *  - **Per-row COUNTS dedup fork copies only** ({@link toolCallRowsSql}):
+ *    `tool_use_count`, the `tool_names`/`skill_names` unnest, and
+ *    `tool_error_count` live on the SPECIFIC rows carrying those blocks — and
+ *    since only one row per message can win the usage election, most of them
+ *    LOSE it. Filtering these on `usage_canonical` hides the majority of real
+ *    tool calls (measured on a real index: 4974 Claude Code calls counted the
+ *    right way vs 2728 through the election). The only duplicates a per-row
+ *    count has to fear are fork copies, which carry `forked_from_session_id`.
+ *
+ * `tool_error_count` sits on the USER rows carrying the tool_results, whose
+ * `message_id` is NULL and which are therefore always canonical — so there the
+ * usage filter was a no-op and the fork exclusion is the whole dedup.
+ *
+ * The two rules are not interchangeable, and a route that mixes them reports a
+ * tool-call number that contradicts /api/analytics/tools.
+ */
+
+/** Rows to SUM tokens/cost over: one elected row per billed API call. */
+export function usageRowsSql(alias = 'e'): string {
+  return `${alias ? `${alias}.` : ''}usage_canonical`;
+}
+
+/**
+ * Rows to COUNT tool calls / tool errors over: everything except fork copies.
+ * Pass `''` for an unaliased query (the indexer's `FROM events`).
+ */
+export function toolCallRowsSql(alias = 'e'): string {
+  return `${alias ? `${alias}.` : ''}forked_from_session_id IS NULL`;
+}
