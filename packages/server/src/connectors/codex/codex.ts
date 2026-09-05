@@ -53,6 +53,48 @@ function auxProjections(filePath: string): AuxProjections {
 }
 
 /**
+ * Codex records its injected AGENTS/environment bootstrap with a USER role, so
+ * a session's first user message is frequently the preamble rather than the
+ * prompt. This strips only the complete, leading wrapper — the `# AGENTS.md
+ * instructions` header through `</INSTRUCTIONS>`, then an `<environment_context>`
+ * block if one follows, or a bare `<environment_context>` prefix — so a
+ * bootstrap-only message falls away (empty candidate → the indexer moves to the
+ * next message) while a prompt coalesced into the same event survives.
+ * Unfamiliar or malformed shapes fall back to the raw text, untouched.
+ */
+function fallbackTitleCandidateSql(sourceExpr: string, textExpr: string): string {
+  const remainder = `substring(${sourceExpr}, strpos(${sourceExpr}, '</INSTRUCTIONS>') + length('</INSTRUCTIONS>'))`;
+  // The remainder keeps the wrapper's trailing newlines; trim them before
+  // testing for the environment block that may follow.
+  const trimmed = `ltrim(${remainder}, chr(9) || chr(10) || chr(13) || ' ')`;
+  const afterEnvironment = (expr: string) =>
+    `substring(${expr}, strpos(${expr}, '</environment_context>') + length('</environment_context>'))`;
+  return `
+    CASE
+      WHEN regexp_matches(
+             ${sourceExpr},
+             '^# AGENTS\\.md instructions(?: for [^\\r\\n]+)?\\r?\\n[\\t\\r\\n ]*<INSTRUCTIONS>'
+           )
+        AND strpos(${sourceExpr}, '<INSTRUCTIONS>') > 0
+        AND strpos(${sourceExpr}, '</INSTRUCTIONS>') > strpos(${sourceExpr}, '<INSTRUCTIONS>')
+      THEN
+        CASE
+          WHEN starts_with(${trimmed}, '<environment_context>') THEN
+            CASE
+              WHEN strpos(${trimmed}, '</environment_context>') > length('<environment_context>')
+              THEN ${afterEnvironment(trimmed)}
+              ELSE ${textExpr}
+            END
+          ELSE ${remainder}
+        END
+      WHEN starts_with(${sourceExpr}, '<environment_context>')
+        AND strpos(${sourceExpr}, '</environment_context>') > length('<environment_context>')
+      THEN ${afterEnvironment(sourceExpr)}
+      ELSE ${textExpr}
+    END`;
+}
+
+/**
  * Load a session's events, splitting the resolved rollouts into the main thread
  * (its own thread id equals the session id) and one subagent per re-keyed child
  * rollout. A child's metadata comes from the matching `spawn_agent` call,
@@ -111,6 +153,7 @@ export const codexConnector: AgentConnector = {
   prepare,
   eventsProjectionSql,
   auxProjections,
+  fallbackTitleCandidateSql,
   loadSession,
   globalMemory: codexGlobalMemory,
   resumeSpec: (id) => ({

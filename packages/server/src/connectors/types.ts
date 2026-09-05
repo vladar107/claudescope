@@ -81,6 +81,18 @@ export interface AgentConnector {
   auxProjections(filePath: string): AuxProjections;
 
   /**
+   * Optional: this agent's cleaned first-user-message candidate for the fallback
+   * session title, as a SQL expression over the two given column expressions —
+   * `sourceExpr` yields the left-trimmed message text, `textExpr` the raw one.
+   * Agents that inject a bootstrap preamble (instructions, environment context)
+   * into the first user turn strip it here, so the derived title is the user's
+   * actual prompt; a candidate that comes back empty is skipped and the next
+   * message is considered. Connectors whose first user message is already the
+   * prompt omit this and get the raw text.
+   */
+  fallbackTitleCandidateSql?(sourceExpr: string, textExpr: string): string;
+
+  /**
    * Read a single session's files (already resolved from the `files` table) and
    * normalize them into the domain `SessionData` consumed by the thread
    * assembler. `paths` are all files recorded for the session.
@@ -124,6 +136,16 @@ export interface AgentConnector {
    * of scope: surfacing it would require reading arbitrary project dirs.)
    */
   projectMemory?(): AgentMemoryDir[];
+
+  /**
+   * Optional: the encoded-cwd directory name this connector uses to name a
+   * per-project memory dir (the `slug` of {@link AgentMemoryDir}). Implemented
+   * alongside {@link projectMemory} so the route can map a project cwd back to
+   * its memory dir — the attribution fallback for facts whose origin session is
+   * unknown. Each agent encodes a cwd its own way, so a slug only means
+   * something to the connector that produced it.
+   */
+  projectMemorySlug?(cwd: string): string;
 
   /**
    * Optional: how to reopen this session in the agent's own CLI. Returns the

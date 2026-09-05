@@ -8,6 +8,13 @@
 import type { AgentUsageGranularity } from '@claudescope/shared';
 
 /**
+ * The agent a row with no recorded `connector_id` belongs to. Claude Code was
+ * the only source before the column existed, so a legacy/NULL id is its row —
+ * a fallback for stored data, never a guess about an unknown agent.
+ */
+export const DEFAULT_CONNECTOR_ID = 'claude-code';
+
+/**
  * How each agent records token usage:
  * - copilot: tokens live only in `session.shutdown`, attached to the last
  *   assistant row — session totals are real, per-response ratios are not, and
@@ -95,4 +102,58 @@ export function connectorsWithToolErrorSignal(): string[] {
 
 export function connectorsWithoutToolErrorSignal(): string[] {
   return [...NO_TOOL_ERROR_SIGNAL];
+}
+
+/**
+ * Agents whose format records a user interrupt: Claude Code writes the
+ * `[Request interrupted by user…]` marker as the user message's text. No other
+ * source persists the event at all, so their interrupt count is `null`
+ * ("unavailable"), never the 0 a marker search would produce.
+ */
+const INTERRUPT_SIGNAL = new Set(['claude-code']);
+
+export function hasInterruptSignal(connectorId: string): boolean {
+  return INTERRUPT_SIGNAL.has(connectorId);
+}
+
+/**
+ * Agents whose transcripts link a subagent run back to the session that spawned
+ * it. Junie delegates by running `junie …` as a plain terminal command, so its
+ * children are independent sessions with zero ID linkage (see CLAUDE.md) — a
+ * subagent share derived for it would report 0 delegation, not "unknown".
+ * Unknown connectors are assumed to have linkage: that is the canonical shape.
+ */
+const NO_SUBAGENT_LINKAGE = new Set(['junie']);
+
+export function hasSubagentLinkage(connectorId: string): boolean {
+  return !NO_SUBAGENT_LINKAGE.has(connectorId);
+}
+
+/**
+ * Why an agent's usage figures read n/a (or skewed) on the agent comparison —
+ * the human sentence behind {@link usageGranularity} and the nulls around it.
+ * A property of the source format, so it lives here rather than in the route.
+ */
+const USAGE_AVAILABILITY_NOTES: Record<string, string> = {
+  copilot:
+    'Copilot records usage once per session (at shutdown), so per-response ratios are unavailable; crashed or still-running sessions carry no usage.',
+  antigravity:
+    'Antigravity transcripts carry no token counts — tokens and cost are unavailable by design.',
+  junie: 'Junie delegates via plain terminal commands, so subagent usage is invisible.',
+  grok: 'Grok records usage once per user turn (in updates.jsonl); a session whose updates file is missing or truncated reports zero tokens.',
+};
+
+export function usageAvailabilityNote(connectorId: string): string | undefined {
+  return USAGE_AVAILABILITY_NOTES[connectorId];
+}
+
+/** The same, for the error/interrupt signals (see {@link hasToolErrorSignal}). */
+const ERROR_AVAILABILITY_NOTES: Record<string, string> = {
+  junie: 'Junie tool results are plain strings — the format has no error signal.',
+  antigravity: 'Antigravity result records carry no error signal.',
+  copilot: 'Copilot counts permission-denied calls as errors.',
+};
+
+export function errorAvailabilityNote(connectorId: string): string | undefined {
+  return ERROR_AVAILABILITY_NOTES[connectorId];
 }

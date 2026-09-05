@@ -30,18 +30,13 @@ import { getConnection, queryRows } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { cacheHitRatio, toolCallRowsSql } from '../data/analytics-metrics.js';
 import { scopeFilters } from '../data/analytics-scope.js';
-import { usageGranularity } from '../data/agent-capabilities.js';
+import {
+  hasInterruptSignal,
+  hasSubagentLinkage,
+  usageAvailabilityNote,
+  usageGranularity,
+} from '../data/agent-capabilities.js';
 import { errorSignalsByAgent } from './analytics-errors.js';
-
-/** Human notes behind the n/a markers, keyed by connector id. */
-const AVAILABILITY_NOTES: Record<string, string> = {
-  copilot:
-    'Copilot records usage once per session (at shutdown), so per-response ratios are unavailable; crashed or still-running sessions carry no usage.',
-  antigravity:
-    'Antigravity transcripts carry no token counts — tokens and cost are unavailable by design.',
-  junie: 'Junie delegates via plain terminal commands, so subagent usage is invisible.',
-  grok: 'Grok records usage once per user turn (in updates.jsonl); a session whose updates file is missing or truncated reports zero tokens.',
-};
 
 export async function registerAgentComparisonRoute(app: FastifyInstance): Promise<void> {
   app.get<{
@@ -125,10 +120,11 @@ export async function registerAgentComparisonRoute(app: FastifyInstance): Promis
 
       const hasTokens = granularity !== 'none';
       const perResponse = granularity === 'per-response';
+      const availabilityNote = usageAvailabilityNote(connectorId);
       return {
         connectorId,
         usageGranularity: granularity,
-        ...(AVAILABILITY_NOTES[connectorId] ? { availabilityNote: AVAILABILITY_NOTES[connectorId] } : {}),
+        ...(availabilityNote ? { availabilityNote } : {}),
         sessions,
         responses,
         toolCalls,
@@ -145,13 +141,13 @@ export async function registerAgentComparisonRoute(app: FastifyInstance): Promis
         cacheHitRatio: hasTokens ? cacheHitRatio(cacheRead, cacheWrite, input) : null,
         subagentSessions,
         subagentShare:
-          connectorId === 'junie' ? null : sessions > 0 ? subagentSessions / sessions : null,
+          hasSubagentLinkage(connectorId) && sessions > 0 ? subagentSessions / sessions : null,
         toolErrors,
         errorRate:
           toolErrors !== null && sig !== undefined && sig.toolCalls > 0
             ? toolErrors / sig.toolCalls
             : null,
-        interrupts: connectorId === 'claude-code' ? (sig?.interrupts ?? 0) : null,
+        interrupts: hasInterruptSignal(connectorId) ? (sig?.interrupts ?? 0) : null,
       };
     });
 

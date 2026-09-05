@@ -31,17 +31,11 @@ import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { scopeFilters } from '../data/analytics-scope.js';
 import { toolCallRowsSql } from '../data/analytics-metrics.js';
+import { errorAvailabilityNote, hasInterruptSignal } from '../data/agent-capabilities.js';
 
 /** Prefix of the user-message text Claude Code stores on an interrupt (both
  *  variants: `…by user]` and `…by user for tool use]`). */
 const INTERRUPT_PREFIX = '[Request interrupted by user';
-
-/** Why a metric is n/a (or skewed), keyed by connector id. */
-const AVAILABILITY_NOTES: Record<string, string> = {
-  junie: 'Junie tool results are plain strings — the format has no error signal.',
-  antigravity: 'Antigravity result records carry no error signal.',
-  copilot: 'Copilot counts permission-denied calls as errors.',
-};
 
 export interface ErrorScope {
   project?: string;
@@ -115,16 +109,16 @@ export async function registerErrorsRoute(app: FastifyInstance): Promise<void> {
     const signals = await errorSignalsByAgent(conn, req.query);
 
     const rows: ErrorAnalyticsRow[] = signals.map((s) => {
-      const isClaude = s.connectorId === 'claude-code';
-      const note = AVAILABILITY_NOTES[s.connectorId];
+      const interrupted = hasInterruptSignal(s.connectorId);
+      const note = errorAvailabilityNote(s.connectorId);
       return {
         connectorId: s.connectorId,
         sessions: s.sessions,
         toolCalls: s.toolCalls,
         toolErrors: s.toolErrors,
         errorRate: s.toolErrors === null || s.toolCalls === 0 ? null : s.toolErrors / s.toolCalls,
-        interrupts: isClaude ? s.interrupts : null,
-        interruptsPerSession: isClaude && s.sessions > 0 ? s.interrupts / s.sessions : null,
+        interrupts: interrupted ? s.interrupts : null,
+        interruptsPerSession: interrupted && s.sessions > 0 ? s.interrupts / s.sessions : null,
         ...(note ? { availabilityNote: note } : {}),
       };
     });

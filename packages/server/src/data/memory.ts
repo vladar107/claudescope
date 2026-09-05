@@ -14,7 +14,6 @@ import { getConnection, queryRows } from '../db/duckdb.js';
 import { connectors } from '../connectors/registry.js';
 import type { AgentConnector } from '../connectors/types.js';
 import { displayNameFromCwd, projectIdFromCwd } from './project-id.js';
-import { memorySlugForCwd } from '../connectors/claude-code/memory.js';
 
 /** One memory source, attributed to a connector and (for project facts) a project. */
 export interface AttributedMemory {
@@ -69,20 +68,33 @@ export async function collectMemory(): Promise<AttributedMemory[]> {
   );
 
   const sessionToProject = new Map<string, string>();
-  const slugToProject = new Map<string, string>();
+  const projectByCwd = new Map<string, string>();
   const displayNames = new Map<string, string>();
   for (const r of rows) {
     const cwd = String(r.project_cwd);
     const projectId = projectIdFromCwd(cwd);
     if (r.id != null) sessionToProject.set(String(r.id), projectId);
-    const slug = memorySlugForCwd(cwd);
-    if (!slugToProject.has(slug)) slugToProject.set(slug, projectId);
+    if (!projectByCwd.has(cwd)) projectByCwd.set(cwd, projectId);
     if (!displayNames.has(projectId)) displayNames.set(projectId, displayNameFromCwd(cwd));
+  }
+
+  // A dir slug is the connector's OWN encoding of a cwd, so the fallback map is
+  // built per connector — only those that expose their encoding get one.
+  const slugToProject = new Map<string, Map<string, string>>();
+  for (const c of connectors) {
+    const slugForCwd = c.projectMemorySlug;
+    if (!slugForCwd) continue;
+    const bySlug = new Map<string, string>();
+    for (const [cwd, projectId] of projectByCwd) {
+      const slug = slugForCwd(cwd);
+      if (!bySlug.has(slug)) bySlug.set(slug, projectId);
+    }
+    slugToProject.set(c.id, bySlug);
   }
 
   for (const c of connectors) {
     for (const dir of safeProject(c)) {
-      const fallback = slugToProject.get(dir.slug);
+      const fallback = slugToProject.get(c.id)?.get(dir.slug);
       for (const source of dir.facts) {
         const byOrigin = source.originSessionId
           ? sessionToProject.get(source.originSessionId)

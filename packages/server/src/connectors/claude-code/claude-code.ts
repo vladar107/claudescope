@@ -18,7 +18,7 @@ import { sqlPath, sqlString } from '../../db/duckdb.js';
 import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
 import { MAX_TOOL_ERROR_TEXT } from '../tool-errors.js';
-import { globalMemory, projectMemory } from './memory.js';
+import { globalMemory, memorySlugForCwd, projectMemory } from './memory.js';
 
 /**
  * Shared `read_ndjson` options for the line-delimited Claude transcripts.
@@ -459,6 +459,7 @@ export const claudeCodeConnector: AgentConnector = {
   loadSession,
   globalMemory,
   projectMemory,
+  projectMemorySlug: memorySlugForCwd,
   resumeSpec: (id) => ({
     resumeArgv: ['claude', '--resume', id],
     forkArgv: ['claude', '--resume', id, '--fork-session'],
