@@ -119,6 +119,16 @@ describe('claudescope mcp tools', () => {
     expect(text).toContain('<here>');
     expect(text).not.toContain('<mark>');
     expect(text).not.toContain('&lt;');
+    // hits are framed as recorded, untrusted history (prompt-injection mitigation).
+    expect(text.startsWith('Recorded transcript history follows.')).toBe(true);
+    expect(text).toContain('----- begin recorded transcript -----');
+    expect(text).toContain('----- end recorded transcript -----');
+  });
+
+  it('search_transcripts does not frame an empty result', async () => {
+    const res = await client.callTool({ name: 'search_transcripts', arguments: { query: 'nonexistentqueryterm' } });
+    const text = toolText(res);
+    expect(text).toBe('No matches.');
   });
 
   it('get_session windows turns and truncates tool payloads', async () => {
@@ -131,6 +141,10 @@ describe('claudescope mcp tools', () => {
     expect(text).toContain('[truncated,');
     expect(text).not.toContain('R'.repeat(200));
     expect(text).toMatch(/Turns 1–\d+ of \d+/u);
+    // get_session is always framed as recorded, untrusted history.
+    expect(text.startsWith('Recorded transcript history follows.')).toBe(true);
+    expect(text).toContain('----- begin recorded transcript -----');
+    expect(text).toContain('----- end recorded transcript -----');
   });
 
   it('get_session anchors on a message uuid with around/radius', async () => {
