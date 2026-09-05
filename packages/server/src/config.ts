@@ -110,6 +110,19 @@ export const CLAUDESCOPE_HOME = expandHome(
 export const DUCKDB_PATH = process.env.DUCKDB_PATH ?? join(CLAUDESCOPE_HOME, 'index.duckdb');
 
 /**
+ * Where DuckDB stores the `json`/`fts` extensions. The node client doesn't
+ * bundle them, so DuckDB downloads them itself on first run (and after every
+ * DuckDB version bump) — by default into `~/.duckdb/extensions`, a write
+ * OUTSIDE the state dir, which breaks the "we only write inside
+ * CLAUDESCOPE_HOME" guarantee. Pointing it here keeps that promise (and makes
+ * the download reproducible/removable with the rest of our state). Override
+ * with DUCKDB_EXTENSION_DIR to share a machine-wide cache — which is what the
+ * test suite does, so throwaway state dirs don't re-download per test file.
+ */
+export const DEFAULT_DUCKDB_EXTENSION_DIR = join(CLAUDESCOPE_HOME, 'duckdb-extensions');
+export const DUCKDB_EXTENSION_DIR = process.env.DUCKDB_EXTENSION_DIR ?? DEFAULT_DUCKDB_EXTENSION_DIR;
+
+/**
  * Read-only pricing template shipped inside the package. Seeds the user copy on
  * first run and is the fallback when no user copy exists. Resolved for both the
  * bundled layout (`<pkg>/pricing.default.json` next to the bundle) and the dev

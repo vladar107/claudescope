@@ -1,4 +1,5 @@
-import { dirname, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
@@ -16,12 +17,19 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['packages/*/test/**/*.test.ts'],
+    env: {
+      // In production the json/fts extensions are downloaded into the state dir
+      // (see DUCKDB_EXTENSION_DIR in config.ts), but tests spin up a throwaway
+      // CLAUDESCOPE_HOME per file — which would re-download ~31 MB every time.
+      // Pin them to the machine's own shared DuckDB cache instead.
+      DUCKDB_EXTENSION_DIR: join(homedir(), '.duckdb', 'extensions'),
+    },
     // Integration tests build a DuckDB index from fixtures; give them room.
     testTimeout: 30_000,
     hookTimeout: 30_000,
     // On Windows, parallel workers concurrently `INSTALL` DuckDB extensions into
-    // the shared ~/.duckdb dir, and the OS file-locking fails the simultaneous
-    // move ("Access is denied"). The app is single-process in production, so this
+    // that shared cache, and the OS file-locking fails the simultaneous move
+    // ("Access is denied"). The app is single-process in production, so this
     // is purely a test-concurrency artifact — serialize test files on Windows
     // only; Linux/macOS keep full parallelism.
     fileParallelism: process.platform !== 'win32',

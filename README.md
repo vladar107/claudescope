@@ -298,6 +298,7 @@ All optional — set via environment variables.
 | `ANTIGRAVITY_DIR`     | `~/.gemini/antigravity` | Where to read Google Antigravity desktop-app transcripts from. A leading `~` is expanded. |
 | `GROK_SESSIONS_DIR`   | `~/.grok/sessions`     | Where to read xAI Grok CLI transcripts from. A leading `~` is expanded. |
 | `CLAUDESCOPE_HOME`    | `~/.claudescope`       | Where the app keeps its own state (index, pricing copy, logs, PID).    |
+| `DUCKDB_EXTENSION_DIR`| `~/.claudescope/duckdb-extensions` | Where DuckDB keeps its `json`/`fts` extensions. Point it at `~/.duckdb/extensions` to reuse a machine-wide cache. |
 | `REINDEX_INTERVAL_MS` | `15000`                | How often to auto-pick-up new/updated sessions. Set `0` to disable.    |
 
 Each agent source is optional — if a directory doesn't exist it's simply skipped,
@@ -494,7 +495,9 @@ Claudescope runs entirely on your machine. It treats every agent source
 **read-only**, **binds to `127.0.0.1` only**, and sends **no telemetry**. Its only
 outbound requests are a cached npm-registry version check for the update notice
 and a daily fetch of public model pricing rates from LiteLLM (disable with
-`PRICING_REFRESH_INTERVAL_MS=0`). See
+`PRICING_REFRESH_INTERVAL_MS=0`). On first run — and again after a DuckDB
+upgrade — DuckDB itself also downloads its `json`/`fts` extensions (~31 MB) from
+DuckDB's own extension repository into `$DUCKDB_EXTENSION_DIR`. See
 [`SECURITY.md`](./SECURITY.md) for the full breakdown of filesystem, network,
 shell, and self-update behavior — and how to report a vulnerability.
 

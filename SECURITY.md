@@ -47,7 +47,11 @@ None of these are misused; they're listed here so you can verify that.
   within each agent's own directory, never from your project folders.
 - **Writes** only inside its own state dir `~/.claudescope/` (override:
   `$CLAUDESCOPE_HOME`): the DuckDB index (a rebuildable cache), a user-editable
-  `pricing.json`, the daemon PID/port file, and logs.
+  `pricing.json`, the daemon PID/port file, and logs. DuckDB's own `json`/`fts`
+  extensions land there too, under `~/.claudescope/duckdb-extensions/` (override:
+  `$DUCKDB_EXTENSION_DIR`) — the node client doesn't bundle them, so DuckDB
+  downloads them itself, and pointing its `extension_directory` here keeps that
+  write inside the state dir instead of the default `~/.duckdb/extensions`.
 - **Creates that state dir owner-only** (`0700`, files `0600`) — the index, and
   the normalized per-session copies under `cache/`, hold transcript text verbatim.
   Those copies are removed automatically once the source session is gone. The
@@ -83,6 +87,15 @@ None of these are misused; they're listed here so you can verify that.
     disable it entirely.
 
   Both are GET requests that **send no data** beyond the request itself.
+- **DuckDB fetches its own extensions.** The index needs the `json` and `fts`
+  extensions, which the node client doesn't bundle, so on first run — and again
+  after a DuckDB version bump — DuckDB downloads them (~31 MB) into
+  `~/.claudescope/duckdb-extensions/` (override: `$DUCKDB_EXTENSION_DIR`). This
+  is a GET that sends nothing about you, but note it goes over **plain HTTP** to
+  `http://extensions.duckdb.org/<duckdb-version>/<platform>/…` — DuckDB's own
+  default endpoint, unencrypted because the extension binaries are
+  signature-verified rather than transport-protected. Pre-seed that directory (or
+  copy it from another machine) to skip the download and run fully offline.
 - **No telemetry, analytics, or data exfiltration.** Your transcript content
   never leaves your machine.
 - The only other URLs in the repository (`example.com`, `platform.claude.com`)
