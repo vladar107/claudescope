@@ -23,6 +23,7 @@ import { cacheHitRatioSql, toolCallRowsSql } from '../data/analytics-metrics.js'
 import {
   connectorsWithCompactionSignal,
   connectorsWithPromptSizedUsage,
+  DEFAULT_CONNECTOR_ID,
 } from '../data/agent-capabilities.js';
 import { contextWindowFor, loadPricing } from '../data/pricing.js';
 import { readRow } from '../db/row.js';
@@ -86,7 +87,7 @@ export async function registerSessionEfficiencyRoute(app: FastifyInstance): Prom
     // them, so they sort last and stay out of the quantiles.
     // COALESCE mirrors rowToSessionMeta's default so both routes agree on a
     // (theoretical) NULL connector_id.
-    const connector = "COALESCE(s.connector_id, 'claude-code')";
+    const connector = `COALESCE(s.connector_id, ${sqlString(DEFAULT_CONNECTOR_ID)})`;
     const withContext = sqlList(connectorsWithPromptSizedUsage());
     const withCompactions = sqlList(connectorsWithCompactionSignal());
 

@@ -33,6 +33,7 @@ import { readRow } from '../db/row.js';
 import { projectIdFromCwd } from '../data/project-id.js';
 import { toolCallRowsSql } from '../data/analytics-metrics.js';
 import { errorSignalsByAgent } from './analytics-errors.js';
+import { hasInterruptSignal } from '../data/agent-capabilities.js';
 import { computeStreaks } from './analytics-activity.js';
 import { timestampParam } from '../params.js';
 
@@ -243,8 +244,8 @@ export async function registerDigestRoute(app: FastifyInstance): Promise<void> {
             .map((s) => s.connectorId),
         }
       : null;
-    const claude = signals.find((s) => s.connectorId === 'claude-code');
-    const interrupts = claude ? claude.interrupts : null;
+    const interrupting = signals.find((s) => hasInterruptSignal(s.connectorId));
+    const interrupts = interrupting ? interrupting.interrupts : null;
 
     return {
       from,

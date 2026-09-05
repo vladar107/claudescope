@@ -476,26 +476,43 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
 }
 
 /**
+ * The title-candidate expression over the `user_text` CTE: each connector that
+ * cleans its own first message gets a branch keyed by its registry id, everyone
+ * else the raw text. Built from the registry, so no agent is named here.
+ */
+function candidateExpression(): string {
+  const branches = connectors
+    .filter((c) => c.fallbackTitleCandidateSql)
+    .map(
+      (c) =>
+        `WHEN connector_id = ${sqlString(c.id)} THEN ${c.fallbackTitleCandidateSql!('source', 'text_content')}`,
+    );
+  if (branches.length === 0) return 'text_content';
+  return `CASE ${branches.join(' ')} ELSE text_content END`;
+}
+
+/**
  * Fill in fallback titles for sessions with no real stored title, by cleaning
  * the first genuine user message (see {@link cleanFallbackTitleCandidate}).
  * Runs after the derived `sessions` rebuild, so it only touches rows whose
  * `title` came back empty.
  *
- * Codex records its injected AGENTS/environment bootstrap with a user role. The
- * candidate CTE removes only that complete, leading wrapper: an empty
- * bootstrap-only row falls away, while a prompt coalesced into the same event
- * remains. Other connectors and unfamiliar/malformed Codex shapes pass through
- * untouched.
+ * Some agents record an injected bootstrap (instructions, environment context)
+ * with a user role, so their first user message is not the prompt. Stripping it
+ * is the connector's business, not the indexer's: each contributes its own
+ * candidate expression via {@link AgentConnector.fallbackTitleCandidateSql}, and
+ * connectors without one use the raw text (see {@link candidateExpression}).
  *
  * Candidates are considered in small per-session batches. The shared TS
- * eligibility rule can therefore reject a complete harness turn (such as
- * Claude Code's `/clear`) and continue to the next user message without loading
- * every turn into memory. Candidate text is capped to a few KB only AFTER
- * Codex wrapper removal, then cleaned and written with `title_derived = TRUE`.
+ * eligibility rule can therefore reject a complete harness turn (such as a
+ * `/clear`) and continue to the next user message without loading every turn
+ * into memory. Candidate text is capped to a few KB only AFTER the connector's
+ * cleanup, then cleaned and written with `title_derived = TRUE`.
  */
 async function applyFallbackTitles(conn: DuckDBConnection): Promise<void> {
   const updates: string[] = [];
   const CANDIDATE_BATCH_SIZE = 8;
+  const candidateSql = candidateExpression();
   let firstRank = 1;
   let pendingSessionIds: string[] | null = null;
 
@@ -521,67 +538,13 @@ async function applyFallbackTitles(conn: DuckDBConnection): Promise<void> {
           AND e.text_content IS NOT NULL
           AND length(trim(e.text_content)) > 0
           ${sessionFilter}
-      ), instruction_bounds AS (
-        SELECT
-          *,
-          strpos(source, '<INSTRUCTIONS>') AS instructions_start,
-          strpos(source, '</INSTRUCTIONS>') AS instructions_end
-        FROM user_text
-      ), instruction_remainders AS (
-        SELECT
-          *,
-          CASE
-            WHEN connector_id = 'codex'
-              AND regexp_matches(
-                source,
-                '^# AGENTS\\.md instructions(?: for [^\\r\\n]+)?\\r?\\n[\\t\\r\\n ]*<INSTRUCTIONS>'
-              )
-              AND instructions_start > 0
-              AND instructions_end > instructions_start
-            THEN substring(source, instructions_end + length('</INSTRUCTIONS>'))
-            ELSE NULL
-          END AS instructions_remainder
-        FROM instruction_bounds
       ), candidates AS (
         SELECT
           session_id,
           ts,
           uuid,
-          CASE
-            WHEN instructions_remainder IS NOT NULL THEN
-              CASE
-                WHEN starts_with(
-                  ltrim(instructions_remainder, chr(9) || chr(10) || chr(13) || ' '),
-                  '<environment_context>'
-                ) THEN
-                  CASE
-                    WHEN strpos(
-                      ltrim(instructions_remainder, chr(9) || chr(10) || chr(13) || ' '),
-                      '</environment_context>'
-                    )
-                      > length('<environment_context>')
-                    THEN substring(
-                      ltrim(instructions_remainder, chr(9) || chr(10) || chr(13) || ' '),
-                      strpos(
-                        ltrim(instructions_remainder, chr(9) || chr(10) || chr(13) || ' '),
-                        '</environment_context>'
-                      )
-                        + length('</environment_context>')
-                    )
-                    ELSE text_content
-                  END
-                ELSE instructions_remainder
-              END
-            WHEN connector_id = 'codex'
-              AND starts_with(source, '<environment_context>')
-              AND strpos(source, '</environment_context>') > length('<environment_context>')
-            THEN substring(
-              source,
-              strpos(source, '</environment_context>') + length('</environment_context>')
-            )
-            ELSE text_content
-          END AS raw
-        FROM instruction_remainders
+          ${candidateSql} AS raw
+        FROM user_text
       ), ranked AS (
         SELECT
           session_id,

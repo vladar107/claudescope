@@ -27,7 +27,11 @@ import { assembleThread, buildSubagentRuns } from '../data/parser.js';
 import { loadSessionData } from '../data/session-loader.js';
 import { computeSessionFingerprint } from '../data/fingerprint.js';
 import { contextWindowFor, loadPricing } from '../data/pricing.js';
-import { hasCompactionSignal, hasPromptSizedUsage } from '../data/agent-capabilities.js';
+import {
+  DEFAULT_CONNECTOR_ID,
+  hasCompactionSignal,
+  hasPromptSizedUsage,
+} from '../data/agent-capabilities.js';
 import { connectorById } from '../connectors/registry.js';
 import { buildResumeInfo } from '../connectors/resume.js';
 import { resolveWindow, subagentsInWindow, truncateToolChars } from '../data/window.js';
@@ -59,7 +63,7 @@ function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
     const rates = pricing.providers?.[p.toLowerCase()];
     return rates !== undefined && isZeroRated(rates);
   });
-  const connectorId = rd.str('connector_id') || 'claude-code';
+  const connectorId = rd.str('connector_id') || DEFAULT_CONNECTOR_ID;
   const meta: SessionMeta = {
     id: rd.str('id'),
     projectId: cwd ? projectIdFromCwd(cwd) : '',
