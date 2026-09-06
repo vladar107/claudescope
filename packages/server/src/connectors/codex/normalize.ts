@@ -102,6 +102,10 @@ export interface RolloutFile {
   size: number;
 }
 
+/** The result of the most recent {@link listRollouts} walk in this process,
+ *  reused by {@link getCodexContext} so a pass walks the sessions dir once. */
+let lastRollouts: RolloutFile[] | null = null;
+
 /** Recursively collect every `rollout-*.jsonl` under the Codex sessions dir. */
 export function listRollouts(): RolloutFile[] {
   const out: RolloutFile[] = [];
@@ -127,6 +131,7 @@ export function listRollouts(): RolloutFile[] {
     }
   };
   walk(codexSessionsDir());
+  lastRollouts = out;
   return out;
 }
 
@@ -180,11 +185,17 @@ function fingerprint(files: RolloutFile[]): string {
 /**
  * The memoized subagent parent-map for the sessions dir, built by reading only
  * each rollout's first line (`session_meta` carries `thread_source` and
- * `source.subagent.thread_spawn.parent_thread_id`). Rebuilt only when a rollout
- * changes, so per-file `prepare`/`loadSession` calls in one reindex reuse one scan.
+ * `source.subagent.thread_spawn.parent_thread_id`). Rebuilt only when the file
+ * list changes. Fingerprints {@link lastRollouts} (the walk `discover()`
+ * already did this pass) instead of walking again — falling back to its own
+ * walk only when nothing has been remembered yet in this process — so a pass
+ * preparing N subagent rollouts still walks the sessions dir exactly once.
+ * The read path (`loadSession`) therefore sees at most one poll interval of
+ * staleness, which only affects a grandchild spawned within that interval and
+ * is corrected by the next pass's `discover()`.
  */
 export function getCodexContext(): CodexContext {
-  const files = listRollouts();
+  const files = lastRollouts ?? listRollouts();
   const fp = fingerprint(files);
   if (ctxCache && ctxCache.fp === fp) return ctxCache.ctx;
   const parents = new Map<string, string>();
