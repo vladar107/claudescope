@@ -472,7 +472,8 @@ Query commands (read-only; start the background server on first use):
                    [--project id] [--role user|assistant] [--scope sessions|memory|all] [--limit N]
                    [--literal] (exact substring, for errors/identifiers)
   sessions         List sessions [--project id] [--cwd path] [--agent id] [--branch name]
-                   [--sort recent|oldest|tokens|cost|messages] [--q substr] [--limit N]
+                   [--sort recent|oldest|tokens|cost|messages] [--q substr]
+                   [--limit N] [--offset N]
   session <id>     One session as Markdown — a window of turns, pageable
                    [--offset N] [--limit N] [--around uuid] [--radius N] [--tail N]
                    [--max-tool-chars N] [--redact]
@@ -615,6 +616,7 @@ export async function main(): Promise<void> {
           sort: enumFlag('sort', values.sort, ['recent', 'oldest', 'tokens', 'cost', 'messages'] as const),
           q: values.q,
           limit: intFlag('limit', values.limit),
+          offset: intFlag('offset', values.offset),
           json: values.json,
         };
         return (client) => querySessions(client, args);
