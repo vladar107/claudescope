@@ -100,6 +100,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await registerSystemRoute(app);
 
   app.post('/api/reindex', async (): Promise<ReindexResponse> => {
-    return reindex();
+    // Flush the FTS debounce: a user-initiated pass expects fresh ranked search.
+    return reindex({ flushFts: true });
   });
 }
