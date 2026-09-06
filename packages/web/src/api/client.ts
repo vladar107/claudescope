@@ -4,6 +4,7 @@
  * the Fastify backend on :4317; in prod Fastify serves both).
  */
 
+import { SESSIONS_TOTAL_HEADER } from '@claudescope/shared';
 import type {
   ActivityResponse,
   AgentComparisonResponse,
@@ -24,6 +25,7 @@ import type {
   SessionEfficiencyResponse,
   SessionFingerprintResponse,
   SessionEfficiencySort,
+  SessionMeta,
   SettingsResponse,
   SettingsUpdateRequest,
   SettingsUpdateResponse,
@@ -61,15 +63,21 @@ function qs(params: Record<string, string | number | undefined | null>): string 
   return s ? `?${s}` : '';
 }
 
+interface RequestInitLite {
+  method?: string;
+  body?: unknown;
+  signal?: AbortSignal;
+}
+
 /**
  * Core fetch wrapper: prefixes `/api`, parses JSON, and raises {@link ApiError}
- * on non-2xx. `signal` lets callers cancel in-flight requests (e.g. on unmount
- * or rapid search typing).
+ * on non-2xx. Returns the response headers alongside the body for the few
+ * endpoints that carry metadata there (e.g. the sessions total count).
  */
-async function request<T>(
+async function requestWithHeaders<T>(
   path: string,
-  init?: { method?: string; body?: unknown; signal?: AbortSignal },
-): Promise<T> {
+  init?: RequestInitLite,
+): Promise<{ data: T; headers: Headers }> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   const hasBody = init?.body !== undefined;
   if (hasBody) headers['Content-Type'] = 'application/json';
@@ -86,7 +94,15 @@ async function request<T>(
     throw new ApiError(res.status, res.statusText, text);
   }
 
-  return (await res.json()) as T;
+  return { data: (await res.json()) as T, headers: res.headers };
+}
+
+/**
+ * Body-only fetch wrapper. `signal` lets callers cancel in-flight requests
+ * (e.g. on unmount or rapid search typing).
+ */
+async function request<T>(path: string, init?: RequestInitLite): Promise<T> {
+  return (await requestWithHeaders<T>(path, init)).data;
 }
 
 export interface ListSessionsParams {
@@ -94,6 +110,14 @@ export interface ListSessionsParams {
   sort?: SessionSort;
   q?: string;
   agent?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** One page of sessions plus the unpaged match count from `X-Total-Count`. */
+export interface ListSessionsResult {
+  rows: SessionMeta[];
+  total: number;
 }
 
 export interface SearchParams {
@@ -134,17 +158,28 @@ export const api = {
     return request<ProjectsResponse>('/projects', { signal });
   },
 
-  /** GET /api/sessions?project=&sort=&q=&agent= */
-  listSessions(params: ListSessionsParams = {}, signal?: AbortSignal): Promise<SessionsResponse> {
-    return request<SessionsResponse>(
+  /** GET /api/sessions?project=&sort=&q=&agent=&limit=&offset= — one page + the total. */
+  async listSessions(
+    params: ListSessionsParams = {},
+    signal?: AbortSignal,
+  ): Promise<ListSessionsResult> {
+    const { data, headers } = await requestWithHeaders<SessionsResponse>(
       `/sessions${qs({
         project: params.project,
         sort: params.sort,
         q: params.q,
         agent: params.agent,
+        limit: params.limit,
+        offset: params.offset,
       })}`,
       { signal },
     );
+    // An older server (or a proxy that strips the header) reports no total; the
+    // page we did get is then the only truth we have. `Number('')` and
+    // `Number(null)` are 0, so the header has to be checked before parsing.
+    const raw = headers.get(SESSIONS_TOTAL_HEADER);
+    const total = raw && raw.trim() ? Number(raw) : Number.NaN;
+    return { rows: data, total: Number.isFinite(total) ? total : data.length };
   },
 
   /** GET /api/sessions/:id */

@@ -185,6 +185,13 @@
   gap: var(--tv-space-2);
 }
 
+/* "Load more" row (or its error) under a paged session list. */
+.tv-browse__more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--tv-space-3);
+}
+
 .tv-session-row {
   position: relative;
   display: flex;
