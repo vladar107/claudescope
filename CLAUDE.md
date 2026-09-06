@@ -389,6 +389,29 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   row). `uuid` repeats across fork copies, and the old fix — relaxing
   `scalar_subquery_error_on_multiple_rows` connection-wide — masked genuine
   multi-row scalar-subquery bugs everywhere; never reintroduce it.
+- **Sessions paging is stable by construction.** `GET /api/sessions` clamps
+  `limit` (default 50, max 500), takes `offset`, and every sort order carries
+  an `, id` tie-break so pages never overlap or skip on tied values. The
+  unpaged match count travels in the `X-Total-Count` header
+  (`SESSIONS_TOTAL_HEADER` in `shared`); the body stays `SessionMeta[]` so the
+  CLI `--json` shape and the MCP tool are unchanged. `q` matches title, git
+  branch, id, or model on the server — the web list sends it instead of
+  filtering client-side, so a filter can find a session beyond the loaded page.
+- **The FTS rebuild is debounced; derived tables never are.** A pass rebuilds
+  the FTS index only if the last rebuild is older than
+  `FTS_REBUILD_MIN_INTERVAL_MS` (default 60 s; `0` = every pass, which
+  `vitest.config.ts` pins), otherwise it records `fts_stale` in the `meta`
+  table. The flag is persisted because a restart mid-session would otherwise
+  leave ranked search stale until the next file change. An idle pass that
+  finds the flag rebuilds FTS only and does not bump `dataVersion`;
+  `POST /api/reindex` always flushes. `sessions`/`file_edits` stay per pass —
+  the list page is what people watch live. Literal search is a `LIKE` over
+  `events`, so it never lags.
+- **Codex walks its sessions dir once per pass.** `listRollouts()` remembers
+  its last walk and `getCodexContext()` fingerprints that list instead of
+  walking again per subagent rollout. Whole-file re-normalization of a
+  changed rollout is deliberate: rows depend on cross-record correlation, and
+  DuckDB re-reads the whole cache anyway.
 - **Release is maintainer-only** and tag-triggered (npm Trusted Publishing /
   OIDC). See `CONTRIBUTING.md`.
 

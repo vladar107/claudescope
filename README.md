@@ -262,7 +262,9 @@ ranking) — the way to find an error message the agent never restated in prose.
 
 `sessions --cwd <path>` resolves to the project for that working directory
 locally, without a separate `projects` lookup, and is exclusive with
-`--project`; `--branch <name>` filters to that git branch. `session` prints a
+`--project`; `--branch <name>` filters to that git branch; `--q <text>` matches
+the title, branch, id, or model; `--limit/--offset` page the list (20 rows by
+default). `session` prints a
 pageable window of turns as Markdown (`--offset/--limit`, `--redact` to mask
 paths/secrets); `--tail N` prints only the last N turns and is exclusive with
 `--offset/--limit/--around`. `--json` returns the raw API response unredacted.
@@ -300,6 +302,7 @@ All optional — set via environment variables.
 | `CLAUDESCOPE_HOME`    | `~/.claudescope`       | Where the app keeps its own state (index, pricing copy, logs, PID).    |
 | `DUCKDB_EXTENSION_DIR`| `~/.claudescope/duckdb-extensions` | Where DuckDB keeps its `json`/`fts` extensions. Point it at `~/.duckdb/extensions` to reuse a machine-wide cache. |
 | `REINDEX_INTERVAL_MS` | `15000`                | How often to auto-pick-up new/updated sessions. Set `0` to disable.    |
+| `FTS_REBUILD_MIN_INTERVAL_MS` | `60000`       | Minimum gap between full-text index rebuilds while sessions keep changing; the first quiet scan catches up. Set `0` to rebuild on every scan. |
 
 Each agent source is optional — if a directory doesn't exist it's simply skipped,
 so the app works whether you use one agent or all eight.
@@ -432,6 +435,11 @@ served from cache (legitimately high for Claude Code, which re-reads cached cont
   restart. In an open session, hit **⟳ Refresh** (or ⌘R / Ctrl+R) to pull the
   latest messages in place without losing your scroll position. Each scan is
   near-free when nothing changed; you can also force one with `POST /api/reindex`.
+- **Ranked search trails a live session by up to a minute.** Rebuilding the
+  full-text index is the expensive part of a scan, so while a session keeps
+  changing it is rebuilt at most every `FTS_REBUILD_MIN_INTERVAL_MS` and the
+  first quiet scan (or `POST /api/reindex`) catches up. Session lists and
+  analytics update on every scan, and **Exact** search is always current.
 - **Thinking blocks** appear empty because Claude Code stores only a signature
   (and Codex only encrypted reasoning), not the plaintext — the app notes this
   explicitly. (Not a bug.)
