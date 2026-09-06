@@ -30,6 +30,8 @@ const cache = ndjsonCache('codex');
  * included as ordinary files — they re-key to their root session at prepare time.
  * Unlike antigravity, no mtime folding is needed: a child's parent link lives in
  * its OWN `session_meta` from creation, so it never changes after the fact.
+ * This walk also feeds `getCodexContext()` for the rest of the pass — see
+ * `listRollouts` in `normalize.ts`.
  */
 function discover(): DiscoveredFile[] {
   return listRollouts();
