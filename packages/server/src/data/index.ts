@@ -8,9 +8,9 @@
  * reindex only touches what changed.
  *
  * After loading, derived `sessions` rows are recomputed and the FTS index over
- * `events.text_content` is rebuilt (cheap at this scale). Everything below the
- * connector boundary — the canonical schema, cost, derived tables, FTS — is
- * agent-agnostic.
+ * `events.text_content` is rebuilt — the latter debounced, see
+ * {@link FTS_REBUILD_MIN_INTERVAL_MS}. Everything below the connector boundary
+ * — the canonical schema, cost, derived tables, FTS — is agent-agnostic.
  *
  * STRICTLY READ-ONLY with respect to the source transcripts — files are only read.
  */
@@ -40,11 +40,12 @@ let dataVersion = 0;
 
 /** True from the moment a pass finds file changes until its finalize step
  *  (electCanonicalUsage → refreshFileEdits → electCanonicalEdits →
- *  rebuildSessions → rebuildFtsIndex) actually completes. Files bookkeeping
- *  (the `files`/`events` tables) advances per file *before* finalize runs, so
- *  a failed finalize must be remembered — otherwise the next pass would see
- *  no changed files, take the idle early-return, and leave `sessions`,
- *  `file_edits`, and the FTS index permanently stale versus `events`. */
+ *  rebuildSessions → the debounced rebuildFtsIndex) actually completes. Files
+ *  bookkeeping (the `files`/`events` tables) advances per file *before*
+ *  finalize runs, so a failed finalize must be remembered — otherwise the next
+ *  pass would see no changed files, take the idle early-return, and leave
+ *  `sessions`, `file_edits`, and the FTS index permanently stale versus
+ *  `events`. */
 let derivedDirty = false;
 /** Sessions whose `file_edits` are owed a refresh, carried across a failed
  *  finalize so a later pass with no file changes still repairs them. */
@@ -59,6 +60,28 @@ export function failNextFinalizeForTests(): void {
 /** Min interval between mid-first-build partial `sessions` rebuilds (ms).
  *  Env-overridable so tests can force a rebuild after every file. */
 const PARTIAL_REBUILD_MS = Number(process.env.PARTIAL_REBUILD_MS ?? 3000);
+
+/** Min interval between FTS rebuilds (ms). The rebuild re-indexes every row and
+ *  must CHECKPOINT afterwards (see {@link rebuildFtsIndex}), and every route
+ *  query stalls behind it on the shared connection — so with an active agent and
+ *  a 15 s poll it is the dominant cost of a pass. Debounced with a trailing edge:
+ *  within the window a pass records `meta.fts_stale` and moves on, and the next
+ *  idle pass (or an explicit flush) rebuilds. `0` rebuilds on every pass; a
+ *  non-finite or negative override falls back to the default. Ranked search may
+ *  therefore lag by up to this much during continuous activity — literal
+ *  (`LIKE`) search never does. */
+const FTS_REBUILD_MIN_INTERVAL_MS = (() => {
+  const raw = Number(process.env.FTS_REBUILD_MIN_INTERVAL_MS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 60_000;
+})();
+/** When the FTS index was last rebuilt in THIS process (epoch ms; 0 = never). */
+let lastFtsRebuildAt = 0;
+/** Whether the FTS index is behind `events`. Persisted in `meta.fts_stale`, so a
+ *  restart mid-session (`claudescope update`, the version-skew self-restart)
+ *  cannot strand ranked search: an in-memory-only flag would be lost and the
+ *  idle early-return would see no work until the next file change. `null` until
+ *  the first pass of the process reads it back. */
+let ftsStale: boolean | null = null;
 
 export function isIndexReady(): boolean {
   return ready;
@@ -600,7 +623,11 @@ async function applyFallbackTitles(conn: DuckDBConnection): Promise<void> {
   }
 }
 
-/** (Re)build the BM25 full-text index over event text. */
+/**
+ * (Re)build the BM25 full-text index over event text, and clear the staleness
+ * debt the debounce may have recorded. On a throw the flag is left as it is —
+ * still set if a skipped pass had recorded it — so a later pass retries.
+ */
 async function rebuildFtsIndex(conn: DuckDBConnection): Promise<void> {
   // Keyed by `doc_id`, not `uuid`: the generated match_bm25 macro looks a
   // document up with a scalar subquery on that column, so it must be unique per
@@ -614,22 +641,36 @@ async function rebuildFtsIndex(conn: DuckDBConnection): Promise<void> {
       'events', 'doc_id', 'text_content', ignore='[^a-z0-9]+', overwrite=1
     )
   `);
+  // Cleared before the CHECKPOINT below, so the flag and the index it describes
+  // land in the main DB file together.
+  await conn.run(`DELETE FROM meta WHERE key = 'fts_stale'`);
   // Force a CHECKPOINT so the FTS index DDL is merged into the main DB file
   // instead of lingering in the WAL. DuckDB cannot replay the FTS schema's
   // DROP/CREATE from a WAL on the next open (the `fts_main_events`.`terms`
   // dependency fails), so an unflushed WAL would corrupt the file if the
   // process is killed. Checkpointing keeps reopen clean.
   await conn.run('CHECKPOINT');
+  ftsStale = false;
+  lastFtsRebuildAt = Date.now();
 }
 
 /**
  * Run an incremental index pass. Only files whose (mtime, size) differ from the
  * recorded `files` row are (re)loaded. Returns the number of files (re)indexed
  * and the elapsed wall-clock time.
+ *
+ * `flushFts` bypasses the FTS debounce — a user-initiated reindex expects fresh
+ * ranked search. A flush arriving while a pass is already running waits for it
+ * and then runs its own pass (idle by then, so it costs the FTS rebuild alone),
+ * because joining a pass that may have skipped its rebuild would resolve with
+ * the index still stale. Plain calls keep coalescing onto the in-flight pass.
  */
-export async function reindex(): Promise<ReindexResponse> {
-  if (inFlight) return inFlight;
-  const pass = doReindex().then(stampLastPass);
+export async function reindex(opts?: { flushFts?: boolean }): Promise<ReindexResponse> {
+  if (inFlight) {
+    if (opts?.flushFts) return inFlight.then(() => reindex(opts), () => reindex(opts));
+    return inFlight;
+  }
+  const pass = doReindex(opts).then(stampLastPass);
   inFlight = pass;
   try {
     return await pass;
@@ -665,6 +706,10 @@ export async function rebuildIndex(): Promise<ReindexResponse> {
       await closeConnection();
       discardDbFiles();
       await getConnection();
+      // The discarded file took the FTS index and the persisted flag with it, so
+      // the rebuild's own pass must create the index rather than debounce it.
+      ftsStale = false;
+      lastFtsRebuildAt = 0;
       // Empty `files` table ⇒ doReindex reloads everything from the sources.
       return stampLastPass(await doReindex());
     } finally {
@@ -679,9 +724,16 @@ export async function rebuildIndex(): Promise<ReindexResponse> {
   }
 }
 
-async function doReindex(): Promise<ReindexResponse> {
+async function doReindex(opts?: { flushFts?: boolean }): Promise<ReindexResponse> {
   const start = Date.now();
   const conn = await getConnection();
+  const flushFts = opts?.flushFts === true;
+  // Read the persisted staleness flag once per process, before anything can
+  // take the idle early-return on it (see {@link ftsStale}).
+  if (ftsStale === null) {
+    const staleRows = await queryRows(conn, `SELECT value FROM meta WHERE key = 'fts_stale'`);
+    ftsStale = staleRows.length > 0 && String(staleRows[0]?.value ?? '') === '1';
+  }
   const pricing = loadPricing();
   const costExpr = buildCostExpr(pricing);
   // The pricing join table is only read by loadFile (its exact-id LEFT JOIN), so
@@ -847,9 +899,9 @@ async function doReindex(): Promise<ReindexResponse> {
       }
     }
 
-    // Nothing changed on disk: skip the (relatively expensive) derived-table and
-    // FTS rebuild + CHECKPOINT entirely. This keeps periodic auto-reindex polls
-    // cheap — they only stat files and bail when there's no new data.
+    // Nothing changed on disk: skip the (relatively expensive) derived-table
+    // rebuild entirely. This keeps periodic auto-reindex polls cheap — they only
+    // stat files and bail when there's no new data.
     //
     // `failed === 0` guard: loadFile is atomic, so a failed file leaves the
     // tables untouched and skipping the rebuild is correct today. The guard is
@@ -859,6 +911,14 @@ async function doReindex(): Promise<ReindexResponse> {
     // already advanced — this pass must still run finalize even though it
     // sees no changes of its own.
     if (reindexed === 0 && removed === 0 && failed === 0 && !derivedDirty) {
+      // The one thing an idle pass still owes: an FTS rebuild the debounce
+      // skipped, possibly in an earlier process (the flag is persisted). This is
+      // the debounce's trailing edge, so it runs regardless of the window. Only
+      // the index — the rest of finalize is already current — and no
+      // `dataVersion` bump: nothing the list consumers watch changed, and search
+      // reads the index directly. A flush request needs no special case here: a
+      // fresh index has nothing to rebuild.
+      if (ftsStale) await rebuildFtsIndex(conn);
       ready = true;
       return { reindexed, failed, durationMs: Date.now() - start };
     }
@@ -884,7 +944,15 @@ async function doReindex(): Promise<ReindexResponse> {
     await refreshFileEdits(conn, pendingEditSessions);
     await electCanonicalEdits(conn);
     await rebuildSessions(conn);
-    await rebuildFtsIndex(conn);
+    // The FTS rebuild is the expensive half of finalize, so it — and only it —
+    // is debounced: inside the window the pass records the debt and moves on,
+    // leaving the derived tables (what the list page watches live) current.
+    if (flushFts || Date.now() - lastFtsRebuildAt >= FTS_REBUILD_MIN_INTERVAL_MS) {
+      await rebuildFtsIndex(conn);
+    } else {
+      await conn.run(`INSERT OR REPLACE INTO meta (key, value) VALUES ('fts_stale', '1')`);
+      ftsStale = true;
+    }
 
     // Only clear once finalize has fully succeeded.
     derivedDirty = false;
