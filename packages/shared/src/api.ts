@@ -131,14 +131,24 @@ export type SessionSort = 'recent' | 'oldest' | 'tokens' | 'cost' | 'messages' |
 export interface SessionsQuery {
   project?: string;
   sort?: SessionSort;
+  /** Case-insensitive substring match on the title, git branch, id, or model. */
   q?: string;
   /** Filter to a single agent connector id, e.g. `codex`. */
   agent?: string;
   /** Exact match on the session's recorded git branch. */
   branch?: string;
-  /** Max rows returned (positive int). Absent = all rows (the web UI's default). */
+  /** Max rows returned (default 50, max 500). */
   limit?: number;
+  /** Rows to skip before the page (default 0). */
+  offset?: number;
 }
+
+/**
+ * Response header on GET /api/sessions carrying the number of rows that match
+ * the query before `limit`/`offset` — the body stays `SessionMeta[]`, so a
+ * paging client reads the total from here.
+ */
+export const SESSIONS_TOTAL_HEADER = 'x-total-count';
 
 /**
  * Windowing params for GET /api/sessions/:id — agent/CLI consumers slice large

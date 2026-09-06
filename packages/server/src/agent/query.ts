@@ -74,6 +74,7 @@ export interface SessionsArgs {
   sort?: SessionSort;
   q?: string;
   limit?: number;
+  offset?: number;
   json?: boolean;
 }
 
@@ -86,6 +87,7 @@ export async function querySessions(client: ApiClient, args: SessionsArgs): Prom
     sort: args.sort,
     q: args.q,
     limit: args.limit ?? DEFAULT_LIMIT,
+    offset: args.offset,
   });
   if (args.json) return json(rows);
   if (rows.length === 0) return 'No sessions match.';

@@ -1,6 +1,9 @@
 /**
- * GET /api/sessions — list sessions with optional project filter, sort, and a
- * lightweight title query (`q`).
+ * GET /api/sessions — one page of sessions: optional project/agent/branch
+ * filters, a sort key, and a lightweight text query (`q`, matching the title,
+ * git branch, session id, or model). Paged with `limit` (default 50, max 500)
+ * and `offset`; the unpaged match count rides in the `X-Total-Count` header
+ * while the body stays `SessionMeta[]`.
  *
  * GET /api/sessions/:id — full session detail: derived meta + the assembled
  * thread (parsed directly from the session's JSONL on disk).
@@ -16,7 +19,7 @@ import type {
   SessionMeta,
   SessionSort,
 } from '@claudescope/shared';
-import { isZeroRated } from '@claudescope/shared';
+import { isZeroRated, SESSIONS_TOTAL_HEADER } from '@claudescope/shared';
 import { getConnection, queryRows, sqlLikeEscape, sqlString } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { displayNameFromCwd, projectIdFromCwd } from '../data/project-id.js';
@@ -43,13 +46,28 @@ function intParam(v: string | undefined): number | undefined {
   return Number.isInteger(n) && n >= 0 ? n : undefined;
 }
 
+/** Parse an int query param and clamp it into range; junk falls back to `dflt`. */
+function clampInt(raw: string | undefined, dflt: number, min: number, max: number): number {
+  const n = raw === undefined ? dflt : Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return dflt;
+  return Math.min(max, Math.max(min, n));
+}
+
+const DEFAULT_SESSIONS_LIMIT = 50;
+const MAX_SESSIONS_LIMIT = 500;
+// A page beyond this is a client bug, not a scroll; keeps OFFSET bounded.
+const MAX_SESSIONS_OFFSET = 1_000_000;
+
+// Every key ends in `, id`: the sort values tie constantly (same-second
+// sessions, identical short runs), and without a total order LIMIT/OFFSET may
+// repeat a row on one page and skip another, so a paging walk loses sessions.
 const SORT_SQL: Record<SessionSort, string> = {
-  recent: 'ended_at DESC NULLS LAST',
-  oldest: 'started_at ASC NULLS LAST',
-  tokens: 'total_tokens DESC',
-  cost: 'total_cost_usd DESC',
-  messages: 'message_count DESC',
-  context: 'context_tokens DESC NULLS LAST',
+  recent: 'ended_at DESC NULLS LAST, id',
+  oldest: 'started_at ASC NULLS LAST, id',
+  tokens: 'total_tokens DESC, id',
+  cost: 'total_cost_usd DESC, id',
+  messages: 'message_count DESC, id',
+  context: 'context_tokens DESC NULLS LAST, id',
 };
 
 function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
@@ -107,11 +125,13 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
       agent?: string;
       branch?: string;
       limit?: string;
+      offset?: string;
     };
-  }>('/api/sessions', async (req): Promise<SessionMeta[]> => {
+  }>('/api/sessions', async (req, reply): Promise<SessionMeta[]> => {
     const conn = await getConnection();
     const { project, sort, q, agent, branch } = req.query;
-    const limit = intParam(req.query.limit);
+    const limit = clampInt(req.query.limit, DEFAULT_SESSIONS_LIMIT, 1, MAX_SESSIONS_LIMIT);
+    const offset = clampInt(req.query.offset, 0, 0, MAX_SESSIONS_OFFSET);
 
     const where: string[] = [];
     if (agent) {
@@ -124,9 +144,12 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
     // with /api/search and the analytics routes.
     if (project) where.push(await projectFilter(conn, project));
     if (q && q.trim()) {
-      where.push(
-        `(lower(title) LIKE ${sqlString('%' + sqlLikeEscape(q.toLowerCase()) + '%')} ESCAPE '\\')`,
-      );
+      // The haystack the web list used to filter client-side. COALESCE keeps it
+      // NULL-safe: a session with no recorded branch would otherwise make the
+      // whole OR chain NULL and vanish from its own title match.
+      const pattern = sqlString('%' + sqlLikeEscape(q.toLowerCase()) + '%');
+      const like = (col: string): string => `lower(COALESCE(${col}, '')) LIKE ${pattern} ESCAPE '\\'`;
+      where.push(`(${['title', 'git_branch', 'id', 'models'].map(like).join(' OR ')})`);
     }
 
     // Object.hasOwn, NOT `in`: `in` walks Object.prototype, so ?sort=toString
@@ -137,10 +160,12 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
       : 'recent';
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-    const limitSql = limit !== undefined && limit > 0 ? ` LIMIT ${limit}` : '';
+    const [countRow] = await queryRows(conn, `SELECT count(*) AS total FROM sessions ${whereSql}`);
+    reply.header(SESSIONS_TOTAL_HEADER, countRow ? readRow(countRow, 'sessions total').num('total') : 0);
+
     const rows = await queryRows(
       conn,
-      `SELECT * FROM sessions ${whereSql} ORDER BY ${SORT_SQL[sortKey]}${limitSql}`,
+      `SELECT * FROM sessions ${whereSql} ORDER BY ${SORT_SQL[sortKey]} LIMIT ${limit} OFFSET ${offset}`,
     );
     return rows.map(rowToSessionMeta);
   });
