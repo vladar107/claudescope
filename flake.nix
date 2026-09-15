@@ -55,7 +55,7 @@
           # `nix build .#claudescope` and the mismatch error prints the new value.
           npmDeps = pkgs.fetchNpmDeps {
             src = depsLock;
-            hash = "sha256-YmSttnRdiuNZOnK8z5YTgendao0e3SM3A09E/KDxkKY=";
+            hash = "sha256-fpeKc1eI3nsb7JywOJT80xEHAePqKtrCaxBQqEZy8Ps=";
           };
 
           nodejs = node;
