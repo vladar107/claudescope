@@ -214,8 +214,13 @@ function toolPartBlocks(data: Record<string, unknown>): ToolBlocks {
         prompt: str(input.prompt),
       },
     };
+  } else if (tool === 'skill') {
+    // opencode's native skill tool (`{ name }`) → canonical `Skill` (`{ skill }`),
+    // so `events.skill_names` records the load like Claude Code's.
+    const { name, ...rest } = input as { name?: unknown };
+    use = { type: 'tool_use', id: callID, name: 'Skill', input: { skill: str(name), ...rest } };
   } else {
-    // grep / glob / webfetch / skill / todowrite / unknown → generic passthrough
+    // grep / glob / webfetch / todowrite / unknown → generic passthrough
     use = { type: 'tool_use', id: callID, name: tool, input };
   }
   // `read` output is wrapped in <path>/<type>/<content> — unwrap it; others raw.

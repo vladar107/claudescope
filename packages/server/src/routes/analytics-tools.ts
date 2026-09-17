@@ -6,16 +6,21 @@
  * `data/analytics-metrics.ts`. The web maps raw names → categories via
  * `toolCategory()` and surfaces the per-agent attribution in the tooltip.
  *
- * `kind=skill` swaps the source column to `events.skill_names` — the `skill`
- * argument of each canonical `Skill` tool_use call — so the same `tool` field
- * carries a skill name instead of a tool name.
+ * `kind=skill` swaps the source column to `events.skill_names` — the skill each
+ * call loads (a canonical `Skill` call's `skill` argument, or the directory
+ * named by a `…/skills/<dir>/SKILL.md` read; see `connectors/skill-names.ts`)
+ * — so the same `tool` field carries a skill name instead of a tool name. A
+ * recorded directory name is folded into the installed skill's name the same
+ * way the Skills page does it (`skillNameAliases`), so one skill is one bar.
  */
 import type { FastifyInstance } from 'fastify';
 import type { ToolUsageKind, ToolUsageResponse, ToolUsageRow } from '@claudescope/shared';
-import { getConnection, queryRows } from '../db/duckdb.js';
+import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { scopeFilters } from '../data/analytics-scope.js';
 import { toolCallRowsSql } from '../data/analytics-metrics.js';
+import { DEFAULT_CONNECTOR_ID } from '../data/agent-capabilities.js';
+import { collectInstalledSkills, skillNameAliases, skillNameFoldSql } from '../data/skills.js';
 import { enumParam } from '../params.js';
 
 const TOOL_USAGE_KINDS = ['tool', 'skill'] as const;
@@ -36,14 +41,22 @@ export async function registerToolsRoute(app: FastifyInstance): Promise<void> {
     // on the event timestamp (a call belongs to the day it happened).
     filters.push(...(await scopeFilters(conn, req.query, { cwd: 's.project_cwd', ts: 'e.ts' })));
 
+    const agent = `COALESCE(u.connector_id, ${sqlString(DEFAULT_CONNECTOR_ID)})`;
+    const nameExpr =
+      kind === 'skill'
+        ? skillNameFoldSql(agent, 'u.raw', skillNameAliases(collectInstalledSkills()))
+        : 'u.raw';
     const rows = await queryRows(
       conn,
       `SELECT tool, agent, count(*) AS count
        FROM (
-         SELECT unnest(string_split(e.${column}, ',')) AS tool, s.connector_id AS agent
-         FROM events e
-         JOIN sessions s ON e.session_id = s.id
-         WHERE ${filters.join(' AND ')}
+         SELECT ${nameExpr} AS tool, ${agent} AS agent
+         FROM (
+           SELECT unnest(string_split(e.${column}, ',')) AS raw, s.connector_id
+           FROM events e
+           JOIN sessions s ON e.session_id = s.id
+           WHERE ${filters.join(' AND ')}
+         ) u
        ) t
        WHERE tool <> ''
        GROUP BY tool, agent

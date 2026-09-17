@@ -12,7 +12,7 @@
  * hot path into the TS layer.
  */
 
-import type { MemorySource } from '@claudescope/shared';
+import type { MemorySource, SkillOrigin, SkillPlugin } from '@claudescope/shared';
 import type { SessionData } from '../data/session-loader.js';
 
 /** A discovered source file with the stats used for incremental change detection. */
@@ -148,6 +148,21 @@ export interface AgentConnector {
   projectMemorySlug?(cwd: string): string;
 
   /**
+   * Optional: every skill (`SKILL.md`) this agent can load, read live (NOT
+   * indexed) from the dirs it scans. Returns `[]` when there are none; a
+   * connector without this hook keeps no skills store at all.
+   *
+   * INVARIANT: read only from agent home dirs — the agent's own, the shared
+   * `~/.agents/skills`, another agent's user skills dir when this agent reads
+   * it too (opencode reads `~/.claude/skills`), and plugin install paths
+   * recorded in the agent's own manifest — never from the user's project
+   * directories (so project-scoped skills are out of scope by design). Only
+   * entries of the agent's OWN store (origin other than `shared`) count as
+   * evidence that the agent is installed.
+   */
+  skills?(): SkillEntry[];
+
+  /**
    * Optional: how to reopen this session in the agent's own CLI. Returns the
    * argv to exec (the server wraps it with `cd <cwd> && …`), or null when the
    * agent has no resume command. `sessionId` is the indexed session id, which
@@ -166,6 +181,29 @@ export interface ResumeSpec {
   resumeArgv: string[];
   /** argv that forks into a new session; omit when the agent has no CLI fork. */
   forkArgv?: string[];
+}
+
+/**
+ * One installed skill as a connector lists it. Paths are absolute here — the
+ * data layer contracts the home dir for display and dedupes installs across
+ * agents by `realPath`.
+ */
+export interface SkillEntry {
+  /** The name the agent invokes it by (plugin skills: `plugin:skill`). */
+  name: string;
+  /**
+   * The skill's directory (or single-file) name. A read-based load names the
+   * skill by this, not by its frontmatter `name`, so usage joins on both.
+   */
+  dirName: string;
+  description?: string;
+  origin: SkillOrigin;
+  plugin?: SkillPlugin;
+  /** Absolute path of the skill dir (or file) as the agent sees it. */
+  path: string;
+  /** Absolute resolved path; equals `path` when no symlink is involved. */
+  realPath: string;
+  updatedAt: string;
 }
 
 /**

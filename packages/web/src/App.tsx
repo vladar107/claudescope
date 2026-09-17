@@ -1,5 +1,5 @@
 import { NavLink, Route, Routes, useLocation } from 'react-router';
-import { Cpu, FolderOpen, LineChart, Search, Settings, type LucideIcon } from 'lucide-react';
+import { Cpu, FolderOpen, LineChart, Search, Settings, Sparkles, type LucideIcon } from 'lucide-react';
 import { ErrorBoundary } from './components';
 import { useServerStatus } from './status/StatusProvider.js';
 import { BrowsePage } from './pages/browse/BrowsePage.js';
@@ -12,6 +12,8 @@ import { MemoryPage } from './pages/memory/MemoryPage.js';
 import { AgentMemoryPage } from './pages/memory/AgentMemoryPage.js';
 import { AgentProjectMemoryPage } from './pages/memory/AgentProjectMemoryPage.js';
 import { ProjectMemoryPage } from './pages/memory/ProjectMemoryPage.js';
+import { SkillsPage } from './pages/skills/SkillsPage.js';
+import { AgentSkillsPage } from './pages/skills/AgentSkillsPage.js';
 import { SettingsPage } from './pages/settings/SettingsPage.js';
 
 interface NavItem {
@@ -25,6 +27,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Browse', icon: FolderOpen, end: true },
   { to: '/memory', label: 'Memory', icon: Cpu },
+  { to: '/skills', label: 'Skills', icon: Sparkles },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/analytics', label: 'Analytics', icon: LineChart },
 ];
@@ -101,6 +104,8 @@ export function App() {
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/memory/:connectorId" element={<AgentMemoryPage />} />
             <Route path="/memory/:connectorId/:projectId" element={<AgentProjectMemoryPage />} />
+            <Route path="/skills" element={<SkillsPage />} />
+            <Route path="/skills/:connectorId" element={<AgentSkillsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </ErrorBoundary>

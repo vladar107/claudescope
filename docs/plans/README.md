@@ -112,3 +112,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0085 | [Security review hardening](./0085-security-review-hardening.md) | done |
 | 0086 | [Audit fixes and fitness functions](./0086-audit-fixes-and-fitness-functions.md) | done |
 | 0087 | [Sessions pagination, Codex walk reuse, and FTS rebuild debounce](./0087-sessions-pagination-and-fts-debounce.md) | done |
+| 0088 | [Skills inventory](./0088-skills-inventory.md) | done |

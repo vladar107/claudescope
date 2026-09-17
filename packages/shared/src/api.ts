@@ -737,6 +737,112 @@ export interface MemoryResponse {
 export type ProjectMemoryResponse = ProjectMemory;
 
 // ---------------------------------------------------------------------------
+// Skills — installed agent skills (SKILL.md), read live from agent home dirs
+// ---------------------------------------------------------------------------
+
+/**
+ * Where an installed skill comes from:
+ * - `user` — the agent's own user-level skills dir (`~/.claude/skills`, …).
+ * - `plugin` — shipped by an installed plugin (Claude Code's and Codex's
+ *   plugin caches).
+ * - `shared` — a dir the agent reads but does not own: the cross-agent
+ *   `~/.agents/skills`, or another agent's skills dir (opencode reads
+ *   `~/.claude/skills`).
+ * - `system` — bundled with the agent itself (Codex's `.system`, Junie's
+ *   `versions/<build>/skills`).
+ */
+export type SkillOrigin = 'user' | 'plugin' | 'shared' | 'system';
+
+/** The plugin that ships a skill (origin `plugin`). */
+export interface SkillPlugin {
+  name: string;
+  marketplace?: string;
+  version?: string;
+}
+
+/**
+ * Invocation figures for one skill from the index (`events.skill_names`).
+ * Absent on a skill when the agent's format never records a skill invocation —
+ * never a fabricated 0.
+ */
+export interface SkillUsage {
+  calls: number;
+  sessions: number;
+  /** ISO timestamp of the latest invocation. */
+  lastUsedAt?: string;
+}
+
+/**
+ * One skill an agent can load, read live from its home dir (never indexed).
+ * `name` is the name usage is recorded under — a plugin-shipped skill is
+ * `plugin:skill` for every agent, matching the `skill_names` column — so one
+ * skill lines up across agents and usage joins by name.
+ */
+export interface InstalledSkill {
+  name: string;
+  /** Frontmatter `description`, when present. */
+  description?: string;
+  origin: SkillOrigin;
+  plugin?: SkillPlugin;
+  /** The skill dir (or file) as the agent sees it, home contracted to `~`. */
+  sourcePath: string;
+  /** Resolved target when `sourcePath` goes through a symlink; absent otherwise. */
+  realPath?: string;
+  /** ISO mtime of the SKILL.md. */
+  updatedAt: string;
+  /** Other agents that read the very same install (same resolved path). */
+  visibleTo: string[];
+  usage?: SkillUsage;
+}
+
+/**
+ * A skill the transcripts show loaded but that is installed nowhere this
+ * agent's home dir reaches — installed at repository level (project-scoped),
+ * or removed since. The UI calls this "used but not installed globally".
+ */
+export interface UnlocatedSkill {
+  name: string;
+  usage: SkillUsage;
+}
+
+/** Every skill one agent can see, plus the invoked-but-unlocated ones. */
+export interface AgentSkills {
+  connectorId: string;
+  label: string;
+  /** False when this agent's format records no skill invocation (every `usage` is absent). */
+  usageSignal: boolean;
+  /** How usage is counted when it is not a native call, or why it is unavailable. */
+  usageNote?: string;
+  skills: InstalledSkill[];
+  unlocated: UnlocatedSkill[];
+}
+
+/**
+ * Per-connector rollup for the skills landing page, listed for every agent
+ * detected on the current machine. Agents that keep no skills store have
+ * `supported: false`; `used`/`neverUsed` only mean something when
+ * `usageSignal` is true.
+ */
+export interface SkillsConnectorOverview {
+  connectorId: string;
+  label: string;
+  supported: boolean;
+  usageSignal: boolean;
+  installed: number;
+  used: number;
+  neverUsed: number;
+  unlocated: number;
+  /** Most-recently-updated skill, for a one-line preview. */
+  preview?: { name: string; description?: string };
+}
+
+/** GET /api/skills */
+export interface SkillsResponse {
+  connectors: SkillsConnectorOverview[];
+  agents: AgentSkills[];
+}
+
+// ---------------------------------------------------------------------------
 // Analytics — activity heatmap and tool usage
 // ---------------------------------------------------------------------------
 

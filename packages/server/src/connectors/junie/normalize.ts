@@ -73,6 +73,8 @@ interface StepAgg {
   label?: string;
   /** Shell command from a TerminalBlockUpdatedEvent. */
   command?: string;
+  /** Skill loaded by a `toolType: 'Skill'` ToolBlockUpdatedEvent. */
+  skill?: { name: string; path?: string };
   /** File ranges from a ViewFilesBlockUpdatedEvent. */
   files?: unknown[];
   /** Edits from a FileChangesBlockUpdatedEvent. */
@@ -181,7 +183,13 @@ function stepToBlocks(stepId: string, agg: StepAgg, sessionId: string): ContentB
   const input: Record<string, unknown> = {};
   const resultText = agg.details ?? '';
 
-  if (agg.command) {
+  if (agg.skill) {
+    // Junie's "Read skill" block carries the skill structurally → canonical
+    // `Skill`, so `events.skill_names` records the load like Claude Code's.
+    name = 'Skill';
+    input.skill = agg.skill.name;
+    if (agg.skill.path) input.path = agg.skill.path;
+  } else if (agg.command) {
     // Canonical `Bash` (not a raw `terminal` name) so the command renders with
     // bash highlighting + an Output section instead of raw JSON — the web
     // renderer keys off the Claude tool names.
@@ -341,6 +349,9 @@ export function parseSession(eventsPath: string): JunieSession | null {
     const agg = steps.get(stepId) ?? { order: steps.size };
     if (typeof ae.text === 'string') agg.label = ae.text;
     if (typeof ae.command === 'string') agg.command = ae.command;
+    if (ae.toolType === 'Skill' && typeof ae.skillName === 'string' && ae.skillName) {
+      agg.skill = { name: ae.skillName, ...(typeof ae.skillPath === 'string' ? { path: ae.skillPath } : {}) };
+    }
     if (Array.isArray(ae.files)) agg.files = ae.files;
     if (Array.isArray(ae.changes)) agg.changes = ae.changes as Record<string, unknown>[];
     if (typeof ae.details === 'string' && ae.details) agg.details = ae.details;

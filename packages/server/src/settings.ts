@@ -45,6 +45,7 @@ export type SettingKey =
   | 'piSessionsDir'
   | 'opencodeDataDir'
   | 'opencodeDbPath'
+  | 'opencodeConfigDir'
   | 'copilotSessionsDir'
   | 'grokSessionsDir'
   | 'antigravityCliDir'
@@ -140,6 +141,17 @@ export const SETTING_DEFS: readonly SettingDef[] = [
     // Derives from the EFFECTIVE data dir, so editing opencodeDataDir moves
     // the default DB path along with it.
     defaultValue: () => join(opencodeDataDir(), 'opencode.db'),
+  },
+  {
+    key: 'opencodeConfigDir',
+    envVar: 'OPENCODE_CONFIG_DIR',
+    kind: 'path',
+    label: 'opencode config dir',
+    group: 'sources',
+    connectorId: 'opencode',
+    live: true,
+    defaultValue: () =>
+      expandHome(join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'opencode')),
   },
   {
     key: 'copilotSessionsDir',
@@ -487,6 +499,32 @@ export function copilotHome(): string {
 /** `~/.gemini` — shared Gemini/Antigravity home, parent of the appDataDirs. */
 export function antigravityHome(): string {
   return dirname(antigravityCliDir());
+}
+
+/** `~/.pi/agent` — pi's home, parent of its sessions dir. */
+export function piHome(): string {
+  return dirname(piSessionsDir());
+}
+/** `~/.grok` — Grok's home, parent of its sessions dir. */
+export function grokHome(): string {
+  return dirname(grokSessionsDir());
+}
+/** `~/.claude/plugins` — Claude Code's plugin manifest and cache. */
+export function claudePluginsDir(): string {
+  return join(claudeHome(), 'plugins');
+}
+
+/** READ-ONLY opencode config dir (`~/.config/opencode`) — holds its own `skills/`. */
+export function opencodeConfigDir(): string {
+  return pathOf('opencodeConfigDir');
+}
+/**
+ * The cross-agent `~/.agents/skills` dir, located BESIDE a harness home
+ * (`~/.codex` → `~/.agents/skills`) rather than from `homedir()`, so it
+ * follows the configured harness path and needs no setting of its own.
+ */
+export function sharedSkillsDirBeside(harnessHome: string): string {
+  return join(dirname(harnessHome), '.agents', 'skills');
 }
 
 /** Auto-reindex interval in ms (0 = disabled). */

@@ -28,6 +28,7 @@ import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js
 import { canonicalProjectionSql, titlesProjectionSql } from '../canonical.js';
 import { ndjsonCache } from '../ndjson-cache.js';
 import { parentSessionDirOf, parseGrokSession, subagentMetas, toCanonicalRows } from './normalize.js';
+import { grokSkills } from './skills.js';
 
 const cache = ndjsonCache('grok');
 
@@ -160,6 +161,7 @@ export const grokConnector: AgentConnector = {
     return grokSessionsDir();
   },
   discover,
+  skills: grokSkills,
   prepare,
   eventsProjectionSql,
   auxProjections,

@@ -26,6 +26,7 @@ import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js
 import { canonicalProjectionSql, compactionsProjectionSql } from '../canonical.js';
 import { ndjsonCache } from '../ndjson-cache.js';
 import { parentSessionFile, parsePiSession, subagentRuns, toCanonicalRows } from './normalize.js';
+import { piSkills } from './skills.js';
 
 const cache = ndjsonCache('pi');
 
@@ -137,6 +138,7 @@ export const piConnector: AgentConnector = {
   eventsProjectionSql,
   auxProjections,
   loadSession,
+  skills: piSkills,
   resumeSpec: (id) => ({
     resumeArgv: ['pi', '--session', id],
     forkArgv: ['pi', '--fork', id],

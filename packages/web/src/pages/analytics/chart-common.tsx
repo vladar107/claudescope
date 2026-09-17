@@ -47,6 +47,29 @@ export function getChartColors(theme: ResolvedTheme): ChartColors {
   return theme === 'light' ? LIGHT_COLORS : DARK_COLORS;
 }
 
+/**
+ * Per-agent series colors, mirroring the agent chip text colors in
+ * `browse.css` (dark: the chip hue; light: the darkened legible variant) so a
+ * stacked-by-agent bar reads as the same agent as its badge. Unknown ids get
+ * the neutral axis color.
+ */
+const AGENT_COLORS: Record<string, { dark: string; light: string }> = {
+  'claude-code': { dark: '#e8896b', light: '#bf4722' },
+  codex: { dark: '#2cc4a0', light: '#0a7a5e' },
+  junie: { dark: '#56d964', light: '#1a7f37' },
+  pi: { dark: '#a371f7', light: '#6e40c9' },
+  opencode: { dark: '#e3b341', light: '#9e6a03' },
+  copilot: { dark: '#58a6ff', light: '#0969da' },
+  antigravity: { dark: '#8ab4f8', light: '#1a73e8' },
+  grok: { dark: '#c4cdd6', light: '#40484f' },
+};
+
+export function agentColor(connectorId: string, theme: ResolvedTheme): string {
+  const c = AGENT_COLORS[connectorId];
+  if (!c) return getChartColors(theme).axis;
+  return theme === 'light' ? c.light : c.dark;
+}
+
 /** Axis tick styling for a given palette. */
 export function axisTick(colors: ChartColors): { fill: string; fontSize: number } {
   return { fill: colors.axis, fontSize: 11 };

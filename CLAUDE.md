@@ -47,8 +47,10 @@ npm-workspaces monorepo (`packages/*`):
 ## Runtime state — critical
 
 - **NEVER write to any agent source** (`~/.claude`, `~/.codex`, `~/.junie`,
-  `~/.pi`, `~/.copilot`, `~/.gemini`, `~/.grok`, opencode's `opencode.db`). They are read-only data sources — and that
-  includes reading agent memory live from those home dirs.
+  `~/.pi`, `~/.copilot`, `~/.gemini`, `~/.grok`, opencode's `opencode.db`,
+  `~/.config/opencode`, the shared `~/.agents/skills`). They are read-only
+  data sources — and that includes reading agent memory and skills live from
+  those home dirs.
 - All app-owned state lives in **`~/.claudescope/`** (override: `CLAUDESCOPE_HOME`):
   the DuckDB index, a user-editable `pricing.json` (seeded from a shipped
   default; `loadPricing` falls back to the default if the copy is missing),
@@ -280,6 +282,23 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   (`is_sidechain`) and nest via `spawn_subagent` → canonical `Task` (its
   `subagent_type` comes from meta, matched by the shared `description`).
   Experimental memory (`~/.grok/memory/`) is not surfaced (off by default).
+- **Skills are read live, never indexed, and usage is a declared signal.**
+  `connectors/skill-md.ts` reads every `SKILL.md` dir a connector's `skills()`
+  hook names, and `connectors/plugin-skills.ts` every skill an installed
+  plugin ships (default `skills/`, the manifest `skills` paths, `commands/*.md`,
+  a root `SKILL.md`) — agent home dirs and the shared `~/.agents/skills` only, never
+  the user's project dirs (project-scoped skills are out of scope by design,
+  like Junie's repo-local memory). Installs are deduped across agents by
+  `realPath`, so a symlinked or shared dir shows once per agent with
+  `visibleTo`. Invocation counts join `events.skill_names` by name (plugin
+  skills are `plugin:skill`). `skillNamesCsv` recognises two deterministic
+  shapes of a load: a canonical `Skill` call (Claude Code, Grok, opencode's
+  `skill` tool, Junie's `toolType: Skill` block) or any call whose input
+  names a `…/skills/<name>/SKILL.md` path (Codex, pi, Copilot, Antigravity
+  load a skill by reading that file) — never map a file read to a `Skill`
+  block. A connector must be classified in `SKILL_INVOCATION_SIGNAL`
+  (`data/agent-capabilities.ts`); an unclassified format gets an absent
+  `usage`, never 0. `connector-skill-signal.test.ts` walks the registry.
 - **Junie transcripts read differently** — Junie stores an event-sourced UI
   stream (`events.jsonl`), not a chat log: no assistant prose and no thinking, so
   a session renders as tool/terminal/file blocks plus a final result. Expected,
