@@ -1,7 +1,7 @@
 /**
  * API route registration. Wires the health check plus every feature route per
  * the API contract: projects, sessions (list + detail), search, analytics,
- * sources, memory, and reindex.
+ * sources, memory, skills, and reindex.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -24,6 +24,7 @@ import { registerErrorsRoute } from './analytics-errors.js';
 import { registerDigestRoute } from './analytics-digest.js';
 import { registerSourcesRoute } from './sources.js';
 import { registerMemoryRoute } from './memory.js';
+import { registerSkillsRoute } from './skills.js';
 import { registerSettingsRoute } from './settings.js';
 import { registerIndexerRoutes } from './indexer.js';
 import { registerPricingRoute } from './pricing.js';
@@ -94,6 +95,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await registerDigestRoute(app);
   await registerSourcesRoute(app);
   await registerMemoryRoute(app);
+  await registerSkillsRoute(app);
   await registerSettingsRoute(app);
   await registerIndexerRoutes(app);
   await registerPricingRoute(app);

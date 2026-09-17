@@ -35,6 +35,7 @@ import {
   toCanonicalRows,
 } from './normalize.js';
 import { antigravityGlobalMemory } from './memory.js';
+import { antigravitySkills } from './skills.js';
 
 const cache = ndjsonCache('antigravity');
 
@@ -132,6 +133,7 @@ export const antigravityConnector: AgentConnector = {
   auxProjections,
   loadSession,
   globalMemory,
+  skills: antigravitySkills,
   // `agy --conversation <id>` resumes a previous conversation by id (no CLI fork).
   resumeSpec: (id) => ({ resumeArgv: ['agy', '--conversation', id] }),
 };

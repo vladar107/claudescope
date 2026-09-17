@@ -130,6 +130,60 @@ export function hasSubagentLinkage(connectorId: string): boolean {
 }
 
 /**
+ * Agents whose transcripts record a skill load, so `events.skill_names`
+ * carries real names. Two shapes, both deterministic: a native call (Claude
+ * Code's `Skill` tool, Grok's and opencode's `skill` tool, Junie's `toolType:
+ * Skill` block) or a read of the skill's `…/skills/<name>/SKILL.md` — how Codex,
+ * pi, Copilot and Antigravity load one (`connectors/skill-names.ts`). Every
+ * connector must sit in exactly one of the two sets
+ * (`connector-skill-signal.test.ts`); a future agent whose format records
+ * neither goes in the second, and its skills carry an ABSENT usage, never 0.
+ */
+const SKILL_INVOCATION_SIGNAL = new Set([
+  'claude-code',
+  'codex',
+  'junie',
+  'pi',
+  'opencode',
+  'copilot',
+  'antigravity',
+  'grok',
+]);
+const NO_SKILL_INVOCATION_SIGNAL = new Set<string>([]);
+
+export function hasSkillInvocationSignal(connectorId: string): boolean {
+  return SKILL_INVOCATION_SIGNAL.has(connectorId);
+}
+
+export function connectorsWithSkillInvocationSignal(): string[] {
+  return [...SKILL_INVOCATION_SIGNAL];
+}
+
+export function connectorsWithoutSkillInvocationSignal(): string[] {
+  return [...NO_SKILL_INVOCATION_SIGNAL];
+}
+
+/**
+ * How an agent's skill usage is counted when it is not a native call — the
+ * caveat behind the figure (see {@link hasSkillInvocationSignal}). A read of
+ * the skill's SKILL.md is the load, so re-reading it in chunks or opening it
+ * from a shell to edit it counts too; pi's single-file `skills/<name>.md`
+ * layout has no SKILL.md to recognise, so those never count.
+ */
+const READ_NOTE = (agent: string, verb: string): string =>
+  `Counted as calls that ${verb} a skill's SKILL.md path — how ${agent} loads a skill. Re-reading or editing the file from a shell counts too.`;
+const SKILL_USAGE_NOTES: Record<string, string> = {
+  codex: READ_NOTE('Codex', 'read'),
+  pi: `${READ_NOTE('pi', 'read')} Single-file skills (skills/<name>.md) are not counted.`,
+  copilot: READ_NOTE('Copilot', 'view'),
+  antigravity: READ_NOTE('Antigravity', 'view'),
+};
+
+export function skillUsageAvailabilityNote(connectorId: string): string | undefined {
+  return SKILL_USAGE_NOTES[connectorId];
+}
+
+/**
  * Why an agent's usage figures read n/a (or skewed) on the agent comparison —
  * the human sentence behind {@link usageGranularity} and the nulls around it.
  * A property of the source format, so it lives here rather than in the route.

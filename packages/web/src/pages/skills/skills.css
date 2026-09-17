@@ -1,0 +1,201 @@
+/* ===========================================================================
+   Skills area styles. Scoped under .tv-skills; relies on the global theme
+   variables/utilities from styles/global.css.
+   =========================================================================== */
+
+.tv-skills__lede {
+  margin: calc(-1 * var(--tv-space-2)) 0 var(--tv-space-5);
+  font-size: var(--tv-fs-md);
+  max-width: 64ch;
+}
+
+.tv-skills__head {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  margin-bottom: var(--tv-space-3);
+}
+
+.tv-skills__note {
+  margin: 0 0 var(--tv-space-4);
+  font-size: var(--tv-fs-sm);
+  max-width: 72ch;
+}
+
+.tv-skills__section {
+  margin-top: var(--tv-space-6);
+}
+.tv-skills__section-title {
+  font-size: var(--tv-fs-lg);
+  font-weight: 600;
+  margin: 0 0 var(--tv-space-2);
+}
+
+/* ---------------------------------------------------------------------------
+   Agent card (landing page)
+   --------------------------------------------------------------------------- */
+.tv-skills-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+}
+.tv-skills-card__flag {
+  margin-left: auto;
+  color: var(--tv-fg-faint);
+  cursor: help;
+}
+.tv-skills-card__counts {
+  font-size: var(--tv-fs-sm);
+}
+/* Content preview — a quiet quote rail with the latest skill. */
+.tv-skills-card__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--tv-space-1);
+  padding-left: var(--tv-space-3);
+  border-left: 2px solid var(--tv-border-strong);
+}
+.tv-skills-card__preview-label {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg-faint);
+  font-family: var(--tv-font-mono);
+}
+.tv-skills-card__preview-body {
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-fg);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tv-skills-card__empty {
+  font-size: var(--tv-fs-sm);
+  line-height: 1.45;
+}
+/* "No skills store" agents aren't clickable — neutralize the project-card hover. */
+.tv-skills-card--nostore {
+  cursor: default;
+  opacity: 0.9;
+}
+.tv-skills-card--nostore:hover {
+  border-color: var(--tv-border);
+  background: var(--tv-bg-elevated);
+}
+
+/* ---------------------------------------------------------------------------
+   Skill inventory table (per-agent page). Scrolls inside its own wrapper so a
+   long path never widens the page on a phone.
+   --------------------------------------------------------------------------- */
+.tv-skills__scroll {
+  overflow-x: auto;
+  background: var(--tv-bg-elevated);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+}
+.tv-skills__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--tv-fs-sm);
+}
+.tv-skills__table th,
+.tv-skills__table td {
+  padding: var(--tv-space-2) var(--tv-space-3);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.tv-skills__table thead th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  color: var(--tv-fg-faint);
+  border-bottom: 1px solid var(--tv-border);
+  white-space: nowrap;
+}
+.tv-skills__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.tv-skills__row td {
+  border-bottom: 1px solid var(--tv-border);
+}
+.tv-skills__row:last-child td {
+  border-bottom: none;
+}
+.tv-skills__row:hover td {
+  background: var(--tv-bg-hover);
+}
+
+.tv-skills__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.tv-skills__sort.is-active {
+  color: var(--tv-fg);
+}
+.tv-skills__car {
+  color: var(--tv-accent);
+}
+
+/* Skill name + its description, clamped to two lines. */
+.tv-skills__skill {
+  min-width: 220px;
+  max-width: 320px;
+  white-space: normal;
+}
+.tv-skills__name {
+  display: block;
+  font-family: var(--tv-font-mono);
+  font-weight: 600;
+  color: var(--tv-fg);
+}
+.tv-skills__desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+.tv-skills__origin {
+  color: var(--tv-fg-muted);
+}
+
+.tv-skills__loc {
+  max-width: 26ch;
+  font-size: 11px;
+}
+.tv-skills__loc > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tv-skills__real {
+  margin-top: 2px;
+}
+
+.tv-skills__visible {
+  white-space: normal;
+}
+.tv-skills__visible .tv-chip + .tv-chip {
+  margin-left: var(--tv-space-1);
+}
+
+.tv-skills__na {
+  color: var(--tv-fg-muted);
+  cursor: help;
+}

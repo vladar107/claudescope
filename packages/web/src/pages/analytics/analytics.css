@@ -486,3 +486,11 @@
 .tv-digest__agent {
   margin-right: var(--tv-space-2);
 }
+
+/* Skill usage: which agent each stacked segment belongs to. */
+.tv-skill-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tv-space-2);
+  margin: 0 0 var(--tv-space-3);
+}

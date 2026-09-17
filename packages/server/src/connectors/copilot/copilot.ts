@@ -23,6 +23,7 @@ import { canonicalProjectionSql, compactionsProjectionSql, titlesProjectionSql }
 import { ndjsonCache } from '../ndjson-cache.js';
 import { parseCopilotSession, toCanonicalRows, type CopilotSession } from './normalize.js';
 import { copilotGlobalMemory } from './memory.js';
+import { copilotSkills } from './skills.js';
 
 const cache = ndjsonCache('copilot');
 
@@ -107,6 +108,7 @@ export const copilotConnector: AgentConnector = {
   auxProjections,
   loadSession,
   globalMemory: copilotGlobalMemory,
+  skills: copilotSkills,
   // Copilot CLI has no command-line fork (only an in-session `/fork`), so resume only.
   resumeSpec: (id) => ({ resumeArgv: ['copilot', '--resume', id] }),
 };

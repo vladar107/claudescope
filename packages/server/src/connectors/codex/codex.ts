@@ -22,6 +22,7 @@ import { canonicalProjectionSql, compactionsProjectionSql } from '../canonical.j
 import { ndjsonCache } from '../ndjson-cache.js';
 import { codexGlobalMemory } from './memory.js';
 import { listRollouts, parseRollout, toCanonicalRows, type CodexSession } from './normalize.js';
+import { codexSkills } from './skills.js';
 
 const cache = ndjsonCache('codex');
 
@@ -158,6 +159,7 @@ export const codexConnector: AgentConnector = {
   fallbackTitleCandidateSql,
   loadSession,
   globalMemory: codexGlobalMemory,
+  skills: codexSkills,
   resumeSpec: (id) => ({
     resumeArgv: ['codex', 'resume', id],
     forkArgv: ['codex', 'fork', id],

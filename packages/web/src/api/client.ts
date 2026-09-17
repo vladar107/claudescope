@@ -32,6 +32,7 @@ import type {
   SortDir,
   SessionSort,
   SessionsResponse,
+  SkillsResponse,
   SourcesResponse,
   SystemInfoResponse,
   ToolUsageKind,
@@ -314,6 +315,11 @@ export const api = {
   /** GET /api/memory */
   memory(signal?: AbortSignal): Promise<MemoryResponse> {
     return request<MemoryResponse>('/memory', { signal });
+  },
+
+  /** GET /api/skills */
+  skills(signal?: AbortSignal): Promise<SkillsResponse> {
+    return request<SkillsResponse>('/skills', { signal });
   },
 
   /** GET /api/projects/:id/memory */

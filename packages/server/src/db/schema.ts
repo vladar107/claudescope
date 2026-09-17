@@ -48,7 +48,10 @@
 // v21: pr_links admits only http(s) URLs (pr_url is rendered as a link).
 // v22: FTS keyed by a unique per-row doc_id = hash(file_path, uuid) so the
 //      connection-wide scalar-subquery relaxation can go.
-export const SCHEMA_VERSION = 22;
+// v23: skill_names also derived from SKILL.md reads (Codex, pi, Copilot,
+//      Antigravity) and from opencode's / Junie's native skill calls, which now
+//      map to canonical `Skill` — existing rows must be re-normalized.
+export const SCHEMA_VERSION = 23;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [

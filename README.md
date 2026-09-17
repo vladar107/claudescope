@@ -38,6 +38,7 @@ Claudescope works whether you use one agent or all eight. Adding another is just
 - **Review changes** via a **Files changed** tab that aggregates every edit/write in the session by file, with per-file diffs and +/− counts (diffs load lazily per file).
 - **Export / share** a session to Markdown — download or copy it, with an optional toggle to **redact** home-dir paths and likely secrets.
 - **Memory** — browse each agent's long-lived **instruction files** (`CLAUDE.md`, `AGENTS.md`, …) and **agent-distilled per-project memory**, read live from each agent's home directory; Claude Code facts deep-link back to the session that produced them.
+- **Skills** — one inventory of every **installed skill** (`SKILL.md`) per agent, read live from each agent's home directory: where it lives (symlinks resolved), which plugin ships it, which other agents read the same install, and how often each was invoked — so you can spot skills you never use and skills you use but no longer have installed.
 - **Search** full-text across all sessions, all agents (DuckDB BM25), with highlighted snippets that deep-link to the exact message; an **Exact** mode matches one substring, newest first, for error lines and identifiers.
 - **Analyze** token usage and cost over time, by project, by model, and **by agent** — including cache-hit ratio.
 - **Light & dark themes** — follows your system appearance, with a manual toggle.
@@ -295,6 +296,7 @@ All optional — set via environment variables.
 | `JUNIE_SESSIONS_DIR`  | `~/.junie/sessions`    | Where to read JetBrains Junie transcripts from. A leading `~` is expanded.|
 | `PI_SESSIONS_DIR`     | `~/.pi/agent/sessions` | Where to read pi transcripts from. A leading `~` is expanded.          |
 | `OPENCODE_DATA_DIR`   | `~/.local/share/opencode` | Dir holding opencode's `opencode.db` (read-only). Honors `$XDG_DATA_HOME`; override the DB path directly with `OPENCODE_DB_PATH`. |
+| `OPENCODE_CONFIG_DIR` | `~/.config/opencode`   | opencode's config dir, holding its own `skills/` (Skills page, read-only). Honors `$XDG_CONFIG_HOME`. |
 | `COPILOT_SESSIONS_DIR`| `~/.copilot/session-state` | Where to read GitHub Copilot CLI transcripts from. A leading `~` is expanded. |
 | `ANTIGRAVITY_CLI_DIR` | `~/.gemini/antigravity-cli` | Where to read Google Antigravity transcripts from. A leading `~` is expanded. |
 | `ANTIGRAVITY_DIR`     | `~/.gemini/antigravity` | Where to read Google Antigravity desktop-app transcripts from. A leading `~` is expanded. |
