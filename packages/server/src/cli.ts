@@ -340,8 +340,16 @@ export async function update(skipConfirm: boolean): Promise<void> {
   }
   console.log(`› Updating ${PKG}…`);
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const res = spawnSync(npm, ['install', '-g', `${PKG}@latest`], { stdio: 'inherit' });
+  // npm's stderr carries every unrelated config warning, deprecation notice and
+  // funding nag, so capture both streams and surface them only when the install
+  // actually failed — the happy path stays the curated output above.
+  const res = spawnSync(npm, ['install', '-g', `${PKG}@latest`, '--no-fund', '--no-audit'], {
+    stdio: ['inherit', 'pipe', 'pipe'],
+    encoding: 'utf8',
+  });
   if (res.status !== 0) {
+    const output = [res.stdout, res.stderr, res.error?.message].filter(Boolean).join('\n').trim();
+    if (output) console.error(output);
     console.error(
       `✗ Update failed. If you run via npx, just re-run \`npx ${PKG}\` to get the latest.`,
     );
