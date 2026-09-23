@@ -197,6 +197,10 @@ function discover(): DiscoveredFile[] {
  * an `ephemeral_1h_input_tokens` / `ephemeral_5m_input_tokens` split; absent on
  * older rows, which fall back to the flat 5-minute rate (see `data/index.ts:
  * buildCostExpr`).
+ *
+ * `speed` is `'fast'` iff `usage.speed = 'fast'` (premium fast-mode pricing,
+ * currently Opus-only); any other value, including `'standard'`, normalizes to
+ * NULL.
  */
 function eventsProjectionSql(filePath: string): string {
   const path = sqlString(filePath);
@@ -227,6 +231,7 @@ function eventsProjectionSql(filePath: string): string {
       COALESCE(try_cast(json_extract(message, '$.usage.cache_creation_input_tokens') AS BIGINT), 0) AS cache_write_tokens,
       COALESCE(try_cast(json_extract(message, '$.usage.cache_creation.ephemeral_1h_input_tokens') AS BIGINT), 0) AS cache_write_1h_tokens,
       json_extract_string(message, '$.usage.service_tier') AS service_tier,
+      CASE WHEN json_extract_string(message, '$.usage.speed') = 'fast' THEN 'fast' ELSE NULL END AS speed,
       COALESCE(isSidechain, FALSE) AS is_sidechain,
       FALSE AS usage_only,
       ${TOOL_USE_COUNT_EXPR} AS tool_use_count,

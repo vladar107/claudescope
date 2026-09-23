@@ -214,7 +214,7 @@ export const APP_VERSION =
  * shadowing it. A monotonic integer (not a content hash): the user copy is meant
  * to be edited, so only a real shipped change should trigger a reconcile.
  */
-export const PRICING_SCHEMA_VERSION = 4;
+export const PRICING_SCHEMA_VERSION = 5;
 
 /**
  * Reconcile the user-editable pricing file with the shipped default.

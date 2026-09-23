@@ -329,6 +329,10 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   **prospectively** — cost is stamped per event at index time, so only an index
   rebuild re-prices already-indexed history. Rates are interpolated into SQL, so
   `loadPricing` validates them — an unusable rate is dropped, not passed through.
+  Fast-mode usage (`events.speed = 'fast'`: Claude Code's `usage.speed`, Codex's
+  `priority` service tier) is priced only from an exact-id `models` entry's
+  optional `fast` rate block — never a family/default/provider multiplier — so a
+  model with no configured fast rate always prices standard.
 - **Context & compactions come from the index, not from a live process.**
   `sessions.context_tokens` is the prompt size (input + cache read + cache
   write) of the LAST main-thread assistant row, and `compaction_count` counts

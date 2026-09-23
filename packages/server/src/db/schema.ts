@@ -56,7 +56,9 @@
 // v25: Codex guardian-review rollouts now contribute usage-only events (re-keyed
 //      to the parent session, flagged `events.usage_only` and priced via the new
 //      nullable `events.pricing_model` override) instead of being dropped outright.
-export const SCHEMA_VERSION = 25;
+// v26: events.speed ('fast' | NULL) — Claude Code fast-mode and Codex priority-tier
+//      usage now price at exact-id-only fast rates instead of standard ones.
+export const SCHEMA_VERSION = 26;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -102,6 +104,9 @@ export const SCHEMA_DDL: readonly string[] = [
      -- the total, so token displays and the cache-hit ratio are unaffected.
      cache_write_1h_tokens BIGINT DEFAULT 0,
      service_tier VARCHAR,
+     -- 'fast' when billed at premium fast-mode rates (Claude Code usage.speed,
+     -- Codex's priority service tier); NULL otherwise.
+     speed VARCHAR,
      is_sidechain BOOLEAN DEFAULT FALSE,
      -- TRUE for a usage-only row with no thread content (Codex's guardian
      -- review rows) — excluded from sessions.message_count/has_sidechain.

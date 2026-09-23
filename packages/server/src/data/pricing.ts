@@ -16,7 +16,7 @@
  */
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import type { FetchedPricing, ModelRates, PricingConfig } from '@claudescope/shared';
+import type { FastRates, FetchedPricing, ModelRates, PricingConfig } from '@claudescope/shared';
 import { DEFAULT_PRICING_PATH, FETCHED_PRICING_PATH, PRICING_PATH } from '../config.js';
 
 /** The four rate fields every {@link ModelRates} must carry. */
@@ -34,11 +34,31 @@ function rateOrNull(value: unknown): number | null {
 }
 
 /**
+ * A fully-valid {@link FastRates} block, or `null` if any required field is
+ * unusable — same all-or-nothing rule {@link ratesOrNull} applies to the base
+ * rates, but dropping the whole `fast` block never invalidates the entry it
+ * lives on (fast rates are optional there too).
+ */
+function fastRatesOrNull(value: unknown): FastRates | null {
+  if (value === null || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const out = {} as FastRates;
+  for (const field of RATE_FIELDS) {
+    const n = rateOrNull(raw[field]);
+    if (n === null) return null;
+    out[field] = n;
+  }
+  const cacheWrite1h = rateOrNull(raw.cacheWrite1h);
+  if (cacheWrite1h !== null) out.cacheWrite1h = cacheWrite1h;
+  return out;
+}
+
+/**
  * A fully-valid {@link ModelRates}, or `null` if any REQUIRED rate is unusable.
  * The optional `contextWindow` is not a rate (it never reaches SQL): it is kept
- * when a positive integer and silently left out otherwise. `cacheWrite1h` is an
- * optional rate — an unusable value is dropped (treated as absent, so the cost
- * expression falls back to 2× input) rather than invalidating the whole entry.
+ * when a positive integer and silently left out otherwise. `cacheWrite1h` and
+ * `fast` are optional — an unusable value is dropped (treated as absent) rather
+ * than invalidating the whole entry.
  */
 function ratesOrNull(value: unknown): ModelRates | null {
   if (value === null || typeof value !== 'object') return null;
@@ -53,6 +73,8 @@ function ratesOrNull(value: unknown): ModelRates | null {
   if (typeof window === 'number' && Number.isInteger(window) && window > 0) out.contextWindow = window;
   const cacheWrite1h = rateOrNull(raw.cacheWrite1h);
   if (cacheWrite1h !== null) out.cacheWrite1h = cacheWrite1h;
+  const fast = fastRatesOrNull(raw.fast);
+  if (fast !== null) out.fast = fast;
   return out;
 }
 
@@ -117,6 +139,10 @@ function sanitizeConfig(raw: PricingConfig, sourcePath: string): PricingConfig {
   // Optional: absent or unusable just leaves the 2×input fallback in place.
   const cacheWrite1h = rateOrNull((raw.default as unknown as Record<string, unknown> | undefined)?.cacheWrite1h);
   if (cacheWrite1h !== null) fallback.cacheWrite1h = cacheWrite1h;
+  // Validated for completeness, but never consulted at cost time — only an
+  // exact-id `models` entry's `fast` block is ever read (see data/index.ts).
+  const fast = fastRatesOrNull((raw.default as unknown as Record<string, unknown> | undefined)?.fast);
+  if (fast !== null) fallback.fast = fast;
 
   if (dropped.length > 0) {
     console.warn(
@@ -204,10 +230,15 @@ export function loadPricing(): PricingConfig {
       const models = { ...base.models, ...overlay };
       // Rates come from the feed, but a window the user wrote on an exact id in
       // pricing.json is a deliberate override (e.g. a 1M-context variant LiteLLM
-      // lists under another id): keep it on top of the fetched entry.
+      // lists under another id): keep it on top of the fetched entry. Same for
+      // `fast`: LiteLLM has no Claude fast rates at all, so a shipped/user fast
+      // block must survive a fetched rate update for that same id.
       for (const [id, rates] of Object.entries(base.models)) {
         if (rates.contextWindow !== undefined && id in overlay) {
           models[id] = { ...models[id]!, contextWindow: rates.contextWindow };
+        }
+        if (rates.fast !== undefined && id in overlay) {
+          models[id] = { ...models[id]!, fast: rates.fast };
         }
       }
       config = { ...base, models };

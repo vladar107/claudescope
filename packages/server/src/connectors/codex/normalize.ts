@@ -88,7 +88,9 @@ interface CodexUsage {
   input_tokens: number;
   output_tokens: number;
   cache_read_input_tokens: number;
-  [k: string]: number;
+  /** `'fast'` when accumulated while the tracked service tier was `priority`. */
+  speed?: string;
+  [k: string]: number | string | undefined;
 }
 const zeroUsage = (): CodexUsage => ({
   input_tokens: 0,
@@ -401,6 +403,7 @@ export function parseGuardianRollout(path: string): CanonicalRow[] | null {
       cache_write_tokens: 0,
       cache_write_1h_tokens: 0,
       service_tier: null,
+      speed: null,
       // No thread is ever assembled from these rows (parseRollout stays null
       // for guardian files, so loadSession never sees this file) — is_sidechain
       // just keeps them out of main-thread-only aggregates (context, titles).
@@ -953,6 +956,10 @@ export function parseRollout(path: string): CodexSession | null {
   let wsSeq = 0;
   let prevUuid: string | null = null;
   let model = '';
+  // `priority` = fast-mode (OpenAI's premium service tier); tracked across
+  // `turn_context`/`thread_settings_applied` records and applied to every
+  // `token_count` usage delta until it changes again.
+  let serviceTier: string | undefined;
 
   // spawn_agent correlation: call_id → Task meta (set at the call), promoted to
   // spawnedAgents keyed by the child thread id when the output names it.
@@ -1026,6 +1033,13 @@ export function parseRollout(path: string): CodexSession | null {
 
     if (line.type === 'turn_context') {
       model = str(pl.model) || model;
+      serviceTier = str(pl.service_tier) || serviceTier;
+      continue;
+    }
+
+    if (line.type === 'event_msg' && pl.type === 'thread_settings_applied') {
+      const tier = str(rec(pl.thread_settings).service_tier);
+      if (tier) serviceTier = tier;
       continue;
     }
 
@@ -1040,6 +1054,7 @@ export function parseRollout(path: string): CodexSession | null {
         acc.input_tokens += Math.max(0, input - cached);
         acc.output_tokens += num(last.output_tokens);
         acc.cache_read_input_tokens += cached;
+        acc.speed = serviceTier === 'priority' ? 'fast' : undefined;
       }
       continue;
     }
@@ -1291,6 +1306,7 @@ export function toCanonicalRows(session: CodexSession, filePath: string): Canoni
       cache_write_tokens: 0,
       cache_write_1h_tokens: 0,
       service_tier: null,
+      speed: usage?.speed === 'fast' ? 'fast' : null,
       is_sidechain: session.isSidechain,
       tool_use_count: arr.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(arr),

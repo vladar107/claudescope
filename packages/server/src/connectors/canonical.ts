@@ -45,6 +45,7 @@ export const CANONICAL_COLUMNS = {
   cache_write_tokens: 'BIGINT',
   cache_write_1h_tokens: 'BIGINT',
   service_tier: 'VARCHAR',
+  speed: 'VARCHAR',
   is_sidechain: 'BOOLEAN',
   usage_only: 'BOOLEAN',
   tool_use_count: 'INTEGER',
@@ -95,6 +96,12 @@ export interface CanonicalRow {
    */
   cache_write_1h_tokens: number;
   service_tier: string | null;
+  /**
+   * `'fast'` when the event was billed at premium fast-mode rates (Claude Code
+   * `usage.speed: "fast"`, Codex's `priority` service tier); NULL otherwise.
+   * Only Claude Code and Codex ever set this — every other connector emits NULL.
+   */
+  speed: string | null;
   is_sidechain: boolean;
   /**
    * TRUE for a row that carries usage but no thread content (Codex's guardian
@@ -152,6 +159,7 @@ export function compactionRow(
     cache_write_tokens: 0,
     cache_write_1h_tokens: 0,
     service_tier: null,
+    speed: null,
     tool_use_count: 0,
     tool_names: '',
     tool_error_count: null,

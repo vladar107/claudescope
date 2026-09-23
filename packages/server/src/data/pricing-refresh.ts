@@ -13,7 +13,7 @@
 
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { FetchedPricing, ModelRates } from '@claudescope/shared';
+import type { FastRates, FetchedPricing, ModelRates } from '@claudescope/shared';
 import {
   FETCHED_PRICING_PATH,
   LITELLM_PRICING_URL,
@@ -60,6 +60,10 @@ interface LiteLLMEntry {
   cache_creation_input_token_cost_above_1hr?: unknown;
   cache_read_input_token_cost?: unknown;
   max_input_tokens?: unknown;
+  input_cost_per_token_priority?: unknown;
+  output_cost_per_token_priority?: unknown;
+  cache_creation_input_token_cost_priority?: unknown;
+  cache_read_input_token_cost_priority?: unknown;
 }
 
 /** A finite, non-negative number within the sanity cap, else `null`. */
@@ -96,6 +100,38 @@ function toWindow(value: unknown): number | undefined {
 }
 
 /**
+ * Map an entry's `*_priority` fields (OpenAI's premium "priority" service
+ * tier — our `fast`) to a {@link FastRates} block, or `undefined` when the
+ * entry carries none (most models, and every Claude one: LiteLLM has no
+ * Claude fast rates).
+ *
+ * `input`/`output` must both be present and usable, else the whole block is
+ * skipped (never partially applied). A missing priority CACHE rate — LiteLLM
+ * doesn't always publish one — falls back to the base cache rate scaled by the
+ * priority/base input ratio (kept simple: the same multiplier that separates
+ * priority from base input is assumed to separate their cache rates too), not
+ * silently 0 like the ordinary {@link toCacheRate}. An explicit-but-unusable
+ * priority cache rate still drops the whole block, same as input/output.
+ */
+function mapPriorityRates(
+  entry: LiteLLMEntry,
+  base: { input: number; cacheWrite: number; cacheRead: number },
+): FastRates | undefined {
+  const input = toRate(entry.input_cost_per_token_priority);
+  const output = toRate(entry.output_cost_per_token_priority);
+  if (input === null || output === null) return undefined;
+  const ratio = base.input > 0 ? input / base.input : 1;
+
+  const priorityCacheRate = (value: unknown, baseRate: number): number | null =>
+    value === undefined || value === null ? baseRate * ratio : toRate(value);
+  const cacheWrite = priorityCacheRate(entry.cache_creation_input_token_cost_priority, base.cacheWrite);
+  const cacheRead = priorityCacheRate(entry.cache_read_input_token_cost_priority, base.cacheRead);
+  if (cacheWrite === null || cacheRead === null) return undefined;
+
+  return { input, output, cacheWrite, cacheRead };
+}
+
+/**
  * Map a parsed LiteLLM JSON object to our per-MTok rate table. Pure; exported
  * for tests.
  *
@@ -107,7 +143,8 @@ function toWindow(value: unknown): number | undefined {
  * default to 0. `max_input_tokens` rides along as `contextWindow` when present,
  * and `cache_creation_input_token_cost_above_1hr` as the optional `cacheWrite1h`
  * — absent or unusable just leaves the 2×input fallback in place (data/index.ts:
- * buildCostExpr), never dropping the entry.
+ * buildCostExpr), never dropping the entry. The `*_priority` fields (see
+ * {@link mapPriorityRates}) similarly ride along as the optional `fast` block.
  */
 export function mapLiteLLM(json: unknown): Record<string, ModelRates> {
   const out: Record<string, ModelRates> = {};
@@ -135,6 +172,7 @@ export function mapLiteLLM(json: unknown): Record<string, ModelRates> {
 
     const contextWindow = toWindow(entry.max_input_tokens);
     const cacheWrite1h = toOptionalRate(entry.cache_creation_input_token_cost_above_1hr);
+    const fast = mapPriorityRates(entry, { input, cacheWrite, cacheRead });
     out[id] = {
       input,
       output,
@@ -142,6 +180,7 @@ export function mapLiteLLM(json: unknown): Record<string, ModelRates> {
       cacheRead,
       ...(contextWindow ? { contextWindow } : {}),
       ...(cacheWrite1h !== undefined ? { cacheWrite1h } : {}),
+      ...(fast ? { fast } : {}),
     };
   }
 
@@ -176,6 +215,18 @@ function readPreviousModels(path: string): Record<string, ModelRates> {
   }
 }
 
+/** True when two optional {@link FastRates} blocks carry the same rates. */
+function fastRatesEqual(a: FastRates | undefined, b: FastRates | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return (
+    a.input === b.input &&
+    a.output === b.output &&
+    a.cacheWrite === b.cacheWrite &&
+    a.cacheRead === b.cacheRead &&
+    a.cacheWrite1h === b.cacheWrite1h
+  );
+}
+
 /** Count model ids whose rates differ from (or are absent in) the previous set. */
 function countChanged(
   next: Record<string, ModelRates>,
@@ -190,7 +241,8 @@ function countChanged(
       before.output !== rates.output ||
       before.cacheWrite !== rates.cacheWrite ||
       before.cacheRead !== rates.cacheRead ||
-      before.cacheWrite1h !== rates.cacheWrite1h
+      before.cacheWrite1h !== rates.cacheWrite1h ||
+      !fastRatesEqual(before.fast, rates.fast)
     ) {
       changed += 1;
     }

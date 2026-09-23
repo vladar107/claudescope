@@ -24,6 +24,34 @@ export interface ModelRates {
    * Not a rate: it only feeds the "context used" percentage in the UI.
    */
   contextWindow?: number;
+  /**
+   * Premium "fast mode" rates (Claude Code `usage.speed: "fast"`, Codex's
+   * `priority` service tier). Optional and model-specific by design — Anthropic
+   * only prices fast mode for a handful of Opus models, and a model that merely
+   * accepts the fast/priority flag without billing it differently must not get
+   * one. Only ever read from an EXACT-id `models` entry at cost time
+   * (`data/index.ts:buildCostExpr`); a family/provider/default `fast` block, if
+   * set, is validated but never consulted for pricing.
+   */
+  fast?: FastRates;
+}
+
+/** Rates for fast-mode usage — same shape as the base rates minus the window. */
+export interface FastRates {
+  /** USD per 1M input tokens at fast-mode speed. */
+  input: number;
+  /** USD per 1M output tokens at fast-mode speed. */
+  output: number;
+  /** USD per 1M cache-write tokens at fast-mode speed, 5-minute TTL. */
+  cacheWrite: number;
+  /** USD per 1M cache-read tokens at fast-mode speed. */
+  cacheRead: number;
+  /**
+   * USD per 1M cache-write tokens at fast-mode speed, 1-hour TTL. Optional: when
+   * unset, the effective rate is 2× this same block's `input` — the same
+   * fallback rule as the base `cacheWrite1h`.
+   */
+  cacheWrite1h?: number;
 }
 
 /** Snapshot of rates fetched at runtime (e.g. from LiteLLM). */

@@ -129,6 +129,14 @@ const RATE_FIELDS = [
   ['cacheRead', 'cache_read', 'cache_read_tokens'],
 ] as const satisfies readonly (readonly [keyof PricingConfig['models'][string], string, string])[];
 
+/** Each rate field's `pricing_rates` column for the exact-id `fast` block. */
+const FAST_RATE_COLUMNS = {
+  input: 'fast_input',
+  output: 'fast_output',
+  cacheWrite: 'fast_cache_write',
+  cacheRead: 'fast_cache_read',
+} as const satisfies Record<(typeof RATE_FIELDS)[number][0], string>;
+
 /** Alias the per-file projection gets when joined against {@link pricing_rates}. */
 const EVENTS_ALIAS = 'ev';
 
@@ -157,17 +165,28 @@ const STAGE_SUFFIX = 'load';
  * `cache_write_1h` is nullable: a model with no explicit 1h rate joins to a row
  * with a NULL there, and {@link cacheWrite1hRateExpr} falls back to 2× that same
  * row's `input`.
+ *
+ * The `fast_*` columns are the model's optional {@link PricingConfig.models}
+ * `fast` block, flattened the same way — NULL when the model has none. Fast
+ * mode is EXACT-ID ONLY (never family/default/provider): a family's `fast`, if
+ * set, is validated by `loadPricing` but never synced here or read by the cost
+ * expression.
  */
 async function syncPricingTable(conn: DuckDBConnection, pricing: PricingConfig): Promise<void> {
   await conn.run('DROP TABLE IF EXISTS pricing_rates');
   await conn.run(`
     CREATE TABLE pricing_rates (
-      model          VARCHAR PRIMARY KEY,
-      input          DOUBLE,
-      output         DOUBLE,
-      cache_write    DOUBLE,
-      cache_read     DOUBLE,
-      cache_write_1h DOUBLE
+      model               VARCHAR PRIMARY KEY,
+      input               DOUBLE,
+      output              DOUBLE,
+      cache_write         DOUBLE,
+      cache_read          DOUBLE,
+      cache_write_1h      DOUBLE,
+      fast_input          DOUBLE,
+      fast_output         DOUBLE,
+      fast_cache_write    DOUBLE,
+      fast_cache_read     DOUBLE,
+      fast_cache_write_1h DOUBLE
     )
   `);
 
@@ -176,7 +195,9 @@ async function syncPricingTable(conn: DuckDBConnection, pricing: PricingConfig):
   const values = rows
     .map(
       ([model, r]) =>
-        `(${sqlString(model)}, ${r.input}, ${r.output}, ${r.cacheWrite}, ${r.cacheRead}, ${r.cacheWrite1h ?? 'NULL'})`,
+        `(${sqlString(model)}, ${r.input}, ${r.output}, ${r.cacheWrite}, ${r.cacheRead}, ${r.cacheWrite1h ?? 'NULL'}, ` +
+        `${r.fast?.input ?? 'NULL'}, ${r.fast?.output ?? 'NULL'}, ${r.fast?.cacheWrite ?? 'NULL'}, ` +
+        `${r.fast?.cacheRead ?? 'NULL'}, ${r.fast?.cacheWrite1h ?? 'NULL'})`,
     )
     .join(', ');
   await conn.run(`INSERT INTO pricing_rates VALUES ${values}`);
@@ -193,13 +214,18 @@ function effective1hRate(rates: PricingConfig['models'][string]): number {
 }
 
 /**
- * Build the 1-hour cache-write rate expression: provider override → exact-id
- * join → family substring CASE → default literal, same precedence as
+ * Build the 1-hour cache-write rate expression: provider override → speed-aware
+ * exact-id join → family substring CASE → default literal, same precedence as
  * {@link buildCostExpr}'s other rate fields. Each layer that lacks an explicit
  * `cacheWrite1h` falls back to 2× its own `input` (see {@link effective1hRate});
- * for the exact-id join this is `COALESCE(pr.cache_write_1h, pr.input * 2)`,
- * which stays NULL (falling through to family/default) when no exact-id row
+ * for the STANDARD exact-id join this is `COALESCE(pr.cache_write_1h, pr.input *
+ * 2)`, which stays NULL (falling through to family/default) when no exact-id row
  * joined at all, since both columns are NULL together.
+ *
+ * Fast mode is exact-id only (never family/default): on a `speed = 'fast'` row
+ * whose exact-id join has a `fast` block, `COALESCE(pr.fast_cache_write_1h,
+ * pr.fast_input * 2)` wins; otherwise (no fast block on this model) the row
+ * prices at the standard chain above, exactly as if it weren't fast at all.
  */
 function cacheWrite1hRateExpr(pricing: PricingConfig): string {
   const familyCases: string[] = [];
@@ -211,8 +237,10 @@ function cacheWrite1hRateExpr(pricing: PricingConfig): string {
     familyCases.length > 0
       ? `CASE ${familyCases.join(' ')} ELSE ${effective1hRate(pricing.default)} END`
       : `${effective1hRate(pricing.default)}`;
-  const exactExpr = `COALESCE(${RATES_ALIAS}.cache_write_1h, ${RATES_ALIAS}.input * 2)`;
-  const modelExpr = `COALESCE(${exactExpr}, ${familyExpr})`;
+  const standardExactExpr = `COALESCE(${RATES_ALIAS}.cache_write_1h, ${RATES_ALIAS}.input * 2)`;
+  const standardModelExpr = `COALESCE(${standardExactExpr}, ${familyExpr})`;
+  const fastExactExpr = `COALESCE(${RATES_ALIAS}.fast_cache_write_1h, ${RATES_ALIAS}.fast_input * 2)`;
+  const speedAwareModelExpr = `CASE WHEN ${EVENTS_ALIAS}.speed = 'fast' THEN COALESCE(${fastExactExpr}, ${standardModelExpr}) ELSE ${standardModelExpr} END`;
 
   const providerCases: string[] = [];
   for (const [id, rates] of Object.entries(pricing.providers ?? {})) {
@@ -220,8 +248,8 @@ function cacheWrite1hRateExpr(pricing: PricingConfig): string {
     providerCases.push(`WHEN lower(${EVENTS_ALIAS}.provider) = ${pat} THEN ${effective1hRate(rates)}`);
   }
   return providerCases.length > 0
-    ? `CASE ${providerCases.join(' ')} ELSE ${modelExpr} END`
-    : modelExpr;
+    ? `CASE ${providerCases.join(' ')} ELSE ${speedAwareModelExpr} END`
+    : speedAwareModelExpr;
 }
 
 /**
@@ -243,6 +271,11 @@ function cacheWrite1hRateExpr(pricing: PricingConfig): string {
  * {@link cacheWrite1hRateExpr}); the 1h portion is clamped to the total so a
  * malformed/short split can never push the 5m portion negative.
  *
+ * On a `speed = 'fast'` row, every field ALSO tries the exact-id join's `fast_*`
+ * rate first (never a family/default one — fast mode is model-specific), falling
+ * back to the exact same standard chain when the model has no `fast` block, so
+ * fast usage on an un-fast-priced model just prices standard.
+ *
  * The caller must LEFT JOIN the projection against `pricing_rates ${RATES_ALIAS}`
  * on `COALESCE(pricing_model, model)` (see {@link loadFile}).
  */
@@ -258,7 +291,13 @@ function buildCostExpr(pricing: PricingConfig): string {
     const familyExpr =
       cases.length > 0 ? `CASE ${cases.join(' ')} ELSE ${pricing.default[field]} END` : `${pricing.default[field]}`;
     // Exact-id rate (join) wins; then family; then default.
-    const modelExpr = `COALESCE(${RATES_ALIAS}.${column}, ${familyExpr})`;
+    const standardModelExpr = `COALESCE(${RATES_ALIAS}.${column}, ${familyExpr})`;
+    // Fast mode only ever overrides the exact-id layer (see FAST_RATE_COLUMNS);
+    // absent on this model, a fast row falls through to the standard chain above.
+    const fastColumn = field in FAST_RATE_COLUMNS ? FAST_RATE_COLUMNS[field as keyof typeof FAST_RATE_COLUMNS] : null;
+    const modelExpr = fastColumn
+      ? `CASE WHEN ${EVENTS_ALIAS}.speed = 'fast' THEN COALESCE(${RATES_ALIAS}.${fastColumn}, ${standardModelExpr}) ELSE ${standardModelExpr} END`
+      : standardModelExpr;
     // A listed provider OVERRIDES the whole model chain (this is how local
     // runtimes are zero-rated). `lower(NULL) = 'x'` is NULL in DuckDB, so
     // NULL/unlisted providers fall through to the model chain via ELSE.
@@ -337,7 +376,7 @@ async function loadFile(
       ev.file_path, ev.session_id, ev.uuid, ev.parent_uuid, ev.role, ev.type, ev.ts, ev.cwd, ev.git_branch,
       ev.model, ev.provider, ev.pricing_model, ev.input_tokens, ev.output_tokens, ev.cache_read_tokens,
       ev.cache_write_tokens, ev.cache_write_1h_tokens,
-      ev.service_tier, ev.is_sidechain, ev.usage_only, ev.tool_use_count, ev.tool_names,
+      ev.service_tier, ev.speed, ev.is_sidechain, ev.usage_only, ev.tool_use_count, ev.tool_names,
       ${costExpr} AS cost_usd,
       ev.text_content,
       ev.message_id, ev.forked_from_session_id, TRUE AS usage_canonical,

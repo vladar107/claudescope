@@ -61,6 +61,25 @@ const BASE: PricingConfig = {
     // An explicit 1-hour cache-write rate (not 2x its own input: 20*2=40, this
     // is 45), to prove it wins over the fallback.
     'claude-cache1h-explicit': { input: 20, output: 100, cacheWrite: 25, cacheRead: 2, cacheWrite1h: 45 },
+    // Same numbers as the shipped Opus 5.5 fast block, incl. an explicit fast
+    // cacheWrite1h (16 — the no-1h-configured sibling below covers the fallback
+    // path where the configured and fallback rates actually differ).
+    'claude-opus-5-5': {
+      input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5,
+      fast: { input: 8, output: 40, cacheWrite: 10, cacheRead: 0.4, cacheWrite1h: 16 },
+    },
+    // A fast block with NO cacheWrite1h configured, to prove the 1h fallback is
+    // 2x FAST input (12), not 2x the model's standard input (8).
+    'claude-fast-no1h': {
+      input: 4, output: 20, cacheWrite: 5, cacheRead: 0.4,
+      fast: { input: 6, output: 30, cacheWrite: 7.5, cacheRead: 0.6 },
+    },
+    // A Codex/OpenAI-shaped exact id with a fast (priority-tier) block, used by
+    // the Codex toggling test below.
+    'gpt-5-fast-test': {
+      input: 2, output: 10, cacheWrite: 0, cacheRead: 0.2,
+      fast: { input: 5, output: 25, cacheWrite: 0, cacheRead: 1 },
+    },
   },
   families: {
     sonnet: { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
@@ -192,6 +211,44 @@ describe('loadPricing — layered merge', () => {
     const cfg = loadPricing();
     expect(cfg.models['gpt-5-codex']?.cacheWrite1h).toBe(2.5);
     expect(cfg.models['gpt-5']).toEqual({ input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0 });
+  });
+
+  it('keeps a valid fast rate block and drops an unusable one silently', () => {
+    writeJson(fetchedPath, {
+      fetchedAt: new Date().toISOString(),
+      models: {
+        'gpt-5-codex': {
+          input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0,
+          fast: { input: 2.5, output: 20, cacheWrite: 1, cacheRead: 0.25 },
+        },
+        // an unusable fast rate (negative cacheRead) keeps every other rate and
+        // just drops the whole `fast` block, same rule as cacheWrite1h above.
+        'gpt-5': {
+          input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0,
+          fast: { input: 2.5, output: 20, cacheWrite: 1, cacheRead: -1 },
+        },
+      },
+    });
+    bumpMtime(fetchedPath);
+    const cfg = loadPricing();
+    expect(cfg.models['gpt-5-codex']?.fast).toEqual({ input: 2.5, output: 20, cacheWrite: 1, cacheRead: 0.25 });
+    expect(cfg.models['gpt-5']).toEqual({ input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0 });
+  });
+
+  it('keeps the shipped/user fast block when the fetched overlay for that id carries none', () => {
+    // LiteLLM has no Claude fast rates, so a fetched rate update for this id
+    // never carries a `fast` block — the base layer's must survive the merge,
+    // the same way a user-set contextWindow does.
+    writeJson(fetchedPath, {
+      fetchedAt: new Date().toISOString(),
+      models: { 'claude-opus-5-5': { input: 6, output: 30, cacheWrite: 7.5, cacheRead: 0.6 } },
+    });
+    bumpMtime(fetchedPath);
+    const cfg = loadPricing();
+    expect(cfg.models['claude-opus-5-5']).toEqual({
+      input: 6, output: 30, cacheWrite: 7.5, cacheRead: 0.6,
+      fast: BASE.models['claude-opus-5-5']!.fast,
+    });
   });
 });
 
@@ -384,6 +441,44 @@ describe('cost via the pricing join table', () => {
         // cacheWrite1h RATE existing doesn't matter when the row carries no split:
         // the full total prices flat at cacheWrite (25): 500 * 25 / 1e6 = 0.0125
         { ...base, type: 'assistant', uuid: 'x6', parentUuid: 'x5', timestamp: '2026-01-01T10:00:25.000Z', message: { role: 'assistant', model: 'claude-cache1h-explicit', content: [{ type: 'text', text: 'f' }], usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 500 } } },
+        // fast row, model WITH a fast rate (Opus 5.5 numbers): input 100 @ 8,
+        // output 50 @ 40, cache_read 20 @ 0.4, 1h/5m split 400/600 @ 16/10.
+        { ...base, type: 'assistant', uuid: 'x7', parentUuid: 'x6', timestamp: '2026-01-01T10:00:30.000Z', message: { role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'text', text: 'g' }], usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 20, cache_creation_input_tokens: 1000, cache_creation: { ephemeral_1h_input_tokens: 400, ephemeral_5m_input_tokens: 600 }, speed: 'fast' } } },
+        // fast row, model with a fast rate but NO configured fast cacheWrite1h:
+        // the 1h portion falls back to 2x FAST input (12), not 2x standard input (8).
+        { ...base, type: 'assistant', uuid: 'x8', parentUuid: 'x7', timestamp: '2026-01-01T10:00:35.000Z', message: { role: 'assistant', model: 'claude-fast-no1h', content: [{ type: 'text', text: 'h' }], usage: { input_tokens: 50, output_tokens: 20, cache_creation_input_tokens: 500, cache_creation: { ephemeral_1h_input_tokens: 200, ephemeral_5m_input_tokens: 300 }, speed: 'fast' } } },
+        // fast row on a model with NO fast rate at all (claude-opus-4-8, same as
+        // x1) — must price exactly like x1, proving speed is ignored gracefully.
+        { ...base, type: 'assistant', uuid: 'x9', parentUuid: 'x8', timestamp: '2026-01-01T10:00:40.000Z', message: { role: 'assistant', model: 'claude-opus-4-8', content: [{ type: 'text', text: 'i' }], usage: { input_tokens: 100, output_tokens: 0, speed: 'fast' } } },
+      ]),
+    );
+
+    // A Codex rollout toggling the service tier mid-session: default → priority
+    // → default, via `thread_settings_applied`. Only the priority-period usage
+    // must price at gpt-5-fast-test's fast rates.
+    const codexDir = process.env.CODEX_SESSIONS_DIR as string;
+    const codexProj = join(codexDir, '2026', '01', '01');
+    mkdirSync(codexProj, { recursive: true });
+    const ts = (s: number) => `2026-01-01T11:00:${String(s).padStart(2, '0')}.000Z`;
+    writeFileSync(
+      join(codexProj, 'rollout-2026-01-01T11-00-00-019fbbbb-aaaa-7bbb-8ccc-000000000009.jsonl'),
+      jsonl([
+        { type: 'session_meta', timestamp: ts(0), payload: { id: 'codex-fast-1', cwd: '/tmp/codexfastproj' } },
+        { type: 'turn_context', timestamp: ts(1), payload: { model: 'gpt-5-fast-test' } },
+        { type: 'response_item', timestamp: ts(2), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'turn one, default tier' }] } },
+        { type: 'response_item', timestamp: ts(3), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok default' }] } },
+        // standard: (1000*2 + 300*10) / 1e6 = 0.005
+        { type: 'event_msg', timestamp: ts(4), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 1000, cached_input_tokens: 0, output_tokens: 300 } }, rate_limits: {} } },
+        { type: 'event_msg', timestamp: ts(5), payload: { type: 'thread_settings_applied', thread_settings: { service_tier: 'priority' } } },
+        { type: 'response_item', timestamp: ts(6), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'turn two, priority tier' }] } },
+        { type: 'response_item', timestamp: ts(7), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok priority' }] } },
+        // fast: input 400 (500 - 100 cached) @ 5, output 100 @ 25, cache_read 100 @ 1 → (2000+2500+100)/1e6 = 0.0046
+        { type: 'event_msg', timestamp: ts(8), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 500, cached_input_tokens: 100, output_tokens: 100 } }, rate_limits: {} } },
+        { type: 'event_msg', timestamp: ts(9), payload: { type: 'thread_settings_applied', thread_settings: { service_tier: 'default' } } },
+        { type: 'response_item', timestamp: ts(10), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'turn three, back to default' }] } },
+        { type: 'response_item', timestamp: ts(11), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok default again' }] } },
+        // standard again: (200*2 + 50*10) / 1e6 = 0.0009
+        { type: 'event_msg', timestamp: ts(12), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 200, cached_input_tokens: 0, output_tokens: 50 } }, rate_limits: {} } },
       ]),
     );
 
@@ -433,6 +528,36 @@ describe('cost via the pricing join table', () => {
     // Same model as x4 (which HAS a cacheWrite1h rate) — proves the split is
     // governed by the row's own data, not by the rate merely existing.
     expect(await costOf('x6')).toBeCloseTo((500 * 25) / 1e6, 12);
+  });
+
+  it('prices a Claude fast row (speed=fast) at the exact-id fast rates, including the 1h/5m split', async () => {
+    expect(await costOf('x7')).toBeCloseTo((100 * 8 + 50 * 40 + 20 * 0.4 + 600 * 10 + 400 * 16) / 1e6, 12);
+  });
+
+  it('falls back to 2x FAST input for the fast 1h portion when no fast cacheWrite1h is configured', async () => {
+    // fast.cacheWrite (7.5) for the 5m portion; 2 * fast.input (6) = 12 for 1h.
+    expect(await costOf('x8')).toBeCloseTo((50 * 6 + 20 * 30 + 300 * 7.5 + 200 * 12) / 1e6, 12);
+  });
+
+  it('prices a fast row standard when the model has no fast rate configured', async () => {
+    // claude-opus-4-8 has no `fast` block — speed=fast must be ignored, pricing
+    // exactly as x1 (same model, same tokens, no speed field at all).
+    expect(await costOf('x9')).toBeCloseTo(await costOf('x1'), 12);
+  });
+
+  it('prices Codex priority-tier usage at the exact-id fast rate; default-tier usage stays standard', async () => {
+    const conn = await getConnection();
+    const rows = await queryRows(
+      conn,
+      `SELECT cost_usd, speed FROM events WHERE session_id = 'codex-fast-1' AND role = 'assistant' ORDER BY ts`,
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows[0]?.speed).toBeNull();
+    expect(Number(rows[0]?.cost_usd)).toBeCloseTo((1000 * 2 + 300 * 10) / 1e6, 12);
+    expect(rows[1]?.speed).toBe('fast');
+    expect(Number(rows[1]?.cost_usd)).toBeCloseTo((400 * 5 + 100 * 25 + 100 * 1) / 1e6, 12);
+    expect(rows[2]?.speed).toBeNull();
+    expect(Number(rows[2]?.cost_usd)).toBeCloseTo((200 * 2 + 50 * 10) / 1e6, 12);
   });
 
   const costWhere = async (where: string): Promise<number> => {
