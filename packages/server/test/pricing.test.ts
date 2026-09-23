@@ -58,6 +58,9 @@ const BASE: PricingConfig = {
     'only-in-base': { input: 9, output: 9, cacheWrite: 9, cacheRead: 9 },
     // A user-set window on an exact id: LiteLLM's rates for it still win.
     'claude-opus-4-1[1m]': { input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.5, contextWindow: 1000000 },
+    // An explicit 1-hour cache-write rate (not 2x its own input: 20*2=40, this
+    // is 45), to prove it wins over the fallback.
+    'claude-cache1h-explicit': { input: 20, output: 100, cacheWrite: 25, cacheRead: 2, cacheWrite1h: 45 },
   },
   families: {
     sonnet: { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
@@ -174,6 +177,21 @@ describe('loadPricing — layered merge', () => {
     bumpMtime(fetchedPath);
     const reloaded = loadPricing();
     expect(reloaded.models['claude-opus-4-8']).toEqual({ input: 7, output: 8, cacheWrite: 9, cacheRead: 10 });
+  });
+
+  it('keeps a valid cacheWrite1h rate and drops an unusable one silently', () => {
+    writeJson(fetchedPath, {
+      fetchedAt: new Date().toISOString(),
+      models: {
+        'gpt-5-codex': { input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0, cacheWrite1h: 2.5 },
+        // an unusable 1h rate keeps every other rate and just drops that field.
+        'gpt-5': { input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0, cacheWrite1h: -1 },
+      },
+    });
+    bumpMtime(fetchedPath);
+    const cfg = loadPricing();
+    expect(cfg.models['gpt-5-codex']?.cacheWrite1h).toBe(2.5);
+    expect(cfg.models['gpt-5']).toEqual({ input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0 });
   });
 });
 
@@ -358,6 +376,14 @@ describe('cost via the pricing join table', () => {
         { ...base, type: 'assistant', uuid: 'x2', parentUuid: 'x1', timestamp: '2026-01-01T10:00:05.000Z', message: { role: 'assistant', model: 'claude-sonnet-4-5-20251001', content: [{ type: 'text', text: 'b' }], usage: { input_tokens: 100, output_tokens: 0 } } },
         // default fallback (input 1): 100 * 1 / 1e6 = 0.0001
         { ...base, type: 'assistant', uuid: 'x3', parentUuid: 'x2', timestamp: '2026-01-01T10:00:10.000Z', message: { role: 'assistant', model: 'some-unknown-model', content: [{ type: 'text', text: 'c' }], usage: { input_tokens: 100, output_tokens: 0 } } },
+        // 1h/5m split, explicit cacheWrite1h rate (45): 600 @ cacheWrite (25) + 400 @ cacheWrite1h (45)
+        { ...base, type: 'assistant', uuid: 'x4', parentUuid: 'x3', timestamp: '2026-01-01T10:00:15.000Z', message: { role: 'assistant', model: 'claude-cache1h-explicit', content: [{ type: 'text', text: 'd' }], usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 1000, cache_creation: { ephemeral_1h_input_tokens: 400, ephemeral_5m_input_tokens: 600 } } } },
+        // 1h/5m split via the sonnet family (no cacheWrite1h configured): 700 @ cacheWrite (3.75) + 300 @ 2x input (6)
+        { ...base, type: 'assistant', uuid: 'x5', parentUuid: 'x4', timestamp: '2026-01-01T10:00:20.000Z', message: { role: 'assistant', model: 'claude-sonnet-4-9-fallback', content: [{ type: 'text', text: 'e' }], usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 1000, cache_creation: { ephemeral_1h_input_tokens: 300, ephemeral_5m_input_tokens: 700 } } } },
+        // legacy shape (no cache_creation breakdown), same model as x4 — proves the
+        // cacheWrite1h RATE existing doesn't matter when the row carries no split:
+        // the full total prices flat at cacheWrite (25): 500 * 25 / 1e6 = 0.0125
+        { ...base, type: 'assistant', uuid: 'x6', parentUuid: 'x5', timestamp: '2026-01-01T10:00:25.000Z', message: { role: 'assistant', model: 'claude-cache1h-explicit', content: [{ type: 'text', text: 'f' }], usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 500 } } },
       ]),
     );
 
@@ -392,6 +418,21 @@ describe('cost via the pricing join table', () => {
 
   it('falls back to the default rate when neither id nor family matches', async () => {
     expect(await costOf('x3')).toBeCloseTo((100 * 1) / 1e6, 12);
+  });
+
+  it('splits a 1h/5m cache-write row across both rates using an explicit cacheWrite1h', async () => {
+    expect(await costOf('x4')).toBeCloseTo((600 * 25 + 400 * 45) / 1e6, 12);
+  });
+
+  it('falls back to 2x input for the 1h portion when no cacheWrite1h rate is configured', async () => {
+    // sonnet family: cacheWrite 3.75, no cacheWrite1h → 2 * input (3) = 6.
+    expect(await costOf('x5')).toBeCloseTo((700 * 3.75 + 300 * 6) / 1e6, 12);
+  });
+
+  it('prices a row with no 1h/5m breakdown entirely at the flat cacheWrite rate', async () => {
+    // Same model as x4 (which HAS a cacheWrite1h rate) — proves the split is
+    // governed by the row's own data, not by the rate merely existing.
+    expect(await costOf('x6')).toBeCloseTo((500 * 25) / 1e6, 12);
   });
 
   const costWhere = async (where: string): Promise<number> => {

@@ -626,6 +626,7 @@ export function toCanonicalRows(session: GrokSession, filePath: string): Canonic
       output_tokens: num(usage?.output_tokens),
       cache_read_tokens: num(usage?.cache_read_input_tokens),
       cache_write_tokens: num(usage?.cache_creation_input_tokens),
+      cache_write_1h_tokens: 0,
       service_tier: null,
       is_sidechain: session.isSidechain,
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,

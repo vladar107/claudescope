@@ -114,3 +114,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0087 | [Sessions pagination, Codex walk reuse, and FTS rebuild debounce](./0087-sessions-pagination-and-fts-debounce.md) | done |
 | 0088 | [Skills inventory](./0088-skills-inventory.md) | done |
 | 0089 | [Memory store attribution](./0089-memory-store-attribution.md) | done |
+| 0090 | [1-hour cache-write pricing](./0090-cache-write-1h-pricing.md) | done |

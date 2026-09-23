@@ -29,13 +29,15 @@ const LITELLM = {
     litellm_provider: 'one of https://docs.litellm.ai/docs/providers',
     mode: 'chat',
   },
-  // anthropic chat model with all four rates present (+ a context window).
+  // anthropic chat model with all four rates present (+ a context window) and
+  // an explicit 1-hour cache-write rate.
   'claude-sonnet-4-5': {
     litellm_provider: 'anthropic',
     mode: 'chat',
     input_cost_per_token: 3e-6,
     output_cost_per_token: 15e-6,
     cache_creation_input_token_cost: 3.75e-6,
+    cache_creation_input_token_cost_above_1hr: 6e-6,
     cache_read_input_token_cost: 0.3e-6,
     max_input_tokens: 200000,
   },
@@ -109,6 +111,7 @@ describe('mapLiteLLM', () => {
       cacheWrite: 3.75,
       cacheRead: 0.3,
       contextWindow: 200000,
+      cacheWrite1h: 6,
     });
   });
 
@@ -116,6 +119,12 @@ describe('mapLiteLLM', () => {
     expect(rates['claude-haiku-4-5']).toEqual({ input: 1, output: 5, cacheWrite: 0, cacheRead: 0 });
     // gpt-5 has no max_input_tokens at all → no key, not `contextWindow: undefined`.
     expect('contextWindow' in rates['gpt-5']!).toBe(false);
+  });
+
+  it('leaves cacheWrite1h out (not the entry) when the source has no above-1hr cost', () => {
+    // claude-haiku-4-5 carries no cache_creation_input_token_cost_above_1hr at
+    // all — the entry must still map, just without the optional field.
+    expect('cacheWrite1h' in rates['claude-haiku-4-5']!).toBe(false);
   });
 
   it('defaults missing/null cache fields to 0', () => {
@@ -198,6 +207,7 @@ describe('refreshPricing', () => {
       cacheWrite: 3.75,
       cacheRead: 0.3,
       contextWindow: 200000,
+      cacheWrite1h: 6,
     });
   });
 
@@ -215,6 +225,24 @@ describe('refreshPricing', () => {
     const result = await refreshPricing();
     expect(result.changed).toBe(1);
     expect(result.modelCount).toBe(4);
+  });
+
+  it('counts a change when only the 1h cache-write rate is added or removed', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ok(LITELLM)));
+    await refreshPricing();
+
+    // Same rates everywhere, but claude-sonnet-4-5 loses its above-1hr cost.
+    const withoutAbove1hr = {
+      ...LITELLM,
+      'claude-sonnet-4-5': {
+        ...LITELLM['claude-sonnet-4-5'],
+        cache_creation_input_token_cost_above_1hr: undefined,
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => ok(withoutAbove1hr)));
+
+    const result = await refreshPricing();
+    expect(result.changed).toBe(1);
   });
 
   it('leaves an existing snapshot untouched when the fetch is invalid', async () => {

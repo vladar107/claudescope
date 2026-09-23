@@ -42,6 +42,7 @@ export const CANONICAL_COLUMNS = {
   output_tokens: 'BIGINT',
   cache_read_tokens: 'BIGINT',
   cache_write_tokens: 'BIGINT',
+  cache_write_1h_tokens: 'BIGINT',
   service_tier: 'VARCHAR',
   is_sidechain: 'BOOLEAN',
   tool_use_count: 'INTEGER',
@@ -77,6 +78,12 @@ export interface CanonicalRow {
   output_tokens: number;
   cache_read_tokens: number;
   cache_write_tokens: number;
+  /**
+   * Subset of `cache_write_tokens` billed at the 1-hour cache-TTL rate; only
+   * the Claude Code connector fills this in (from `usage.cache_creation.
+   * ephemeral_1h_input_tokens`), every other connector emits 0.
+   */
+  cache_write_1h_tokens: number;
   service_tier: string | null;
   is_sidechain: boolean;
   tool_use_count: number;
@@ -125,6 +132,7 @@ export function compactionRow(
     output_tokens: 0,
     cache_read_tokens: 0,
     cache_write_tokens: 0,
+    cache_write_1h_tokens: 0,
     service_tier: null,
     tool_use_count: 0,
     tool_names: '',

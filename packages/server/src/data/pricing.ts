@@ -34,9 +34,11 @@ function rateOrNull(value: unknown): number | null {
 }
 
 /**
- * A fully-valid {@link ModelRates}, or `null` if any rate is unusable. The
- * optional `contextWindow` is not a rate (it never reaches SQL): it is kept
- * when a positive integer and silently left out otherwise.
+ * A fully-valid {@link ModelRates}, or `null` if any REQUIRED rate is unusable.
+ * The optional `contextWindow` is not a rate (it never reaches SQL): it is kept
+ * when a positive integer and silently left out otherwise. `cacheWrite1h` is an
+ * optional rate — an unusable value is dropped (treated as absent, so the cost
+ * expression falls back to 2× input) rather than invalidating the whole entry.
  */
 function ratesOrNull(value: unknown): ModelRates | null {
   if (value === null || typeof value !== 'object') return null;
@@ -49,6 +51,8 @@ function ratesOrNull(value: unknown): ModelRates | null {
   }
   const window = raw.contextWindow;
   if (typeof window === 'number' && Number.isInteger(window) && window > 0) out.contextWindow = window;
+  const cacheWrite1h = rateOrNull(raw.cacheWrite1h);
+  if (cacheWrite1h !== null) out.cacheWrite1h = cacheWrite1h;
   return out;
 }
 
@@ -110,6 +114,9 @@ function sanitizeConfig(raw: PricingConfig, sourcePath: string): PricingConfig {
     if (n === null) dropped.push(`default.${field} (treated as 0)`);
     fallback[field] = n ?? 0;
   }
+  // Optional: absent or unusable just leaves the 2×input fallback in place.
+  const cacheWrite1h = rateOrNull((raw.default as unknown as Record<string, unknown> | undefined)?.cacheWrite1h);
+  if (cacheWrite1h !== null) fallback.cacheWrite1h = cacheWrite1h;
 
   if (dropped.length > 0) {
     console.warn(

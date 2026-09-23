@@ -57,6 +57,7 @@ interface LiteLLMEntry {
   input_cost_per_token?: unknown;
   output_cost_per_token?: unknown;
   cache_creation_input_token_cost?: unknown;
+  cache_creation_input_token_cost_above_1hr?: unknown;
   cache_read_input_token_cost?: unknown;
   max_input_tokens?: unknown;
 }
@@ -72,6 +73,17 @@ function toRate(value: unknown): number | null {
 function toCacheRate(value: unknown): number | null {
   if (value === undefined || value === null) return 0;
   return toRate(value);
+}
+
+/**
+ * The optional 1-hour cache-write rate: missing/undefined → `undefined` (the
+ * entry is still valid; the cost expression falls back to 2× input), and an
+ * unusable value is likewise dropped rather than failing the whole entry —
+ * unlike {@link toCacheRate}, absence here is never fatal.
+ */
+function toOptionalRate(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  return toRate(value) ?? undefined;
 }
 
 /**
@@ -92,7 +104,10 @@ function toWindow(value: unknown): number | undefined {
  * — transcripts store bare model ids, and the bare id is present for these
  * providers. Individual entries with missing/invalid input or output cost (or
  * any rate over the sanity cap) are skipped, not fatal. Missing cache fields
- * default to 0. `max_input_tokens` rides along as `contextWindow` when present.
+ * default to 0. `max_input_tokens` rides along as `contextWindow` when present,
+ * and `cache_creation_input_token_cost_above_1hr` as the optional `cacheWrite1h`
+ * — absent or unusable just leaves the 2×input fallback in place (data/index.ts:
+ * buildCostExpr), never dropping the entry.
  */
 export function mapLiteLLM(json: unknown): Record<string, ModelRates> {
   const out: Record<string, ModelRates> = {};
@@ -119,7 +134,15 @@ export function mapLiteLLM(json: unknown): Record<string, ModelRates> {
     }
 
     const contextWindow = toWindow(entry.max_input_tokens);
-    out[id] = { input, output, cacheWrite, cacheRead, ...(contextWindow ? { contextWindow } : {}) };
+    const cacheWrite1h = toOptionalRate(entry.cache_creation_input_token_cost_above_1hr);
+    out[id] = {
+      input,
+      output,
+      cacheWrite,
+      cacheRead,
+      ...(contextWindow ? { contextWindow } : {}),
+      ...(cacheWrite1h !== undefined ? { cacheWrite1h } : {}),
+    };
   }
 
   return out;
@@ -166,7 +189,8 @@ function countChanged(
       before.input !== rates.input ||
       before.output !== rates.output ||
       before.cacheWrite !== rates.cacheWrite ||
-      before.cacheRead !== rates.cacheRead
+      before.cacheRead !== rates.cacheRead ||
+      before.cacheWrite1h !== rates.cacheWrite1h
     ) {
       changed += 1;
     }
