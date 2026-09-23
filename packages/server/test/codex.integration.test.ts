@@ -288,9 +288,11 @@ function writeLocalRollout(): string {
       { type: 'turn_context', timestamp: ts(51), payload: { model: 'gpt-5.4', cwd: '/tmp/codexproj' } },
       { type: 'response_item', timestamp: ts(52), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'run this offline on my machine' }] } },
       { type: 'response_item', timestamp: ts(53), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'first local turn' }] } },
-      { type: 'event_msg', timestamp: ts(54), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 1000, cached_input_tokens: 0, output_tokens: 300 } }, rate_limits: {} } },
+      { type: 'event_msg', timestamp: ts(54), payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 1000, output_tokens: 300 }, last_token_usage: { input_tokens: 1000, cached_input_tokens: 0, output_tokens: 300 } }, rate_limits: {} } },
       { type: 'response_item', timestamp: ts(55), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'second local turn' }] } },
-      { type: 'event_msg', timestamp: ts(56), payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 500, cached_input_tokens: 0, output_tokens: 100 } }, rate_limits: {} } },
+      { type: 'event_msg', timestamp: ts(56), payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 1500, output_tokens: 400 }, last_token_usage: { input_tokens: 500, cached_input_tokens: 0, output_tokens: 100 } }, rate_limits: {} } },
+      // Re-emitted snapshot: the running total did not move, so no new call.
+      { type: 'event_msg', timestamp: ts(57), payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 1500, output_tokens: 400 }, last_token_usage: { input_tokens: 500, cached_input_tokens: 0, output_tokens: 100 } }, rate_limits: {} } },
     ]),
   );
   return file;
@@ -676,6 +678,12 @@ describe('Codex session indexing', () => {
     expect(s.totalCostUsd).toBe(0);
     expect(s.providers).toEqual(['lmstudio']);
     expect(s.hasLocalProvider).toBe(true);
+  });
+
+  it('bills a re-emitted token_count snapshot only once', async () => {
+    const sessions = (await get('/api/sessions')).json();
+    const s = sessions.find((x: { id: string }) => x.id === 'codex-local-1');
+    expect(s.totalTokens).toBe(1500 + 400);
   });
 
   it('finds the Codex session via full-text search', async () => {
