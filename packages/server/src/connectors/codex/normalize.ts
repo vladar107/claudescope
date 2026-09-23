@@ -245,6 +245,18 @@ export function rootThreadId(id: string, parents: Map<string, string>): string {
   return cur;
 }
 
+/**
+ * Codex re-emits a `token_count` whose running `total_token_usage` has not moved
+ * (no new API call); its `last_token_usage` repeats the previous call's and must
+ * not be billed again. A snapshot without a total can't be compared and counts.
+ */
+function repeatsPreviousTotal(info: Record<string, unknown> | null, prev: { total: string | null }): boolean {
+  const total = info?.total_token_usage ? JSON.stringify(info.total_token_usage) : null;
+  const repeated = total !== null && total === prev.total;
+  prev.total = total;
+  return repeated;
+}
+
 /** One `turn_context` model change in a parent rollout, in file (chronological)
  *  order. */
 interface ParentModelPoint {
@@ -357,6 +369,7 @@ export function parseGuardianRollout(path: string): CanonicalRow[] | null {
   const rows: CanonicalRow[] = [];
   let model = '';
   let seq = 0;
+  const lastTotal = { total: null as string | null };
   for (const line of lines) {
     if (line.type === 'turn_context') {
       model = str((line.payload ?? {}).model) || model;
@@ -365,7 +378,7 @@ export function parseGuardianRollout(path: string): CanonicalRow[] | null {
     if (line.type !== 'event_msg' || str((line.payload ?? {}).type) !== 'token_count') continue;
     const info = (line.payload ?? {}).info as Record<string, unknown> | null;
     const last = (info?.last_token_usage ?? null) as Record<string, unknown> | null;
-    if (!last) continue;
+    if (repeatsPreviousTotal(info, lastTotal) || !last) continue;
     const input = num(last.input_tokens);
     const cached = num(last.cached_input_tokens);
     const ts = str(line.timestamp);
@@ -969,6 +982,7 @@ export function parseRollout(path: string): CodexSession | null {
   let turnTs = '';
   // Holder (not a bare `let`) so reads aren't reset by closure mutation in CFA.
   const usageRef: { current: CodexUsage | null } = { current: null };
+  const lastTotal = { total: null as string | null };
 
   const flush = (): void => {
     if (!side || blocks.length === 0) {
@@ -1019,7 +1033,8 @@ export function parseRollout(path: string): CodexSession | null {
       const info = pl.info as Record<string, unknown> | null;
       const last = (info?.last_token_usage ?? null) as Record<string, unknown> | null;
       const acc = usageRef.current;
-      if (last && acc) {
+      const repeated = repeatsPreviousTotal(info, lastTotal);
+      if (last && acc && !repeated) {
         const input = num(last.input_tokens);
         const cached = num(last.cached_input_tokens);
         acc.input_tokens += Math.max(0, input - cached);
