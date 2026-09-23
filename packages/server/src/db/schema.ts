@@ -51,7 +51,9 @@
 // v23: skill_names also derived from SKILL.md reads (Codex, pi, Copilot,
 //      Antigravity) and from opencode's / Junie's native skill calls, which now
 //      map to canonical `Skill` — existing rows must be re-normalized.
-export const SCHEMA_VERSION = 23;
+// v24: events.cache_write_1h_tokens (the 1-hour-TTL subset of cache_write_tokens,
+//      Claude Code only) splits cost between the 1h and 5m cache-write rates.
+export const SCHEMA_VERSION = 24;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -87,6 +89,10 @@ export const SCHEMA_DDL: readonly string[] = [
      output_tokens       BIGINT DEFAULT 0,
      cache_read_tokens   BIGINT DEFAULT 0,
      cache_write_tokens  BIGINT DEFAULT 0,
+     -- Subset of cache_write_tokens billed at the 1-hour cache-TTL rate (Claude
+     -- Code only; every other connector emits 0). cache_write_tokens itself stays
+     -- the total, so token displays and the cache-hit ratio are unaffected.
+     cache_write_1h_tokens BIGINT DEFAULT 0,
      service_tier VARCHAR,
      is_sidechain BOOLEAN DEFAULT FALSE,
      tool_use_count INTEGER DEFAULT 0,

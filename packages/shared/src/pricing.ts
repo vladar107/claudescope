@@ -8,8 +8,15 @@ export interface ModelRates {
   input: number;
   /** USD per 1M output tokens. */
   output: number;
-  /** USD per 1M cache-write (cache-creation) tokens. */
+  /** USD per 1M cache-write (cache-creation) tokens, 5-minute TTL. */
   cacheWrite: number;
+  /**
+   * USD per 1M cache-write tokens billed at the 1-hour TTL rate. Optional: when
+   * a resolved entry (model/family/default/provider) has no explicit value, the
+   * effective rate is 2× that same entry's `input` — Anthropic's 1h cache-write
+   * multiplier — computed at cost time (`data/index.ts:buildCostExpr`).
+   */
+  cacheWrite1h?: number;
   /** USD per 1M cache-read tokens. */
   cacheRead: number;
   /**

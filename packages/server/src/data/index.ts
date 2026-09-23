@@ -150,16 +150,21 @@ const STAGE_SUFFIX = 'load';
  * just recreate it once per reindex run (never per file). The cost expression
  * (see {@link buildCostExpr}) LEFT JOINs each event's `model` against this table
  * for the exact-id rate, falling back to family/default in SQL.
+ *
+ * `cache_write_1h` is nullable: a model with no explicit 1h rate joins to a row
+ * with a NULL there, and {@link cacheWrite1hRateExpr} falls back to 2× that same
+ * row's `input`.
  */
 async function syncPricingTable(conn: DuckDBConnection, pricing: PricingConfig): Promise<void> {
   await conn.run('DROP TABLE IF EXISTS pricing_rates');
   await conn.run(`
     CREATE TABLE pricing_rates (
-      model       VARCHAR PRIMARY KEY,
-      input       DOUBLE,
-      output      DOUBLE,
-      cache_write DOUBLE,
-      cache_read  DOUBLE
+      model          VARCHAR PRIMARY KEY,
+      input          DOUBLE,
+      output         DOUBLE,
+      cache_write    DOUBLE,
+      cache_read     DOUBLE,
+      cache_write_1h DOUBLE
     )
   `);
 
@@ -168,10 +173,52 @@ async function syncPricingTable(conn: DuckDBConnection, pricing: PricingConfig):
   const values = rows
     .map(
       ([model, r]) =>
-        `(${sqlString(model)}, ${r.input}, ${r.output}, ${r.cacheWrite}, ${r.cacheRead})`,
+        `(${sqlString(model)}, ${r.input}, ${r.output}, ${r.cacheWrite}, ${r.cacheRead}, ${r.cacheWrite1h ?? 'NULL'})`,
     )
     .join(', ');
   await conn.run(`INSERT INTO pricing_rates VALUES ${values}`);
+}
+
+/**
+ * Effective 1-hour cache-write rate for one already-resolved rate entry
+ * (a model row, a family, the default, or a provider): its own `cacheWrite1h`
+ * when set, else 2× its OWN `input` — never a different layer's. This mirrors
+ * Anthropic's real pricing, where the 1h cache-write rate is always 2x input.
+ */
+function effective1hRate(rates: PricingConfig['models'][string]): number {
+  return rates.cacheWrite1h ?? 2 * rates.input;
+}
+
+/**
+ * Build the 1-hour cache-write rate expression: provider override → exact-id
+ * join → family substring CASE → default literal, same precedence as
+ * {@link buildCostExpr}'s other rate fields. Each layer that lacks an explicit
+ * `cacheWrite1h` falls back to 2× its own `input` (see {@link effective1hRate});
+ * for the exact-id join this is `COALESCE(pr.cache_write_1h, pr.input * 2)`,
+ * which stays NULL (falling through to family/default) when no exact-id row
+ * joined at all, since both columns are NULL together.
+ */
+function cacheWrite1hRateExpr(pricing: PricingConfig): string {
+  const familyCases: string[] = [];
+  for (const [family, rates] of Object.entries(pricing.families ?? {})) {
+    const pat = sqlString(`%${family.toLowerCase()}%`);
+    familyCases.push(`WHEN lower(${EVENTS_ALIAS}.model) LIKE ${pat} THEN ${effective1hRate(rates)}`);
+  }
+  const familyExpr =
+    familyCases.length > 0
+      ? `CASE ${familyCases.join(' ')} ELSE ${effective1hRate(pricing.default)} END`
+      : `${effective1hRate(pricing.default)}`;
+  const exactExpr = `COALESCE(${RATES_ALIAS}.cache_write_1h, ${RATES_ALIAS}.input * 2)`;
+  const modelExpr = `COALESCE(${exactExpr}, ${familyExpr})`;
+
+  const providerCases: string[] = [];
+  for (const [id, rates] of Object.entries(pricing.providers ?? {})) {
+    const pat = sqlString(id.toLowerCase());
+    providerCases.push(`WHEN lower(${EVENTS_ALIAS}.provider) = ${pat} THEN ${effective1hRate(rates)}`);
+  }
+  return providerCases.length > 0
+    ? `CASE ${providerCases.join(' ')} ELSE ${modelExpr} END`
+    : modelExpr;
 }
 
 /**
@@ -184,6 +231,11 @@ async function syncPricingTable(conn: DuckDBConnection, pricing: PricingConfig):
  * join table (aliased {@link RATES_ALIAS}), the family match is a small CASE
  * over `pricing.families` (a handful of branches), and the default is a literal.
  * Operates on the canonical token columns, so it is agent-agnostic.
+ *
+ * `cache_write_tokens` (the total) is split at cost time between the 1-hour and
+ * 5-minute cache-write rates using `cache_write_1h_tokens` (see
+ * {@link cacheWrite1hRateExpr}); the 1h portion is clamped to the total so a
+ * malformed/short split can never push the 5m portion negative.
  *
  * The caller must LEFT JOIN the projection against `pricing_rates ${RATES_ALIAS}`
  * on the model column (see {@link loadFile}).
@@ -215,9 +267,17 @@ function buildCostExpr(pricing: PricingConfig): string {
   };
 
   // Cost is only attributable to assistant events (the ones carrying usage).
-  const terms = RATE_FIELDS.map(
+  // cacheWrite is handled separately below (split across the 1h/5m rates), so
+  // it's excluded from this generic per-field loop.
+  const terms = RATE_FIELDS.filter(([field]) => field !== 'cacheWrite').map(
     ([field, column, tokenCol]) => `COALESCE(${EVENTS_ALIAS}.${tokenCol}, 0) * ${rateExpr(field, column)}`,
   );
+
+  const cacheWriteTotal = `COALESCE(${EVENTS_ALIAS}.cache_write_tokens, 0)`;
+  const cacheWrite1hTokens = `LEAST(COALESCE(${EVENTS_ALIAS}.cache_write_1h_tokens, 0), ${cacheWriteTotal})`;
+  terms.push(`(${cacheWriteTotal} - ${cacheWrite1hTokens}) * ${rateExpr('cacheWrite', 'cache_write')}`);
+  terms.push(`${cacheWrite1hTokens} * ${cacheWrite1hRateExpr(pricing)}`);
+
   return `
     (
       ${terms.join(' +\n      ')}
@@ -270,6 +330,7 @@ async function loadFile(
     SELECT
       ev.file_path, ev.session_id, ev.uuid, ev.parent_uuid, ev.role, ev.type, ev.ts, ev.cwd, ev.git_branch,
       ev.model, ev.provider, ev.input_tokens, ev.output_tokens, ev.cache_read_tokens, ev.cache_write_tokens,
+      ev.cache_write_1h_tokens,
       ev.service_tier, ev.is_sidechain, ev.tool_use_count, ev.tool_names,
       ${costExpr} AS cost_usd,
       ev.text_content,

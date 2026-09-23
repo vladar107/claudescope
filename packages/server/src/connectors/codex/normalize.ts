@@ -1097,6 +1097,7 @@ export function toCanonicalRows(session: CodexSession, filePath: string): Canoni
       output_tokens: num(usage?.output_tokens),
       cache_read_tokens: num(usage?.cache_read_input_tokens),
       cache_write_tokens: 0,
+      cache_write_1h_tokens: 0,
       service_tier: null,
       is_sidechain: session.isSidechain,
       tool_use_count: arr.filter((b) => b.type === 'tool_use').length,
