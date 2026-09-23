@@ -21,7 +21,13 @@ import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js
 import { canonicalProjectionSql, compactionsProjectionSql } from '../canonical.js';
 import { ndjsonCache } from '../ndjson-cache.js';
 import { codexGlobalMemory } from './memory.js';
-import { listRollouts, parseRollout, toCanonicalRows, type CodexSession } from './normalize.js';
+import {
+  listRollouts,
+  parseGuardianRollout,
+  parseRollout,
+  toCanonicalRows,
+  type CodexSession,
+} from './normalize.js';
 import { codexSkills } from './skills.js';
 
 const cache = ndjsonCache('codex');
@@ -38,10 +44,15 @@ function discover(): DiscoveredFile[] {
   return listRollouts();
 }
 
-/** Normalize a rollout to canonical NDJSON the projection will read. */
+/**
+ * Normalize a rollout to canonical NDJSON the projection will read. A guardian
+ * rollout parses as null here (same as `loadSession`'s detail-view read below,
+ * so it never becomes a session/thread/run) but still owes its token usage —
+ * `parseGuardianRollout` recovers that separately, re-keyed to its parent.
+ */
 async function prepare(filePath: string): Promise<void> {
   const session = parseRollout(filePath);
-  const rows = session ? toCanonicalRows(session, filePath) : [];
+  const rows = session ? toCanonicalRows(session, filePath) : (parseGuardianRollout(filePath) ?? []);
   cache.write(filePath, rows);
 }
 

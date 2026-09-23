@@ -53,7 +53,10 @@
 //      map to canonical `Skill` — existing rows must be re-normalized.
 // v24: events.cache_write_1h_tokens (the 1-hour-TTL subset of cache_write_tokens,
 //      Claude Code only) splits cost between the 1h and 5m cache-write rates.
-export const SCHEMA_VERSION = 24;
+// v25: Codex guardian-review rollouts now contribute usage-only events (re-keyed
+//      to the parent session, flagged `events.usage_only` and priced via the new
+//      nullable `events.pricing_model` override) instead of being dropped outright.
+export const SCHEMA_VERSION = 25;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -85,6 +88,11 @@ export const SCHEMA_DDL: readonly string[] = [
      -- Model provider recorded by the agent (pi/codex/opencode); NULL when the
      -- format has no provider signal.
      provider     VARCHAR,
+     -- Pricing override: COALESCE(pricing_model, model) is what the cost
+     -- expression rates against. NULL for every row except Codex's guardian
+     -- review usage, priced at the parent thread's model instead of the
+     -- unpriceable codex-auto-review backend alias.
+     pricing_model VARCHAR,
      input_tokens        BIGINT DEFAULT 0,
      output_tokens       BIGINT DEFAULT 0,
      cache_read_tokens   BIGINT DEFAULT 0,
@@ -95,6 +103,9 @@ export const SCHEMA_DDL: readonly string[] = [
      cache_write_1h_tokens BIGINT DEFAULT 0,
      service_tier VARCHAR,
      is_sidechain BOOLEAN DEFAULT FALSE,
+     -- TRUE for a usage-only row with no thread content (Codex's guardian
+     -- review rows) — excluded from sessions.message_count/has_sidechain.
+     usage_only   BOOLEAN DEFAULT FALSE,
      tool_use_count INTEGER DEFAULT 0,
      tool_names   VARCHAR DEFAULT '',
      cost_usd     DOUBLE DEFAULT 0,

@@ -115,3 +115,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0088 | [Skills inventory](./0088-skills-inventory.md) | done |
 | 0089 | [Memory store attribution](./0089-memory-store-attribution.md) | done |
 | 0090 | [1-hour cache-write pricing](./0090-cache-write-1h-pricing.md) | done |
+| 0091 | [Codex guardian review usage](./0091-codex-guardian-usage.md) | done |

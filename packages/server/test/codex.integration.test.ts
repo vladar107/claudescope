@@ -362,24 +362,117 @@ function writeCompactionRollout(): string {
   return file;
 }
 
-/** Guardian approval reviews are internal regardless of thread-source generation. */
+/**
+ * Guardian approval reviews are internal regardless of thread-source
+ * generation, and always excluded from sessions/threads/search — but their
+ * token usage is still counted, re-keyed to their parent thread and priced at
+ * the parent's model (`codex-auto-review` has no client-side rate).
+ *
+ * - `codex-guardian-linked`: parent_thread_id names the real `codex-sess-1`,
+ *   whose only turn_context model (gpt-5.4, a distinct rate from the shipped
+ *   default) is what must price this review's usage.
+ * - `codex-guardian-orphan`: parent_thread_id names a rollout that was never
+ *   written, so it re-keys directly to that absent id and prices via its own
+ *   model chain (codex-auto-review matches no pricing family → the default).
+ */
 function writeGuardianRollouts(): void {
   const dir = join(codexDir, '2026', '01', '06');
   mkdirSync(dir, { recursive: true });
-  const variants = [
-    ['codex-guardian-legacy', 'subagent'],
-    ['codex-guardian-current', 'guardian_review'],
-  ] as const;
-  for (const [id, threadSource] of variants) {
-    const file = join(dir, `rollout-2026-01-06T09-00-00-${id}.jsonl`);
-    writeFileSync(
-      file,
-      jsonl([
-        { type: 'session_meta', timestamp: ts(0), payload: { id, cwd: '/tmp/codexproj', thread_source: threadSource, source: { subagent: { other: 'guardian' } } } },
-        { type: 'response_item', timestamp: ts(1), payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Review this command for approval.' }] } },
-      ]),
-    );
-  }
+
+  const linkedFile = join(dir, 'rollout-2026-01-06T09-00-00-codex-guardian-linked.jsonl');
+  writeFileSync(
+    linkedFile,
+    jsonl([
+      { type: 'session_meta', timestamp: '2026-01-06T09:00:00.000Z', payload: {
+          id: 'codex-guardian-linked', cwd: '/tmp/codexproj', thread_source: 'subagent',
+          parent_thread_id: 'codex-sess-1', source: { subagent: { other: 'guardian' } },
+        } },
+      { type: 'turn_context', timestamp: '2026-01-06T09:00:01.000Z', payload: { model: 'codex-auto-review' } },
+      { type: 'response_item', timestamp: '2026-01-06T09:00:02.000Z', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Review this command for approval.' }] } },
+      { type: 'response_item', timestamp: '2026-01-06T09:00:03.000Z', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Approved.' }] } },
+      { type: 'event_msg', timestamp: '2026-01-06T09:00:04.000Z', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 1000, cached_input_tokens: 0, output_tokens: 200 } }, rate_limits: {} } },
+    ]),
+  );
+
+  const orphanFile = join(dir, 'rollout-2026-01-06T09-01-00-codex-guardian-orphan.jsonl');
+  writeFileSync(
+    orphanFile,
+    jsonl([
+      { type: 'session_meta', timestamp: '2026-01-06T09:01:00.000Z', payload: {
+          id: 'codex-guardian-orphan', cwd: '/tmp/codexproj', thread_source: 'guardian_review',
+          parent_thread_id: 'codex-guardian-ghost-parent', source: { subagent: { other: 'guardian' } },
+        } },
+      { type: 'turn_context', timestamp: '2026-01-06T09:01:01.000Z', payload: { model: 'codex-auto-review' } },
+      { type: 'response_item', timestamp: '2026-01-06T09:01:02.000Z', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Review this command for approval.' }] } },
+      { type: 'event_msg', timestamp: '2026-01-06T09:01:03.000Z', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 500, cached_input_tokens: 0, output_tokens: 100 } }, rate_limits: {} } },
+    ]),
+  );
+}
+
+/**
+ * Regression fixture: a turn that is ONLY a reasoning block — Codex's thinking
+ * is always empty (encrypted, signature-only; see the CLAUDE.md gotcha), so
+ * this assistant row has neither text nor a tool call. It must still count
+ * toward message_count: a prior content-shape heuristic wrongly excluded any
+ * row shaped like this (not just Codex's synthetic guardian usage rows), which
+ * silently dropped thousands of real split-message thinking-only rows from
+ * `sessions.message_count` on real data.
+ */
+function writeThinkingOnlyRollout(): string {
+  const dir = join(codexDir, '2026', '01', '08');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'rollout-2026-01-08T09-00-00-019f8888-aaaa-7bbb-8ccc-00000000000a.jsonl');
+  writeFileSync(
+    file,
+    jsonl([
+      { type: 'session_meta', timestamp: '2026-01-08T09:00:00.000Z', payload: { id: 'codex-thinking-only', cwd: '/tmp/codexproj' } },
+      { type: 'turn_context', timestamp: '2026-01-08T09:00:01.000Z', payload: { model: 'gpt-5.4' } },
+      { type: 'response_item', timestamp: '2026-01-08T09:00:02.000Z', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'think it through, no need to answer yet' }] } },
+      // Reasoning only, then end of file — flush() still emits it (the block
+      // list isn't empty), but its rendered text/tool signal is empty.
+      { type: 'response_item', timestamp: '2026-01-08T09:00:03.000Z', payload: { type: 'reasoning', summary: [], content: null, encrypted_content: 'enc-thinking-only' } },
+    ]),
+  );
+  return file;
+}
+
+/**
+ * A parent whose model changes mid-session (a second `turn_context`), with a
+ * guardian review that runs AFTER the switch — its usage must price at the
+ * SECOND model, proving `parentModelAt` walks to the latest PRECEDING record
+ * rather than just the parent's first one.
+ */
+function writeGuardianModelSwitchRollouts(): void {
+  const dir = join(codexDir, '2026', '01', '09');
+  mkdirSync(dir, { recursive: true });
+
+  const parentFile = join(dir, 'rollout-2026-01-09T09-00-00-codex-switch-parent.jsonl');
+  writeFileSync(
+    parentFile,
+    jsonl([
+      { type: 'session_meta', timestamp: '2026-01-09T09:00:00.000Z', payload: { id: 'codex-switch-parent', cwd: '/tmp/codexproj' } },
+      { type: 'turn_context', timestamp: '2026-01-09T09:00:01.000Z', payload: { model: 'gpt-5.4' } },
+      { type: 'response_item', timestamp: '2026-01-09T09:00:02.000Z', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'switch to the other model' }] } },
+      { type: 'response_item', timestamp: '2026-01-09T09:00:03.000Z', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'switching' }] } },
+      // The switch — everything from here runs on a different model.
+      { type: 'turn_context', timestamp: '2026-01-09T09:05:00.000Z', payload: { model: 'gpt-5-nano' } },
+      { type: 'response_item', timestamp: '2026-01-09T09:05:01.000Z', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'switched' }] } },
+    ]),
+  );
+
+  const guardianFile = join(dir, 'rollout-2026-01-09T09-06-00-codex-guardian-switch.jsonl');
+  writeFileSync(
+    guardianFile,
+    jsonl([
+      { type: 'session_meta', timestamp: '2026-01-09T09:06:00.000Z', payload: {
+          id: 'codex-guardian-switch', cwd: '/tmp/codexproj', thread_source: 'subagent',
+          parent_thread_id: 'codex-switch-parent', source: { subagent: { other: 'guardian' } },
+        } },
+      { type: 'turn_context', timestamp: '2026-01-09T09:06:01.000Z', payload: { model: 'codex-auto-review' } },
+      { type: 'response_item', timestamp: '2026-01-09T09:06:02.000Z', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Review this command for approval.' }] } },
+      { type: 'event_msg', timestamp: '2026-01-09T09:06:03.000Z', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 200, cached_input_tokens: 0, output_tokens: 40 } }, rate_limits: {} } },
+    ]),
+  );
 }
 
 let app: FastifyInstance;
@@ -399,6 +492,8 @@ beforeAll(async () => {
   writeBootstrapOnlyRollout();
   writeMalformedBootstrapRollout();
   writeGuardianRollouts();
+  writeThinkingOnlyRollout();
+  writeGuardianModelSwitchRollouts();
   writeCompactionRollout();
 
   const Fastify = (await import('fastify')).default;
@@ -424,12 +519,18 @@ describe('Codex session indexing', () => {
   it('lists the Codex session with model from turn_context and a codex agent tag', async () => {
     const sessions = (await get('/api/sessions')).json();
     // The child rollout folds into its parent (never its own session); the orphan
-    // child indexes under its absent root id `codex-gone`.
+    // child indexes under its absent root id `codex-gone`. The orphaned guardian
+    // review's usage re-keys the same way, under `codex-guardian-ghost-parent`.
+    // The linked guardian's usage folds into `codex-switch-parent`, same as
+    // `codex-sess-1` below — neither guardian id itself is ever listed.
     expect(sessions.map((s: { id: string }) => s.id).sort()).toEqual([
       'codex-compact-1',
       'codex-gone',
+      'codex-guardian-ghost-parent',
       'codex-local-1',
       'codex-sess-1',
+      'codex-switch-parent',
+      'codex-thinking-only',
       'codex-title-malformed',
       'codex-title-next',
     ]);
@@ -457,14 +558,81 @@ describe('Codex session indexing', () => {
     expect(session.title).toBe('Keep this incomplete wrapper visible');
   });
 
-  it('filters legacy and current guardian reviews without hiding ordinary sessions', async () => {
+  it('filters guardian reviews from top-level sessions without hiding ordinary sessions', async () => {
     const sessions = (await get('/api/sessions')).json();
     const ids = sessions.map((s: { id: string }) => s.id);
     expect(ids).toContain('codex-sess-1');
     expect(ids).toContain('codex-gone');
-    expect(ids).not.toContain('codex-guardian-legacy');
-    expect(ids).not.toContain('codex-guardian-current');
-    expect((await get('/api/sessions/codex-guardian-current')).statusCode).toBe(404);
+    expect(ids).not.toContain('codex-guardian-linked');
+    expect(ids).not.toContain('codex-guardian-orphan');
+    expect(ids).not.toContain('codex-guardian-switch');
+    expect((await get('/api/sessions/codex-guardian-linked')).statusCode).toBe(404);
+    expect((await get('/api/sessions/codex-guardian-orphan')).statusCode).toBe(404);
+    expect((await get('/api/sessions/codex-guardian-switch')).statusCode).toBe(404);
+  });
+
+  it('counts a linked guardian review under its parent without adding a run, message, or tool count', async () => {
+    const conn = await getConnection();
+    const [row] = await queryRows(
+      conn,
+      `SELECT count(*) AS total FROM events WHERE session_id = 'codex-sess-1'`,
+    );
+    const totalEvents = Number(row!.total);
+
+    const sessions = (await get('/api/sessions')).json();
+    const s = sessions.find((x: { id: string }) => x.id === 'codex-sess-1');
+    // The guardian's one usage-only row is a real `events` row (so its cost and
+    // tokens count) but carries no content, so it must not inflate message_count.
+    expect(s.messageCount).toBe(totalEvents - 1);
+    // The REAL subagent content is still there, so the chip stays on.
+    expect(s.hasSidechain).toBe(true);
+
+    const detail = (await get('/api/sessions/codex-sess-1')).json();
+    // Still exactly the 4 real subagent runs — no 5th "guardian" run.
+    expect(detail.subagents).toHaveLength(4);
+    expect(detail.meta.title).toBe('find the needle in this codex haystack');
+  });
+
+  it('re-keys an orphaned guardian review to its absent parent id, priced via its own model chain', async () => {
+    const sessions = (await get('/api/sessions')).json();
+    const s = sessions.find((x: { id: string }) => x.id === 'codex-guardian-ghost-parent');
+    expect(s).toBeDefined();
+    // Usage-only: no content-bearing row, so no message and no sidechain chip.
+    expect(s.messageCount).toBe(0);
+    expect(s.hasSidechain).toBe(false);
+    expect(s.totalTokens).toBe(600); // 500 input + 100 output
+    // codex-auto-review matches no pricing family and has no exact-id rate, so
+    // it falls all the way to the shipped default (input 3, output 15 / 1e6).
+    expect(s.totalCostUsd).toBeCloseTo((500 * 3 + 100 * 15) / 1e6, 6);
+  });
+
+  it('counts a real thinking-only turn (no text, no tool call) toward message_count', async () => {
+    // Regression: a content-shape heuristic once excluded ANY assistant row
+    // with no text and no tool_use_count, not just Codex's synthetic guardian
+    // rows — silently dropping every real split-message thinking-only row.
+    // `usage_only` is now an explicit flag `parseGuardianRollout` alone sets.
+    const sessions = (await get('/api/sessions')).json();
+    const s = sessions.find((x: { id: string }) => x.id === 'codex-thinking-only');
+    expect(s).toBeDefined();
+    // 1 user turn + 1 reasoning-only assistant turn — both count.
+    expect(s.messageCount).toBe(2);
+
+    const detail = (await get('/api/sessions/codex-thinking-only')).json();
+    expect(detail.meta.messageCount).toBe(2);
+    expect(detail.thread).toHaveLength(2);
+  });
+
+  it('prices a guardian review at the parent model in effect at review time, not its first turn_context', async () => {
+    const conn = await getConnection();
+    const [row] = await queryRows(
+      conn,
+      `SELECT pricing_model, cost_usd FROM events
+         WHERE session_id = 'codex-switch-parent' AND model = 'codex-auto-review'`,
+    );
+    // The guardian ran AFTER the parent's SECOND turn_context (gpt-5-nano), so
+    // it must price there, not at the parent's first model (gpt-5.4).
+    expect(String(row!.pricing_model)).toBe('gpt-5-nano');
+    expect(Number(row!.cost_usd)).toBeCloseTo((200 * 0.05 + 40 * 0.4) / 1e6, 8);
   });
 
   it('tags the project with its agent and groups analytics by agent', async () => {
@@ -480,15 +648,19 @@ describe('Codex session indexing', () => {
     expect(sources.some((s: { id: string }) => s.id === 'codex')).toBe(true);
   });
 
-  it('attributes token_count usage (incl. the subagent) and computes a gpt-5.4 cost', async () => {
+  it('attributes token_count usage (incl. the subagent and a linked guardian review) and computes a gpt-5.4 cost', async () => {
     const sessions = (await get('/api/sessions')).json();
     const s = sessions.find((x: { id: string }) => x.id === 'codex-sess-1');
     // Parent: input 1000 - cached 200 = 800 input; 200 cache_read; 300 output = 1300.
     // Child rollout usage counts toward the parent session: +100 input +50 output.
-    expect(s.totalTokens).toBe(1450);
+    // Guardian review usage counts too, priced at the PARENT's model (gpt-5.4) —
+    // not codex-auto-review, which has no client-side rate: +1000 input +200 output.
+    expect(s.totalTokens).toBe(2650);
     // gpt-5.4 @ official cached 0.25: (800*2.5 + 300*15 + 200*0.25) / 1e6 = 0.00655
-    // plus the child's (100*2.5 + 50*15) / 1e6 = 0.001 → 0.00755
-    expect(s.totalCostUsd).toBeCloseTo(0.00755, 5);
+    // plus the child's (100*2.5 + 50*15) / 1e6 = 0.001
+    // plus the guardian's, at gpt-5.4's rate: (1000*2.5 + 200*15) / 1e6 = 0.0055
+    // → 0.01305
+    expect(s.totalCostUsd).toBeCloseTo(0.01305, 5);
   });
 
   it('groups analytics by the OpenAI model', async () => {
