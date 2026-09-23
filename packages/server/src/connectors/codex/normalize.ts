@@ -20,7 +20,13 @@
  * to the ROOT thread id (`is_sidechain: true`) so it folds into the parent
  * session, and the parent's `spawn_agent` call becomes a canonical `Task` block
  * the nested run anchors to. Internal approval-review rollouts marked as
- * `source.subagent.other: "guardian"` are omitted entirely.
+ * `source.subagent.other: "guardian"` are omitted from sessions, threads, and
+ * search (`parseRollout` returns null for them, same as an unreadable file), but
+ * their token usage is still counted: {@link parseGuardianRollout} re-keys their
+ * `event_msg/token_count` usage to the top-level `parent_thread_id` (a top-level
+ * field here, unlike the subagent's nested `thread_spawn.parent_thread_id`) as
+ * content-empty rows, priced at the parent thread's model at review time since
+ * their own `codex-auto-review` model has no client-side rate.
  */
 
 import { closeSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
@@ -170,6 +176,10 @@ function firstLine(path: string): string {
 /** Cross-file subagent linkage: subagent thread id → parent thread id. */
 interface CodexContext {
   parents: Map<string, string>;
+  /** Every rollout's own thread id → its file path, from the same first-line
+   *  read as {@link parents} — how a guardian row resolves its PARENT's file
+   *  (see {@link parentModelAt}) without a second directory walk. */
+  paths: Map<string, string>;
 }
 
 let ctxCache: { fp: string; ctx: CodexContext } | null = null;
@@ -199,6 +209,7 @@ export function getCodexContext(): CodexContext {
   const fp = fingerprint(files);
   if (ctxCache && ctxCache.fp === fp) return ctxCache.ctx;
   const parents = new Map<string, string>();
+  const paths = new Map<string, string>();
   for (const f of files) {
     let meta: Record<string, unknown>;
     try {
@@ -206,14 +217,19 @@ export function getCodexContext(): CodexContext {
     } catch {
       continue;
     }
+    const id = str(meta.id) || str(meta.session_id);
+    if (id) paths.set(id, f.path);
     if (str(meta.thread_source) !== 'subagent') continue;
     const spawn = rec(rec(rec(meta.source).subagent).thread_spawn);
-    const id = str(meta.id) || str(meta.session_id);
     const parent = str(spawn.parent_thread_id);
     if (id && parent) parents.set(id, parent);
   }
-  const ctx = { parents };
+  const ctx = { parents, paths };
   ctxCache = { fp, ctx };
+  // The parent-model timeline cache below is keyed by path but has no
+  // fingerprint of its own — tie its lifetime to this one so a rollout list
+  // change (a parent rewritten, a file removed) can't serve a stale timeline.
+  parentModelCache.clear();
   return ctx;
 }
 
@@ -227,6 +243,167 @@ export function rootThreadId(id: string, parents: Map<string, string>): string {
     cur = parents.get(cur)!;
   }
   return cur;
+}
+
+/** One `turn_context` model change in a parent rollout, in file (chronological)
+ *  order. */
+interface ParentModelPoint {
+  ts: string;
+  model: string;
+}
+
+/**
+ * Per-process cache of a parent rollout's `turn_context` timeline, keyed by
+ * path — guardian rollouts commonly share a parent, and re-reading it per
+ * guardian file would cost one extra full-file parse each. Cleared whenever
+ * {@link getCodexContext} rebuilds (see there); a parent's PAST `turn_context`
+ * records never change once written, so serving a timeline built earlier in a
+ * pass can't mis-price a guardian row that pass already read.
+ */
+const parentModelCache = new Map<string, ParentModelPoint[]>();
+
+/** The parent rollout's chronological `turn_context.payload.model` timeline.
+ *  An unreadable/missing parent yields an empty timeline (cached too, so a
+ *  permanently orphaned guardian doesn't retry the read every prepare()). */
+function parentModelTimeline(parentPath: string): ParentModelPoint[] {
+  const cached = parentModelCache.get(parentPath);
+  if (cached) return cached;
+  const points: ParentModelPoint[] = [];
+  let raw: string;
+  try {
+    raw = readFileSync(parentPath, 'utf8');
+  } catch {
+    parentModelCache.set(parentPath, points);
+    return points;
+  }
+  for (const line of raw.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    let parsed: CodexLine;
+    try {
+      parsed = JSON.parse(t) as CodexLine;
+    } catch {
+      continue;
+    }
+    if (parsed.type !== 'turn_context') continue;
+    const model = str((parsed.payload ?? {}).model);
+    if (model) points.push({ ts: str(parsed.timestamp), model });
+  }
+  parentModelCache.set(parentPath, points);
+  return points;
+}
+
+/**
+ * The parent thread's model at (or immediately before) `ts`: the last
+ * `turn_context` record whose timestamp is ≤ `ts`, falling back to the
+ * parent's FIRST recorded model when none precede it (a guardian review can
+ * start before the parent's own first turn_context is written). Null when the
+ * parent rollout is missing or records no model at all — the caller then
+ * leaves the row unpriced, falling through to its own model chain.
+ */
+function parentModelAt(parentPath: string, ts: string): string | null {
+  const points = parentModelTimeline(parentPath);
+  if (points.length === 0) return null;
+  let best: string | null = null;
+  for (const p of points) {
+    if (p.ts > ts) break; // chronological file order — nothing further can precede ts
+    best = p.model;
+  }
+  return best ?? points[0]!.model;
+}
+
+/**
+ * Normalize a Codex "guardian" auto-review rollout's token usage — the token
+ * usage `parseRollout` intentionally discards by returning null for it (see
+ * the module doc). Its `codex-auto-review` model is a backend alias with no
+ * client-side rate, so each usage row is priced at the PARENT thread's model
+ * at review time instead ({@link parentModelAt}), via the `pricing_model`
+ * override. Returns null for a non-guardian or unreadable rollout — the caller
+ * (`prepare()`) then falls back to `[]`, same as any other unreadable file.
+ */
+export function parseGuardianRollout(path: string): CanonicalRow[] | null {
+  let raw: string;
+  try {
+    raw = readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
+  const lines: CodexLine[] = [];
+  for (const line of raw.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    try {
+      lines.push(JSON.parse(t) as CodexLine);
+    } catch {
+      /* tolerate a corrupt/partial trailing line */
+    }
+  }
+
+  const meta = lines.find((l) => l.type === 'session_meta')?.payload ?? {};
+  const subagentSource = rec(rec(meta.source).subagent);
+  if (str(subagentSource.other) !== 'guardian') return null;
+
+  const sessionId = str(meta.id) || str(meta.session_id) || sessionIdFromPath(path);
+  const cwd = str(meta.cwd);
+  // Unlike an ordinary subagent's nested `source.subagent.thread_spawn`, a
+  // guardian names its parent with a TOP-LEVEL `parent_thread_id` and no spawn
+  // call links back from the parent — see the module doc.
+  const parentThreadId = str(meta.parent_thread_id) || undefined;
+  const ctx = getCodexContext();
+  const indexSessionId = parentThreadId ? rootThreadId(parentThreadId, ctx.parents) : sessionId;
+  const parentPath = parentThreadId ? ctx.paths.get(parentThreadId) : undefined;
+  const modelProvider = str(meta.model_provider) || undefined;
+
+  const rows: CanonicalRow[] = [];
+  let model = '';
+  let seq = 0;
+  for (const line of lines) {
+    if (line.type === 'turn_context') {
+      model = str((line.payload ?? {}).model) || model;
+      continue;
+    }
+    if (line.type !== 'event_msg' || str((line.payload ?? {}).type) !== 'token_count') continue;
+    const info = (line.payload ?? {}).info as Record<string, unknown> | null;
+    const last = (info?.last_token_usage ?? null) as Record<string, unknown> | null;
+    if (!last) continue;
+    const input = num(last.input_tokens);
+    const cached = num(last.cached_input_tokens);
+    const ts = str(line.timestamp);
+    rows.push({
+      file_path: path,
+      session_id: indexSessionId,
+      uuid: `${sessionId}-guardian-${seq++}`,
+      parent_uuid: null,
+      role: 'assistant',
+      type: 'assistant',
+      ts,
+      cwd,
+      git_branch: null,
+      model: model || null,
+      provider: modelProvider ?? null,
+      pricing_model: parentPath ? parentModelAt(parentPath, ts) : null,
+      input_tokens: Math.max(0, input - cached),
+      output_tokens: num(last.output_tokens),
+      cache_read_tokens: cached,
+      cache_write_tokens: 0,
+      cache_write_1h_tokens: 0,
+      service_tier: null,
+      // No thread is ever assembled from these rows (parseRollout stays null
+      // for guardian files, so loadSession never sees this file) — is_sidechain
+      // just keeps them out of main-thread-only aggregates (context, titles).
+      is_sidechain: true,
+      // Excludes this row from sessions.message_count/has_sidechain — it's
+      // billed usage, not a turn a reader would ever see.
+      usage_only: true,
+      tool_use_count: 0,
+      tool_names: '',
+      tool_error_count: null,
+      tool_error_text: null,
+      skill_names: '',
+      text_content: '',
+    });
+  }
+  return rows;
 }
 
 /** First line of a subagent prompt, truncated — used as the correlation key AND

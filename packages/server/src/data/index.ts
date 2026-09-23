@@ -135,6 +135,9 @@ const EVENTS_ALIAS = 'ev';
 /** Alias the {@link pricing_rates} join table gets in the cost expression. */
 const RATES_ALIAS = 'pr';
 
+/** The model a row is priced as: its `pricing_model` override, else its own `model`. */
+const PRICED_MODEL = `COALESCE(${EVENTS_ALIAS}.pricing_model, ${EVENTS_ALIAS}.model)`;
+
 /**
  * Suffix for {@link loadFile}'s staging temp tables. Constant (not per-file):
  * only one pass runs at a time (see {@link inFlight}) and it loads files
@@ -202,7 +205,7 @@ function cacheWrite1hRateExpr(pricing: PricingConfig): string {
   const familyCases: string[] = [];
   for (const [family, rates] of Object.entries(pricing.families ?? {})) {
     const pat = sqlString(`%${family.toLowerCase()}%`);
-    familyCases.push(`WHEN lower(${EVENTS_ALIAS}.model) LIKE ${pat} THEN ${effective1hRate(rates)}`);
+    familyCases.push(`WHEN lower(${PRICED_MODEL}) LIKE ${pat} THEN ${effective1hRate(rates)}`);
   }
   const familyExpr =
     familyCases.length > 0
@@ -230,7 +233,10 @@ function cacheWrite1hRateExpr(pricing: PricingConfig): string {
  * match, default literal)`: the exact id comes from the {@link pricing_rates}
  * join table (aliased {@link RATES_ALIAS}), the family match is a small CASE
  * over `pricing.families` (a handful of branches), and the default is a literal.
- * Operates on the canonical token columns, so it is agent-agnostic.
+ * Both the join and the family match key off `COALESCE(pricing_model, model)` —
+ * a row's optional per-row pricing override (currently only Codex's guardian
+ * usage rows, priced at the parent thread's model) wins over its own `model`
+ * when set. Operates on the canonical token columns, so it is agent-agnostic.
  *
  * `cache_write_tokens` (the total) is split at cost time between the 1-hour and
  * 5-minute cache-write rates using `cache_write_1h_tokens` (see
@@ -238,7 +244,7 @@ function cacheWrite1hRateExpr(pricing: PricingConfig): string {
  * malformed/short split can never push the 5m portion negative.
  *
  * The caller must LEFT JOIN the projection against `pricing_rates ${RATES_ALIAS}`
- * on the model column (see {@link loadFile}).
+ * on `COALESCE(pricing_model, model)` (see {@link loadFile}).
  */
 function buildCostExpr(pricing: PricingConfig): string {
   const rateExpr = (field: keyof PricingConfig['models'][string], column: string): string => {
@@ -247,7 +253,7 @@ function buildCostExpr(pricing: PricingConfig): string {
     // date-suffixed id still resolves when no exact-id row joined.
     for (const [family, rates] of Object.entries(pricing.families ?? {})) {
       const pat = sqlString(`%${family.toLowerCase()}%`);
-      cases.push(`WHEN lower(${EVENTS_ALIAS}.model) LIKE ${pat} THEN ${rates[field]}`);
+      cases.push(`WHEN lower(${PRICED_MODEL}) LIKE ${pat} THEN ${rates[field]}`);
     }
     const familyExpr =
       cases.length > 0 ? `CASE ${cases.join(' ')} ELSE ${pricing.default[field]} END` : `${pricing.default[field]}`;
@@ -329,9 +335,9 @@ async function loadFile(
     CREATE OR REPLACE TEMP TABLE ${stagedEvents} AS
     SELECT
       ev.file_path, ev.session_id, ev.uuid, ev.parent_uuid, ev.role, ev.type, ev.ts, ev.cwd, ev.git_branch,
-      ev.model, ev.provider, ev.input_tokens, ev.output_tokens, ev.cache_read_tokens, ev.cache_write_tokens,
-      ev.cache_write_1h_tokens,
-      ev.service_tier, ev.is_sidechain, ev.tool_use_count, ev.tool_names,
+      ev.model, ev.provider, ev.pricing_model, ev.input_tokens, ev.output_tokens, ev.cache_read_tokens,
+      ev.cache_write_tokens, ev.cache_write_1h_tokens,
+      ev.service_tier, ev.is_sidechain, ev.usage_only, ev.tool_use_count, ev.tool_names,
       ${costExpr} AS cost_usd,
       ev.text_content,
       ev.message_id, ev.forked_from_session_id, TRUE AS usage_canonical,
@@ -340,7 +346,9 @@ async function loadFile(
     FROM (
       ${connector.eventsProjectionSql(file.path)}
     ) AS ev
-    LEFT JOIN pricing_rates ${RATES_ALIAS} ON ${RATES_ALIAS}.model = ev.model
+    -- Guardian usage rows price at the PARENT thread's model (pricing_model),
+    -- never their own unpriceable codex-auto-review id — see buildCostExpr.
+    LEFT JOIN pricing_rates ${RATES_ALIAS} ON ${RATES_ALIAS}.model = ${PRICED_MODEL}
   `);
 
   // Aux projections read the same source file, so stage them too — otherwise a
@@ -493,7 +501,9 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
         session_id,
         min(ts) AS started_at,
         max(ts) AS ended_at,
-        count(*) AS message_count,
+        -- usage_only rows (Codex guardian reviews) are accounting, not a turn a
+        -- reader would see.
+        count(*) FILTER (WHERE NOT usage_only) AS message_count,
         -- Per-row count: fork copies excluded, the usage election NOT applied
         -- (it would drop the tool_use rows of every split message). See THE RULE
         -- in data/analytics-metrics.ts.
@@ -506,7 +516,9 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
         COALESCE(sum(cache_read_tokens) FILTER (WHERE usage_canonical), 0) AS cache_read_tokens,
         COALESCE(sum(cache_write_tokens) FILTER (WHERE usage_canonical), 0) AS cache_write_tokens,
         COALESCE(sum(cost_usd) FILTER (WHERE usage_canonical), 0) AS total_cost_usd,
-        bool_or(is_sidechain) AS has_sidechain,
+        -- A usage_only sidechain row must not flip the "N subagents" chip on
+        -- with nothing for it to point at.
+        bool_or(is_sidechain AND NOT usage_only) AS has_sidechain,
         list_distinct(list(model) FILTER (WHERE model IS NOT NULL)) AS model_list,
         list_distinct(list(provider) FILTER (WHERE provider IS NOT NULL)) AS provider_list
       FROM events GROUP BY session_id

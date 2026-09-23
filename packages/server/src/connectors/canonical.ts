@@ -38,6 +38,7 @@ export const CANONICAL_COLUMNS = {
   git_branch: 'VARCHAR',
   model: 'VARCHAR',
   provider: 'VARCHAR',
+  pricing_model: 'VARCHAR',
   input_tokens: 'BIGINT',
   output_tokens: 'BIGINT',
   cache_read_tokens: 'BIGINT',
@@ -45,6 +46,7 @@ export const CANONICAL_COLUMNS = {
   cache_write_1h_tokens: 'BIGINT',
   service_tier: 'VARCHAR',
   is_sidechain: 'BOOLEAN',
+  usage_only: 'BOOLEAN',
   tool_use_count: 'INTEGER',
   tool_names: 'VARCHAR',
   tool_error_count: 'INTEGER',
@@ -74,6 +76,14 @@ export interface CanonicalRow {
   model: string | null;
   /** Serving provider, when the source format records one (pi/Codex/opencode). */
   provider?: string | null;
+  /**
+   * Pricing override: when set, the cost expression prices this row at this
+   * model instead of `model` — Codex's guardian-review usage rows, whose
+   * `codex-auto-review` model is a backend alias with no client-side rate, are
+   * priced at the parent thread's model at review time instead. NULL/omitted
+   * for every other row.
+   */
+  pricing_model?: string | null;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -86,6 +96,14 @@ export interface CanonicalRow {
   cache_write_1h_tokens: number;
   service_tier: string | null;
   is_sidechain: boolean;
+  /**
+   * TRUE for a row that carries usage but no thread content (Codex's guardian
+   * review rows) — an explicit flag, not inferred from empty text/tool_use, so
+   * a genuinely content-empty real turn (e.g. a Claude Code split-message row
+   * holding only a signature-only thinking block) is never miscounted.
+   * Omitted/undefined reads back FALSE (see `canonicalProjectionSql`).
+   */
+  usage_only?: boolean;
   tool_use_count: number;
   tool_names: string;
   /** NULL when the source format carries no error signal — distinct from 0. */
@@ -168,15 +186,18 @@ function columnsMap(names: readonly string[]): string {
  * the output shape is identical either way. `message_id` and
  * `forked_from_session_id` are always NULL — they exist for Claude Code's
  * usage-dedup election, and these formats accumulate usage once per call in
- * their normalizers instead.
+ * their normalizers instead. `usage_only` is coalesced to FALSE here so the
+ * (rare) connector/row that sets it doesn't leave every other row NULL.
  */
 export function canonicalProjectionSql(cachePath: string, opts: { provider: boolean }): string {
   const names = Object.keys(CANONICAL_COLUMNS).filter(
     (n) => n !== 'provider' || opts.provider,
   );
-  const selected = Object.keys(CANONICAL_COLUMNS).map((n) =>
-    n === 'provider' && !opts.provider ? 'CAST(NULL AS VARCHAR) AS provider' : n,
-  );
+  const selected = Object.keys(CANONICAL_COLUMNS).map((n) => {
+    if (n === 'provider' && !opts.provider) return 'CAST(NULL AS VARCHAR) AS provider';
+    if (n === 'usage_only') return 'COALESCE(usage_only, FALSE) AS usage_only';
+    return n;
+  });
   // Compaction rows share the file (see compactionRow) but are not events.
   // This filter is the contract: a `toCanonicalRows` must only ever emit
   // user/assistant rows plus COMPACTION_ROW_TYPE — any other `type` would
