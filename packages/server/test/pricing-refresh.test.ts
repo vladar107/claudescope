@@ -58,12 +58,18 @@ const LITELLM = {
     cache_read_input_token_cost: 0.125e-6,
     cache_creation_input_token_cost: null,
   },
-  // openai responses-mode model (e.g. Codex) — must be kept.
+  // openai responses-mode model (e.g. Codex) — must be kept. Also carries
+  // priority (fast-mode) rates, with no priority cache-write cost published —
+  // exercises the base-rate-ratio fallback (base cacheWrite 0.5 * ratio 2 = 1).
   'gpt-5-codex': {
     litellm_provider: 'openai',
     mode: 'responses',
     input_cost_per_token: 1.25e-6,
     output_cost_per_token: 10e-6,
+    cache_creation_input_token_cost: 0.5e-6,
+    input_cost_per_token_priority: 2.5e-6,
+    output_cost_per_token_priority: 20e-6,
+    cache_read_input_token_cost_priority: 0.25e-6,
   },
   // provider-prefixed duplicate — must be skipped (bare id stored in transcripts).
   'gemini/gemini-2.5-pro': {
@@ -132,7 +138,25 @@ describe('mapLiteLLM', () => {
   });
 
   it('keeps responses-mode models (e.g. Codex)', () => {
-    expect(rates['gpt-5-codex']).toEqual({ input: 1.25, output: 10, cacheWrite: 0, cacheRead: 0 });
+    expect(rates['gpt-5-codex']).toEqual({
+      input: 1.25,
+      output: 10,
+      cacheWrite: 0.5,
+      cacheRead: 0,
+      fast: { input: 2.5, output: 20, cacheWrite: 1, cacheRead: 0.25 },
+    });
+  });
+
+  it('maps *_priority fields into fast, falling back to the base-rate ratio for an unpublished priority cache rate', () => {
+    // input_cost_per_token_priority=2.5e-6 vs base 1.25e-6 → ratio 2; no
+    // cache_creation_input_token_cost_priority → base cacheWrite (0.5) * 2 = 1.
+    // cache_read IS published (0.25e-6) → used as-is, not derived from the ratio.
+    expect(rates['gpt-5-codex']?.fast).toEqual({ input: 2.5, output: 20, cacheWrite: 1, cacheRead: 0.25 });
+  });
+
+  it('leaves fast out entirely when the source has no priority rates', () => {
+    expect('fast' in rates['claude-sonnet-4-5']!).toBe(false);
+    expect('fast' in rates['gpt-5']!).toBe(false);
   });
 
   it('skips provider-prefixed duplicate keys', () => {
@@ -240,6 +264,26 @@ describe('refreshPricing', () => {
       },
     };
     vi.stubGlobal('fetch', vi.fn(async () => ok(withoutAbove1hr)));
+
+    const result = await refreshPricing();
+    expect(result.changed).toBe(1);
+  });
+
+  it('counts a change when only the fast (priority) rates are added or removed', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ok(LITELLM)));
+    await refreshPricing();
+
+    // Same rates everywhere, but gpt-5-codex loses its priority-tier rates.
+    const withoutPriority = {
+      ...LITELLM,
+      'gpt-5-codex': {
+        ...LITELLM['gpt-5-codex'],
+        input_cost_per_token_priority: undefined,
+        output_cost_per_token_priority: undefined,
+        cache_read_input_token_cost_priority: undefined,
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => ok(withoutPriority)));
 
     const result = await refreshPricing();
     expect(result.changed).toBe(1);

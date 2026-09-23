@@ -625,6 +625,7 @@ export function toCanonicalRows(session: AntigravitySession, filePath: string): 
       cache_write_tokens: 0,
       cache_write_1h_tokens: 0,
       service_tier: null,
+      speed: null,
       is_sidechain: session.isSidechain,
       tool_use_count: content.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(content),

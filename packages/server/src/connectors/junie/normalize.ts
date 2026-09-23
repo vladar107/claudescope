@@ -462,6 +462,7 @@ export function toCanonicalRows(session: JunieSession, filePath: string): Canoni
       cache_write_tokens: num(usage?.cache_creation_input_tokens),
       cache_write_1h_tokens: 0,
       service_tier: null,
+      speed: null,
       is_sidechain: false,
       tool_use_count: arr.filter((b) => b.type === 'tool_use').length,
       tool_names: toolNamesCsv(arr),
