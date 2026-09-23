@@ -3,10 +3,15 @@
  *
  * Memory is read live from the agent home dirs (never indexed). A connector's
  * per-project memory dir is keyed by the git repo root, so one dir may hold facts
- * learned across several worktrees/cwds. We attach each fact to the project of
- * its `originSessionId` (resolved against the index), falling back to the project
- * that owns the dir (its encoded-cwd slug). This makes a worktree project surface
- * the facts that were actually learned in it.
+ * learned across several worktrees/cwds/submodules of that repo. We attribute the
+ * WHOLE dir to the project that owns it — the one whose encoded-cwd slug names
+ * the dir — because that's where the store physically lives, not where any one
+ * fact happened to be learned. `originSessionId` only comes in as a fallback when
+ * the dir's slug matches no indexed project (e.g. no session ever ran exactly at
+ * the repo root): then the whole dir goes to the majority origin project among
+ * its facts, never split fact-by-fact — a single store must not fragment into
+ * several small project entries just because facts were learned in different
+ * worktrees.
  */
 
 import type { MemoryConnectorOverview, MemoryPreview, MemorySource } from '@claudescope/shared';
@@ -94,13 +99,10 @@ export async function collectMemory(): Promise<AttributedMemory[]> {
 
   for (const c of connectors) {
     for (const dir of safeProject(c)) {
-      const fallback = slugToProject.get(c.id)?.get(dir.slug);
+      const storeProject = slugToProject.get(c.id)?.get(dir.slug);
+      const projectId = storeProject ?? majorityOriginProject(dir.facts, sessionToProject);
+      if (!projectId) continue;
       for (const source of dir.facts) {
-        const byOrigin = source.originSessionId
-          ? sessionToProject.get(source.originSessionId)
-          : undefined;
-        const projectId = byOrigin ?? fallback;
-        if (!projectId) continue;
         out.push({
           connectorId: c.id,
           label: c.label,
@@ -114,6 +116,27 @@ export async function collectMemory(): Promise<AttributedMemory[]> {
   }
 
   return out;
+}
+
+/**
+ * When a memory dir's slug matches no indexed project, attribute the whole dir
+ * to the project its facts most often originate from — never split it fact by
+ * fact. Ties break deterministically: highest count first, then `projectId`
+ * ascending. `undefined` when no fact's `originSessionId` resolves either, so
+ * the dir is dropped.
+ */
+function majorityOriginProject(
+  facts: MemorySource[],
+  sessionToProject: Map<string, string>,
+): string | undefined {
+  const counts = new Map<string, number>();
+  for (const fact of facts) {
+    const projectId = fact.originSessionId ? sessionToProject.get(fact.originSessionId) : undefined;
+    if (!projectId) continue;
+    counts.set(projectId, (counts.get(projectId) ?? 0) + 1);
+  }
+  if (counts.size === 0) return undefined;
+  return [...counts.entries()].sort(([aId, aCount], [bId, bCount]) => bCount - aCount || aId.localeCompare(bId))[0]![0];
 }
 
 /**

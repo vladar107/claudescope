@@ -126,10 +126,11 @@ export interface AgentConnector {
    * indexed); returns `[]` when there are none.
    *
    * The connector does NOT attribute facts to Claudescope projects — it just
-   * enumerates its memory dirs. The route attributes each fact to a project via
-   * its `originSessionId` (falling back to the dir `slug` for facts whose origin
-   * session is unknown), because a single memory dir is keyed by the git repo
-   * root and so may hold facts learned across several worktrees/cwds.
+   * enumerates its memory dirs. The route attributes the WHOLE dir to the
+   * project that owns it (via the dir `slug`), falling back to the majority
+   * `originSessionId` project among its facts only when the slug matches no
+   * indexed project, because a single memory dir is keyed by the git repo root
+   * and so may hold facts learned across several worktrees/cwds/submodules.
    *
    * INVARIANT: read only from the agent's own home dir — never from the user's
    * project directories. (This is why Junie's repo-local `.junie/memory/` is out
@@ -209,8 +210,9 @@ export interface SkillEntry {
 /**
  * One agent-authored per-project memory directory: the facts it holds and the
  * encoded-cwd `slug` that names it (e.g. Claude's `~/.claude/projects/<slug>/`).
- * The slug is used by the route as the attribution fallback for facts whose
- * `originSessionId` can't be resolved to an indexed session.
+ * The slug is how the route attributes the whole dir to a project;
+ * `originSessionId` is only the fallback when the slug itself matches no
+ * indexed project.
  */
 export interface AgentMemoryDir {
   slug: string;

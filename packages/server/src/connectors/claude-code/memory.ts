@@ -9,9 +9,10 @@
  *     frontmatter block; the `MEMORY.md` index file is redundant and skipped.
  *
  * Claude keys a memory dir by the **git repo root**, so one dir may hold facts
- * learned across several worktrees/cwds. We therefore do NOT attribute facts to
- * a cwd here — {@link projectMemory} returns every dir tagged with its slug, and
- * the route attributes each fact to a project via its `originSessionId`.
+ * learned across several worktrees/cwds/submodules. We therefore do NOT
+ * attribute facts to a cwd here — {@link projectMemory} returns every dir
+ * tagged with its slug, and the route attributes the whole dir to the project
+ * that owns it.
  *
  * STRICTLY READ-ONLY with respect to ~/.claude, and only ever reads from the
  * agent home dir — never from the user's project directories.
@@ -166,8 +167,9 @@ function readFact(dir: string, fileName: string): MemorySource | null {
 
 /**
  * Every `~/.claude/projects/<slug>/memory/` directory that holds at least one
- * fact, tagged with its `slug`. The route attributes each fact to a project via
- * `originSessionId` (slug as the fallback). `[]` when none exist.
+ * fact, tagged with its `slug`. The route attributes the whole dir to the
+ * project that owns the slug (falling back to the facts' majority
+ * `originSessionId`). `[]` when none exist.
  */
 export function projectMemory(): AgentMemoryDir[] {
   const projectsDir = claudeProjectsDir();
