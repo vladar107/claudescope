@@ -21,6 +21,7 @@ import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js
 import { canonicalProjectionSql, titlesProjectionSql } from '../canonical.js';
 import { ndjsonCache } from '../ndjson-cache.js';
 import { parseSession, toCanonicalRows } from './normalize.js';
+import { junieHooks, junieMcpServers, juniePlugins } from './extensions.js';
 import { junieSkills } from './skills.js';
 
 const cache = ndjsonCache('junie');
@@ -127,6 +128,9 @@ export const junieConnector: AgentConnector = {
   loadSession,
   globalMemory,
   skills: junieSkills,
+  mcpServers: junieMcpServers,
+  hooks: junieHooks,
+  plugins: juniePlugins,
   // Junie CLI resumes by id; it has no command-line fork, so resume only.
   resumeSpec: (id) => ({ resumeArgv: ['junie', '--session-id', id] }),
 };

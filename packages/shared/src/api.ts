@@ -843,6 +843,122 @@ export interface SkillsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Extensions — MCP servers, hooks, and plugins, read live from agent home dirs
+// ---------------------------------------------------------------------------
+
+/**
+ * Where an extension is declared:
+ * - `user` — the agent's own global config.
+ * - `project` — a per-project entry kept in a home-dir file (Claude Code's
+ *   `~/.claude.json` `projects.<cwd>.mcpServers`); `project` names the cwd.
+ * - `plugin` — shipped by an installed plugin; `plugin` names it.
+ */
+export type ExtensionScope = 'user' | 'project' | 'plugin';
+
+export type McpTransport = 'stdio' | 'http' | 'sse' | 'unknown';
+
+/**
+ * One configured MCP server. Values that can carry credentials never reach the
+ * API: `env` and header VALUES are dropped (only their key names are kept), a
+ * URL keeps only scheme, host, and path (credential-looking path segments
+ * redacted), and secret-looking `command`/`args` tokens are redacted.
+ */
+export interface InstalledMcpServer {
+  name: string;
+  transport: McpTransport;
+  /** stdio: the executable (or full command line), redacted. */
+  command?: string;
+  /** stdio: arguments, redacted. */
+  args?: string[];
+  /** remote: `scheme://host/path` — no query, fragment, or userinfo. */
+  url?: string;
+  /** Names of the env vars the server is launched with — never their values. */
+  envKeys?: string[];
+  /** Names of the request headers sent — never their values. */
+  headerKeys?: string[];
+  /** False when the config disables the server; absent when enabled or unstated. */
+  enabled?: boolean;
+  scope: ExtensionScope;
+  /** Scope `project`: the project cwd it applies to, home contracted to `~`. */
+  project?: string;
+  plugin?: SkillPlugin;
+  /** The file that declares it, home contracted to `~`. */
+  sourcePath: string;
+}
+
+/** One configured lifecycle hook (one handler of one event). */
+export interface InstalledHook {
+  /** The event as the agent names it (`PreToolUse`, `sessionStart`, …). */
+  event: string;
+  /** Tool/source matcher, when the hook narrows its event. */
+  matcher?: string;
+  /** Handler type as the agent names it (`command`, `http`, `prompt`, …). */
+  type: string;
+  /** Command handlers: the command line, secret-looking tokens redacted. */
+  command?: string;
+  /** HTTP handlers: `scheme://host/path` only. */
+  url?: string;
+  timeoutSec?: number;
+  /** False when the plugin that ships it is disabled; absent otherwise. */
+  enabled?: boolean;
+  scope: ExtensionScope;
+  plugin?: SkillPlugin;
+  /** The file that declares it, home contracted to `~`. */
+  sourcePath: string;
+}
+
+/**
+ * How a plugin is packaged:
+ * - `bundle` — a directory with a manifest (Claude-plugin layout and its
+ *   relatives); `contents` says what it ships.
+ * - `package` — a code package named in config (opencode npm plugin, pi
+ *   package); what it does is only knowable by running it.
+ * - `file` — a single code file in the agent's plugins/extensions dir.
+ */
+export type PluginKind = 'bundle' | 'package' | 'file';
+
+/** What a `bundle` plugin ships. */
+export interface PluginContents {
+  /** Skills and commands (both load as skills). */
+  skills: number;
+  mcpServers: number;
+  hooks: number;
+}
+
+/** One installed plugin. */
+export interface InstalledPlugin {
+  name: string;
+  marketplace?: string;
+  version?: string;
+  description?: string;
+  kind: PluginKind;
+  /** False when installed but disabled; absent when enabled or unstated. */
+  enabled?: boolean;
+  /** Bundles only — code plugins' contents are unknowable without running them. */
+  contents?: PluginContents;
+  /** The install dir, file, or config that declares it, home contracted to `~`. */
+  sourcePath: string;
+}
+
+/**
+ * One detected agent's extensions. A `null` list means the agent has no such
+ * concept (or no documented location for it) — "not supported", never an
+ * empty list; `[]` means supported but nothing configured.
+ */
+export interface AgentExtensions {
+  connectorId: string;
+  label: string;
+  mcpServers: InstalledMcpServer[] | null;
+  hooks: InstalledHook[] | null;
+  plugins: InstalledPlugin[] | null;
+}
+
+/** GET /api/extensions */
+export interface ExtensionsResponse {
+  agents: AgentExtensions[];
+}
+
+// ---------------------------------------------------------------------------
 // Analytics — activity heatmap and tool usage
 // ---------------------------------------------------------------------------
 

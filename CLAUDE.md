@@ -299,6 +299,18 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   block. A connector must be classified in `SKILL_INVOCATION_SIGNAL`
   (`data/agent-capabilities.ts`); an unclassified format gets an absent
   `usage`, never 0. `connector-skill-signal.test.ts` walks the registry.
+- **Extension config never leaves unredacted.** MCP servers, hooks, and
+  plugins (`/api/extensions`) are read live from home-dir config, which
+  routinely holds credentials. Entries are built only through
+  `connectors/extensions/` (`mcpServersFrom`, the hook parsers,
+  `readPluginBundle`): `env`/header values are reduced to key names, and
+  command lines, args, and URLs go through `redact.ts`. Never copy a config
+  field through unfiltered, and never log a parsed config or its parse error —
+  `~/.claude.json` also holds OAuth data, so only its `mcpServers` subtrees are
+  read. `extensions-secrets.test.ts` plants a secret in every source shape of
+  every connector; extend its fixture table when adding a connector or source.
+  A `null` list means the agent has no such concept (method absent) — Codex's
+  `[hooks.state]` is trust state, not hooks.
 - **Junie transcripts read differently** — Junie stores an event-sourced UI
   stream (`events.jsonl`), not a chat log: no assistant prose and no thinking, so
   a session renders as tool/terminal/file blocks plus a final result. Expected,

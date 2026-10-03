@@ -28,6 +28,7 @@ import {
   toCanonicalRows,
   type CodexSession,
 } from './normalize.js';
+import { codexHooks, codexMcpServers, codexPlugins } from './extensions.js';
 import { codexSkills } from './skills.js';
 
 const cache = ndjsonCache('codex');
@@ -171,6 +172,9 @@ export const codexConnector: AgentConnector = {
   loadSession,
   globalMemory: codexGlobalMemory,
   skills: codexSkills,
+  mcpServers: codexMcpServers,
+  hooks: codexHooks,
+  plugins: codexPlugins,
   resumeSpec: (id) => ({
     resumeArgv: ['codex', 'resume', id],
     forkArgv: ['codex', 'fork', id],

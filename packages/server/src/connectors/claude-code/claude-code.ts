@@ -19,6 +19,7 @@ import type { SessionData, SubagentSource } from '../../data/session-loader.js';
 import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js';
 import { MAX_TOOL_ERROR_TEXT } from '../tool-errors.js';
 import { globalMemory, memorySlugForCwd, projectMemory } from './memory.js';
+import { claudeCodeHooks, claudeCodeMcpServers, claudeCodePlugins } from './extensions.js';
 import { claudeCodeSkills } from './skills.js';
 
 /**
@@ -478,6 +479,9 @@ export const claudeCodeConnector: AgentConnector = {
   projectMemory,
   projectMemorySlug: memorySlugForCwd,
   skills: claudeCodeSkills,
+  mcpServers: claudeCodeMcpServers,
+  hooks: claudeCodeHooks,
+  plugins: claudeCodePlugins,
   resumeSpec: (id) => ({
     resumeArgv: ['claude', '--resume', id],
     forkArgv: ['claude', '--resume', id, '--fork-session'],

@@ -12,7 +12,14 @@
  * hot path into the TS layer.
  */
 
-import type { MemorySource, SkillOrigin, SkillPlugin } from '@claudescope/shared';
+import type {
+  InstalledHook,
+  InstalledMcpServer,
+  InstalledPlugin,
+  MemorySource,
+  SkillOrigin,
+  SkillPlugin,
+} from '@claudescope/shared';
 import type { SessionData } from '../data/session-loader.js';
 
 /** A discovered source file with the stats used for incremental change detection. */
@@ -164,6 +171,24 @@ export interface AgentConnector {
   skills?(): SkillEntry[];
 
   /**
+   * Optional: the MCP servers this agent is configured with, read live (NOT
+   * indexed) from its global config and its installed plugins. `[]` when none
+   * are configured; a connector without this hook has no MCP concept.
+   *
+   * INVARIANTS: read only from the agent's home dir (as {@link skills}), and
+   * redact at the source — build entries with `connectors/extensions/mcp.ts`
+   * so no env/header value or credential-looking token ever leaves the
+   * connector. Paths are absolute; the data layer contracts them.
+   */
+  mcpServers?(): McpServerEntry[];
+
+  /** Optional: configured lifecycle hooks; same contract as {@link mcpServers}. */
+  hooks?(): HookEntry[];
+
+  /** Optional: installed plugins; same contract as {@link mcpServers}. */
+  plugins?(): PluginEntry[];
+
+  /**
    * Optional: how to reopen this session in the agent's own CLI. Returns the
    * argv to exec (the server wraps it with `cd <cwd> && …`), or null when the
    * agent has no resume command. `sessionId` is the indexed session id, which
@@ -206,6 +231,15 @@ export interface SkillEntry {
   realPath: string;
   updatedAt: string;
 }
+
+/**
+ * Extension entries as a connector lists them: the API shapes, but with
+ * absolute `sourcePath`/`project` — the data layer contracts the home dir.
+ * Values are already redacted (see `connectors/extensions/`).
+ */
+export type McpServerEntry = InstalledMcpServer;
+export type HookEntry = InstalledHook;
+export type PluginEntry = InstalledPlugin;
 
 /**
  * One agent-authored per-project memory directory: the facts it holds and the

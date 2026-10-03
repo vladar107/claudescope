@@ -24,7 +24,7 @@ import { readPluginSkills } from '../plugin-skills.js';
 import { readSkillDirs } from '../skill-md.js';
 import type { SkillEntry } from '../types.js';
 
-function subdirs(dir: string): string[] {
+export function subdirs(dir: string): string[] {
   try {
     return readdirSync(dir, { withFileTypes: true })
       .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
@@ -36,7 +36,7 @@ function subdirs(dir: string): string[] {
 }
 
 /** The version dir touched most recently — what an update leaves in use. */
-function newestVersionDir(pluginDir: string): string | undefined {
+export function newestVersionDir(pluginDir: string): string | undefined {
   let best: { name: string; mtime: number } | undefined;
   for (const name of subdirs(pluginDir)) {
     const mtime = statSync(join(pluginDir, name)).mtimeMs;
