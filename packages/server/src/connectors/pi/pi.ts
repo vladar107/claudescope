@@ -27,6 +27,7 @@ import { canonicalProjectionSql, compactionsProjectionSql } from '../canonical.j
 import { ndjsonCache } from '../ndjson-cache.js';
 import { parentSessionFile, parsePiSession, subagentRuns, toCanonicalRows } from './normalize.js';
 import { piSkills } from './skills.js';
+import { piPlugins } from './extensions.js';
 
 const cache = ndjsonCache('pi');
 
@@ -139,6 +140,7 @@ export const piConnector: AgentConnector = {
   auxProjections,
   loadSession,
   skills: piSkills,
+  plugins: piPlugins,
   resumeSpec: (id) => ({
     resumeArgv: ['pi', '--session', id],
     forkArgv: ['pi', '--fork', id],

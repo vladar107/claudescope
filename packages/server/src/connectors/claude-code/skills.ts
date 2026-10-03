@@ -34,6 +34,18 @@ interface InstalledPluginsManifest {
   plugins?: Record<string, PluginInstall[]>;
 }
 
+/** The `installed_plugins.json` map; `{}` when absent, unparsable, or malformed. */
+export function readInstalledPlugins(): Record<string, PluginInstall[]> {
+  const manifestPath = join(claudePluginsDir(), 'installed_plugins.json');
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as InstalledPluginsManifest | null;
+    const plugins = manifest?.plugins ?? {};
+    return typeof plugins === 'object' && plugins !== null ? plugins : {};
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Every installed plugin's skills, tagged with the plugin identity. `[]` when
  * the manifest is absent, unparsable, or has no installs — never throws (a
@@ -43,16 +55,7 @@ interface InstalledPluginsManifest {
  * frontmatter inside that install.
  */
 function pluginSkills(): SkillEntry[] {
-  const manifestPath = join(claudePluginsDir(), 'installed_plugins.json');
-  let plugins: Record<string, PluginInstall[]>;
-  try {
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as InstalledPluginsManifest | null;
-    plugins = manifest?.plugins ?? {};
-    if (typeof plugins !== 'object' || plugins === null) return [];
-  } catch {
-    return [];
-  }
-
+  const plugins = readInstalledPlugins();
   const out: SkillEntry[] = [];
   for (const [key, installs] of Object.entries(plugins)) {
     const [name, marketplace] = key.split('@');

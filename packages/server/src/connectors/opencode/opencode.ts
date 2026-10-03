@@ -22,6 +22,7 @@ import { ndjsonCache } from '../ndjson-cache.js';
 import { listSessions, readSession, statSession } from './db.js';
 import { buildEvents, taskSpawns, toCanonicalRows } from './normalize.js';
 import { opencodeSkills } from './skills.js';
+import { opencodeMcpServers, opencodePlugins } from './extensions.js';
 
 const cache = ndjsonCache('opencode');
 
@@ -124,6 +125,8 @@ export const opencodeConnector: AgentConnector = {
   auxProjections,
   loadSession,
   skills: opencodeSkills,
+  mcpServers: opencodeMcpServers,
+  plugins: opencodePlugins,
   // Synthetic `<dbPath>#<id>` paths can't be fs.stat'ed — probe the DB instead.
   statFile: (filePath) => {
     const { dbPath, sessionId } = parseKey(filePath);
