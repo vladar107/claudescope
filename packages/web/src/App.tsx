@@ -1,5 +1,5 @@
-import { NavLink, Route, Routes, useLocation } from 'react-router';
-import { Cpu, FolderOpen, LineChart, Search, Settings, Sparkles, type LucideIcon } from 'lucide-react';
+import { Navigate, NavLink, Route, Routes, useLocation, useParams } from 'react-router';
+import { Cpu, FolderOpen, LineChart, Puzzle, Search, Settings, type LucideIcon } from 'lucide-react';
 import { ErrorBoundary } from './components';
 import { useServerStatus } from './status/StatusProvider.js';
 import { BrowsePage } from './pages/browse/BrowsePage.js';
@@ -12,8 +12,8 @@ import { MemoryPage } from './pages/memory/MemoryPage.js';
 import { AgentMemoryPage } from './pages/memory/AgentMemoryPage.js';
 import { AgentProjectMemoryPage } from './pages/memory/AgentProjectMemoryPage.js';
 import { ProjectMemoryPage } from './pages/memory/ProjectMemoryPage.js';
-import { SkillsPage } from './pages/skills/SkillsPage.js';
-import { AgentSkillsPage } from './pages/skills/AgentSkillsPage.js';
+import { ExtensionsPage } from './pages/extensions/ExtensionsPage.js';
+import { AgentExtensionsPage } from './pages/extensions/AgentExtensionsPage.js';
 import { SettingsPage } from './pages/settings/SettingsPage.js';
 
 interface NavItem {
@@ -27,10 +27,16 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Browse', icon: FolderOpen, end: true },
   { to: '/memory', label: 'Memory', icon: Cpu },
-  { to: '/skills', label: 'Skills', icon: Sparkles },
+  { to: '/extensions', label: 'Extensions', icon: Puzzle },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/analytics', label: 'Analytics', icon: LineChart },
 ];
+
+/** Legacy `/skills/:connectorId` bookmarks land on the agent's extensions page. */
+function SkillsRedirect() {
+  const { connectorId = '' } = useParams<{ connectorId: string }>();
+  return <Navigate to={`/extensions/${encodeURIComponent(connectorId)}`} replace />;
+}
 
 /** Left navigation sidebar. */
 function Sidebar() {
@@ -104,8 +110,10 @@ export function App() {
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/memory/:connectorId" element={<AgentMemoryPage />} />
             <Route path="/memory/:connectorId/:projectId" element={<AgentProjectMemoryPage />} />
-            <Route path="/skills" element={<SkillsPage />} />
-            <Route path="/skills/:connectorId" element={<AgentSkillsPage />} />
+            <Route path="/extensions" element={<ExtensionsPage />} />
+            <Route path="/extensions/:connectorId" element={<AgentExtensionsPage />} />
+            <Route path="/skills" element={<Navigate to="/extensions" replace />} />
+            <Route path="/skills/:connectorId" element={<SkillsRedirect />} />
             <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </ErrorBoundary>
