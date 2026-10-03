@@ -1,6 +1,6 @@
 /* ===========================================================================
-   Skills area styles. Scoped under .tv-skills; relies on the global theme
-   variables/utilities from styles/global.css.
+   Extensions area styles (skills, MCP servers, hooks, plugins). Scoped under
+   .tv-skills; relies on the global theme variables/utilities from styles/global.css.
    =========================================================================== */
 
 .tv-skills__lede {
@@ -198,4 +198,46 @@
 .tv-skills__na {
   color: var(--tv-fg-muted);
   cursor: help;
+}
+
+/* ---------------------------------------------------------------------------
+   MCP servers / hooks / plugins sections (per-agent page)
+   --------------------------------------------------------------------------- */
+.tv-ext__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tv-space-1);
+  margin-bottom: var(--tv-space-4);
+  border-bottom: 1px solid var(--tv-border);
+}
+.tv-ext__tabs .tv-tab {
+  white-space: nowrap;
+}
+.tv-ext__tabs + .tv-skills__section {
+  margin-top: 0;
+}
+.tv-ext__clip {
+  display: block;
+  max-width: 48ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+.tv-ext__chip {
+  color: var(--tv-fg-muted);
+  margin-left: var(--tv-space-1);
+}
+.tv-ext__name-cell .tv-skills__name {
+  display: inline;
+}
+.tv-ext__chips {
+  white-space: normal;
+  max-width: 40ch;
+}
+.tv-ext__chips .tv-ext__chip {
+  margin: 0 var(--tv-space-1) var(--tv-space-1) 0;
+}
+.tv-skills__loc > span.tv-ext__chip {
+  display: inline-block;
+  margin: 0 var(--tv-space-1) 2px 0;
 }

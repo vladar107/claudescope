@@ -10,6 +10,7 @@ import type {
   AgentComparisonResponse,
   AnalyticsGroupBy,
   AnalyticsResponse,
+  ExtensionsResponse,
   HealthResponse,
   IndexerStatus,
   MemoryResponse,
@@ -320,6 +321,11 @@ export const api = {
   /** GET /api/skills */
   skills(signal?: AbortSignal): Promise<SkillsResponse> {
     return request<SkillsResponse>('/skills', { signal });
+  },
+
+  /** GET /api/extensions */
+  extensions(signal?: AbortSignal): Promise<ExtensionsResponse> {
+    return request<ExtensionsResponse>('/extensions', { signal });
   },
 
   /** GET /api/projects/:id/memory */
