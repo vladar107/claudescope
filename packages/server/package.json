@@ -14,7 +14,7 @@
     "@duckdb/node-api": "^1.5.3-r.3",
     "@fastify/static": "^10.1.2",
     "@modelcontextprotocol/server": "^2.0.0",
-    "fastify": "^5.12.1",
+    "fastify": "^5.12.5",
     "smol-toml": "^1.9.0",
     "zod": "^4.4.3"
   },
