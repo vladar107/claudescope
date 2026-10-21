@@ -36,6 +36,7 @@ import {
 } from './normalize.js';
 import { antigravityGlobalMemory } from './memory.js';
 import { antigravitySkills } from './skills.js';
+import { antigravitySubagents } from './subagents.js';
 
 const cache = ndjsonCache('antigravity');
 
@@ -134,6 +135,7 @@ export const antigravityConnector: AgentConnector = {
   loadSession,
   globalMemory,
   skills: antigravitySkills,
+  subagents: antigravitySubagents,
   // `agy --conversation <id>` resumes a previous conversation by id (no CLI fork).
   resumeSpec: (id) => ({ resumeArgv: ['agy', '--conversation', id] }),
 };
