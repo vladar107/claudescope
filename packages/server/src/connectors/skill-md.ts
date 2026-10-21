@@ -42,12 +42,12 @@ export interface SkillFrontmatter {
 }
 
 /**
- * Hand-parse the leading `---` frontmatter of a SKILL.md. Only `name` and
- * `description` are read; a folded/literal block scalar (`description: >`)
+ * Hand-parse the leading `---` frontmatter of a markdown file, keeping only
+ * the top-level scalar `keys`; a folded/literal block scalar (`description: >`)
  * gathers its indented continuation lines, since descriptions are routinely
  * multi-line. Returns `{}` when there is no frontmatter block at all.
  */
-export function parseSkillFrontmatter(raw: string): SkillFrontmatter {
+export function parseFrontmatterFields<K extends string>(raw: string, keys: readonly K[]): Partial<Record<K, string>> {
   const lines = raw.split('\n');
   if (lines[0]?.trim() !== '---') return {};
   let end = -1;
@@ -59,12 +59,12 @@ export function parseSkillFrontmatter(raw: string): SkillFrontmatter {
   }
   if (end === -1) return {};
 
-  const fm: SkillFrontmatter = {};
+  const fm: Partial<Record<K, string>> = {};
   for (let i = 1; i < end; i++) {
     const m = (lines[i] ?? '').match(/^([A-Za-z_][\w-]*)\s*:\s*(.*)$/);
     if (!m) continue;
-    const key = m[1] as string;
-    if (key !== 'name' && key !== 'description') continue;
+    const key = m[1] as K;
+    if (!keys.includes(key)) continue;
     let value = (m[2] as string).trim();
     if (value === '' || /^[>|][+-]?$/.test(value)) {
       const parts: string[] = [];
@@ -79,11 +79,16 @@ export function parseSkillFrontmatter(raw: string): SkillFrontmatter {
   return fm;
 }
 
-function isoMtime(path: string): string {
+/** The `name`/`description` frontmatter of a SKILL.md (see {@link parseFrontmatterFields}). */
+export function parseSkillFrontmatter(raw: string): SkillFrontmatter {
+  return parseFrontmatterFields(raw, ['name', 'description']);
+}
+
+export function isoMtime(path: string): string {
   return new Date(statSync(path).mtimeMs).toISOString();
 }
 
-function resolveReal(path: string): string {
+export function resolveReal(path: string): string {
   try {
     return realpathSync(path);
   } catch {

@@ -171,6 +171,19 @@ export interface AgentConnector {
   skills?(): SkillEntry[];
 
   /**
+   * Optional: every custom subagent definition this agent can spawn, read live
+   * (NOT indexed) from its home dir and its installed plugins. Returns `[]`
+   * when none are defined; a connector without this hook has no user-level
+   * subagent definitions (or no documented format for them).
+   *
+   * INVARIANTS: as {@link skills} — agent home dirs only, never project dirs,
+   * and only entries of the agent's OWN store (origin other than `shared`)
+   * count as evidence that the agent is installed. Definitions the format marks
+   * as primary-only or disabled are left out: they cannot be spawned.
+   */
+  subagents?(): SubagentEntry[];
+
+  /**
    * Optional: the MCP servers this agent is configured with, read live (NOT
    * indexed) from its global config and its installed plugins. `[]` when none
    * are configured; a connector without this hook has no MCP concept.
@@ -226,6 +239,32 @@ export interface SkillEntry {
   origin: SkillOrigin;
   plugin?: SkillPlugin;
   /** Absolute path of the skill dir (or file) as the agent sees it. */
+  path: string;
+  /** Absolute resolved path; equals `path` when no symlink is involved. */
+  realPath: string;
+  updatedAt: string;
+}
+
+/**
+ * One subagent definition as a connector lists it. Like {@link SkillEntry},
+ * paths are absolute; the data layer contracts the home dir for display and
+ * dedupes definitions across agents by `realPath`.
+ */
+export interface SubagentEntry {
+  /** The name a spawn records it under (Claude Code plugin agents: `plugin:agent`). */
+  name: string;
+  /**
+   * Other names a spawn may record for the same definition — the file stem,
+   * or a plugin agent's unprefixed name — joined for usage alongside `name`
+   * in case the agent invokes it by one of those instead. Empty when none
+   * differ from `name`.
+   */
+  aliases: string[];
+  description?: string;
+  model?: string;
+  origin: SkillOrigin;
+  plugin?: SkillPlugin;
+  /** Absolute path of the definition file as the agent sees it. */
   path: string;
   /** Absolute resolved path; equals `path` when no symlink is involved. */
   realPath: string;
