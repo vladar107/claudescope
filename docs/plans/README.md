@@ -118,3 +118,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0091 | [Codex guardian review usage](./0091-codex-guardian-usage.md) | done |
 | 0092 | [Fast-mode pricing](./0092-fast-mode-pricing.md) | done |
 | 0093 | [Extensions page](./0093-extensions-page.md) | done |
+| 0094 | [Subagent definitions on the Extensions page](./0094-subagent-definitions.md) | done |

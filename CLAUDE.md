@@ -299,6 +299,16 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   block. A connector must be classified in `SKILL_INVOCATION_SIGNAL`
   (`data/agent-capabilities.ts`); an unclassified format gets an absent
   `usage`, never 0. `connector-skill-signal.test.ts` walks the registry.
+- **Subagent definitions follow the skills rules.** Read live through the
+  `subagents?()` hook (home dirs only; primary-only/disabled definitions and
+  Claude Code user files without a frontmatter `name` are left out). Usage
+  is `events.subagent_names` — one entry per canonical `Task`/`Agent` spawn's
+  `subagent_type`, never deduped, and an untyped spawn records nothing (no
+  invented `general-purpose`). Declared per connector in
+  `SUBAGENT_INVOCATION_SIGNAL` (Junie has none; `connector-subagent-signal.test.ts`).
+  Built-ins are never hardcoded — they land in "used but not defined". The
+  usage join tries `name` then `aliases`, but an alias that is another
+  definition's name or shared by two definitions counts for neither.
 - **Extension config never leaves unredacted.** MCP servers, hooks, and
   plugins (`/api/extensions`) are read live from home-dir config, which
   routinely holds credentials. Entries are built only through
