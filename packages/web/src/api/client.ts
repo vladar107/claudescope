@@ -35,6 +35,7 @@ import type {
   SessionsResponse,
   SkillsResponse,
   SourcesResponse,
+  SubagentsResponse,
   SystemInfoResponse,
   ToolUsageKind,
   ToolUsageResponse,
@@ -321,6 +322,11 @@ export const api = {
   /** GET /api/skills */
   skills(signal?: AbortSignal): Promise<SkillsResponse> {
     return request<SkillsResponse>('/skills', { signal });
+  },
+
+  /** GET /api/subagents */
+  subagents(signal?: AbortSignal): Promise<SubagentsResponse> {
+    return request<SubagentsResponse>('/subagents', { signal });
   },
 
   /** GET /api/extensions */

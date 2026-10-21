@@ -1,14 +1,16 @@
 /**
  * One agent's extension inventory (`/extensions/:connectorId`) — its skills
  * (where each install lives, which other agents read the very same one, and how
- * often it was invoked), MCP servers, hooks, and plugins, one tab each; the
- * open tab is kept in `?tab=` so links can point at it.
+ * often it was invoked), subagent definitions (same shape, plus the model they
+ * pin), MCP servers, hooks, and plugins, one tab each; the open tab is kept in
+ * `?tab=` so links can point at it.
  *
  * Everything is read LIVE from the agent home dirs on the server (never
- * indexed), so this page just fetches and renders. Skill usage comes from the
- * index: when the agent's format records no skill invocation
+ * indexed), so this page just fetches and renders. Skill and subagent usage
+ * comes from the index: when the agent's format records no such invocation
  * (`usageSignal: false`) every cell reads "n/a" with the reason in its tooltip
- * — never a fabricated 0. For MCP servers, hooks, and plugins a `null` list
+ * — never a fabricated 0. An agent absent from the subagents response has no
+ * subagent definitions concept at all. For MCP servers, hooks, and plugins a `null` list
  * means the agent has no such concept ("not supported"); `[]` means supported
  * but nothing configured. Values arrive pre-redacted and render as given.
  */
@@ -18,12 +20,16 @@ import { Link, useParams, useSearchParams } from 'react-router';
 import type {
   AgentExtensions,
   AgentSkills,
+  AgentSubagents,
   ExtensionsResponse,
   InstalledHook,
   InstalledMcpServer,
   InstalledPlugin,
   InstalledSkill,
+  InstalledSubagent,
+  SkillUsage,
   SkillsResponse,
+  SubagentsResponse,
 } from '@claudescope/shared';
 import { api } from '../../api/client.js';
 import { AgentBadge, agentLabel, ErrorBox, formatCount, Spinner } from '../../components';
@@ -39,8 +45,13 @@ interface SortState {
   dir: 'asc' | 'desc';
 }
 
-/** Sortable value for a skill; absent usage always sinks to the bottom. */
-function sortValue(s: InstalledSkill, key: SortKey): number {
+interface UsageRow {
+  name: string;
+  usage?: SkillUsage;
+}
+
+/** Sortable value for a skill or subagent; absent usage always sinks to the bottom. */
+function sortValue(s: UsageRow, key: SortKey): number {
   if (key === 'uses') return s.usage?.calls ?? -1;
   const iso = s.usage?.lastUsedAt;
   if (!iso) return -1;
@@ -48,10 +59,26 @@ function sortValue(s: InstalledSkill, key: SortKey): number {
   return Number.isNaN(ms) ? -1 : ms;
 }
 
+function sortRows<T extends UsageRow>(items: T[], sort: SortState): T[] {
+  const rows = [...items];
+  const byName = (a: T, b: T) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  if (sort.key === 'name') {
+    rows.sort((a, b) => (sort.dir === 'asc' ? byName(a, b) : byName(b, a)));
+    return rows;
+  }
+  rows.sort((a, b) => {
+    const delta = sortValue(a, sort.key) - sortValue(b, sort.key);
+    if (delta !== 0) return sort.dir === 'asc' ? delta : -delta;
+    return byName(a, b);
+  });
+  return rows;
+}
+
 export function AgentExtensionsPage() {
   const { connectorId = '' } = useParams<{ connectorId: string }>();
 
   const [data, setData] = useState<SkillsResponse | null>(null);
+  const [subData, setSubData] = useState<SubagentsResponse | null>(null);
   const [extData, setExtData] = useState<ExtensionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -62,9 +89,14 @@ export function AgentExtensionsPage() {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    Promise.all([api.skills(controller.signal), api.extensions(controller.signal)])
-      .then(([res, ext]) => {
+    Promise.all([
+      api.skills(controller.signal),
+      api.subagents(controller.signal),
+      api.extensions(controller.signal),
+    ])
+      .then(([res, subs, ext]) => {
         setData(res);
+        setSubData(subs);
         setExtData(ext);
         setLoading(false);
       })
@@ -82,26 +114,18 @@ export function AgentExtensionsPage() {
     [data, connectorId],
   );
 
+  const subAgent: AgentSubagents | undefined = useMemo(
+    () => subData?.agents.find((a) => a.connectorId === connectorId),
+    [subData, connectorId],
+  );
+
   const ext: AgentExtensions | undefined = useMemo(
     () => extData?.agents.find((a) => a.connectorId === connectorId),
     [extData, connectorId],
   );
 
-  const skills = useMemo(() => {
-    const rows = [...(agent?.skills ?? [])];
-    const byName = (a: InstalledSkill, b: InstalledSkill) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-    if (sort.key === 'name') {
-      rows.sort((a, b) => (sort.dir === 'asc' ? byName(a, b) : byName(b, a)));
-      return rows;
-    }
-    rows.sort((a, b) => {
-      const delta = sortValue(a, sort.key) - sortValue(b, sort.key);
-      if (delta !== 0) return sort.dir === 'asc' ? delta : -delta;
-      return byName(a, b);
-    });
-    return rows;
-  }, [agent, sort]);
+  const skills = useMemo(() => sortRows(agent?.skills ?? [], sort), [agent, sort]);
+  const subagents = useMemo(() => sortRows(subAgent?.subagents ?? [], sort), [subAgent, sort]);
 
   // Numeric columns read best highest-first, so their first click sorts desc.
   const onSort = (key: SortKey) =>
@@ -117,6 +141,7 @@ export function AgentExtensionsPage() {
   const hooks = ext?.hooks ?? null;
   const plugins = ext?.plugins ?? null;
   const skillCount = agent?.skills.length ?? 0;
+  const subagentCount = subAgent?.subagents.length ?? 0;
   const lists = { mcp: mcpServers, hooks, plugins };
 
   // The open tab lives in the URL (`?tab=mcp`) so a link can point at it;
@@ -148,13 +173,22 @@ export function AgentExtensionsPage() {
           title="Failed to load extensions"
           onRetry={() => setReloadKey((k) => k + 1)}
         />
-      ) : !agent && !ext ? (
+      ) : !agent && !subAgent && !ext ? (
         <p className="tv-muted">No extensions found for this agent yet.</p>
       ) : (
         <>
           <div className="tv-ext__tabs" role="tablist" aria-label="Extension kinds">
             {TABS.map((t) => {
-              const count = t.id === 'skills' ? (agent ? skillCount : null) : (lists[t.id]?.length ?? null);
+              const count =
+                t.id === 'skills'
+                  ? agent
+                    ? skillCount
+                    : null
+                  : t.id === 'subagents'
+                    ? subAgent
+                      ? subagentCount
+                      : null
+                    : (lists[t.id]?.length ?? null);
               return (
                 <button
                   key={t.id}
@@ -318,6 +352,15 @@ export function AgentExtensionsPage() {
             </section>
           ) : null}
 
+          {tab === 'subagents' ? (
+            subAgent ? (
+              <SubagentsPanel agent={subAgent} label={label} rows={subagents} sort={sort} onSort={onSort} />
+            ) : (
+              <ExtPanel id="subagents" noun="subagents" label={label} items={null}>
+                {() => null}
+              </ExtPanel>
+            )
+          ) : null}
           {tab === 'mcp' ? (
             <ExtPanel id="mcp" noun="MCP servers" label={label} items={mcpServers}>
               {(rows) => <McpTable rows={rows} />}
@@ -339,8 +382,8 @@ export function AgentExtensionsPage() {
   );
 }
 
-/** Where the skill comes from — a plugin shows the plugin name, details on hover. */
-function OriginChip({ skill }: { skill: InstalledSkill }) {
+/** Where a skill or subagent comes from — a plugin shows the plugin name, details on hover. */
+function OriginChip({ skill }: { skill: Pick<InstalledSkill, 'origin' | 'plugin'> }) {
   if (skill.origin === 'plugin' && skill.plugin) {
     const { name, marketplace, version } = skill.plugin;
     const detail = [marketplace, version ? `v${version}` : undefined].filter(Boolean).join(' · ');
@@ -389,10 +432,11 @@ function SortHeader({
   );
 }
 
-type Tab = 'skills' | 'mcp' | 'hooks' | 'plugins';
+type Tab = 'skills' | 'subagents' | 'mcp' | 'hooks' | 'plugins';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'skills', label: 'Skills' },
+  { id: 'subagents', label: 'Subagents' },
   { id: 'mcp', label: 'MCP servers' },
   { id: 'hooks', label: 'Hooks' },
   { id: 'plugins', label: 'Plugins' },
@@ -427,6 +471,162 @@ function ExtPanel<T>({
       ) : (
         <div className="tv-skills__scroll">{children(items)}</div>
       )}
+    </section>
+  );
+}
+
+function LastUsed({ iso }: { iso?: string }) {
+  if (!iso) return <span className="tv-muted">—</span>;
+  return <span title={formatDateTime(iso)}>{formatDate(iso)}</span>;
+}
+
+function SubagentsPanel({
+  agent,
+  label,
+  rows,
+  sort,
+  onSort,
+}: {
+  agent: AgentSubagents;
+  label: string;
+  rows: InstalledSubagent[];
+  sort: SortState;
+  onSort: (key: SortKey) => void;
+}) {
+  const naTitle = agent.usageNote ?? "This agent's format records no subagent spawn";
+  return (
+    <section
+      id="panel-subagents"
+      role="tabpanel"
+      aria-labelledby="tab-subagents"
+      className="tv-skills__section"
+    >
+      {agent.usageNote ? <p className="tv-skills__note tv-muted">{agent.usageNote}</p> : null}
+      {rows.length > 0 ? (
+        <div className="tv-skills__scroll">
+          <table className="tv-skills__table">
+            <thead>
+              <tr>
+                <SortHeader label="Subagent" sortKey="name" sort={sort} onSort={onSort} />
+                <th>Origin</th>
+                <th>Model</th>
+                <th>Location</th>
+                <th>Visible to</th>
+                <SortHeader
+                  label="Uses"
+                  sortKey="uses"
+                  sort={sort}
+                  onSort={onSort}
+                  className="tv-skills__num"
+                />
+                <SortHeader
+                  label="Last used"
+                  sortKey="lastUsed"
+                  sort={sort}
+                  onSort={onSort}
+                  className="tv-skills__num"
+                />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((s) => (
+                <tr key={`${s.sourcePath}:${s.name}`} className="tv-skills__row">
+                  <td className="tv-skills__skill">
+                    <span className="tv-skills__name">{s.name}</span>
+                    {s.description ? <span className="tv-skills__desc tv-muted">{s.description}</span> : null}
+                  </td>
+                  <td>
+                    <OriginChip skill={s} />
+                  </td>
+                  <td>
+                    {s.model ? (
+                      <span className="tv-mono">{s.model}</span>
+                    ) : (
+                      <span className="tv-muted">—</span>
+                    )}
+                  </td>
+                  <td className="tv-skills__loc">
+                    <span className="tv-mono" title={s.sourcePath}>
+                      {s.sourcePath}
+                    </span>
+                    {s.realPath ? (
+                      <span
+                        className="tv-mono tv-skills__real tv-muted"
+                        title={`Symlink target: ${s.realPath}`}
+                      >
+                        → {s.realPath}
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="tv-skills__visible">
+                    {s.visibleTo.length > 0 ? (
+                      s.visibleTo.map((id) => <AgentBadge key={id} connectorId={id} />)
+                    ) : (
+                      <span className="tv-muted">—</span>
+                    )}
+                  </td>
+                  <td className="tv-skills__num">
+                    {!agent.usageSignal ? (
+                      <span className="tv-skills__na" title={naTitle}>
+                        n/a
+                      </span>
+                    ) : s.usage ? (
+                      <>
+                        {formatCount(s.usage.calls)}{' '}
+                        <span className="tv-muted">
+                          · {formatCount(s.usage.sessions)} session{s.usage.sessions === 1 ? '' : 's'}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="tv-muted">never</span>
+                    )}
+                  </td>
+                  <td className="tv-skills__num">
+                    <LastUsed iso={s.usage?.lastUsedAt} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="tv-muted">No subagents defined in {label}&rsquo;s home directory.</p>
+      )}
+
+      {agent.unlocated.length > 0 ? (
+        <section className="tv-skills__section">
+          <h2 className="tv-skills__section-title">Used but not defined globally</h2>
+          <p className="tv-skills__note tv-muted">
+            Built-in agents, project-level definitions, or definitions removed since.
+          </p>
+          <div className="tv-skills__scroll">
+            <table className="tv-skills__table">
+              <thead>
+                <tr>
+                  <th>Subagent</th>
+                  <th className="tv-skills__num">Calls</th>
+                  <th className="tv-skills__num">Sessions</th>
+                  <th className="tv-skills__num">Last used</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agent.unlocated.map((u) => (
+                  <tr key={u.name} className="tv-skills__row">
+                    <td>
+                      <span className="tv-skills__name">{u.name}</span>
+                    </td>
+                    <td className="tv-skills__num">{formatCount(u.usage.calls)}</td>
+                    <td className="tv-skills__num">{formatCount(u.usage.sessions)}</td>
+                    <td className="tv-skills__num">
+                      <LastUsed iso={u.usage.lastUsedAt} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }

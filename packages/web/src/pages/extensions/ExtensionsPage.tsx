@@ -1,8 +1,9 @@
 /**
  * Extensions landing (`/extensions`) — a card grid, one card per locally
- * detected agent (connector): its skills (with usage), MCP servers, hooks, and
- * plugins. Skills keep a preview of the most recently updated one so the screen
- * is never just bare counts. Agents with none of the four are shown explicitly
+ * detected agent (connector): its skills (with usage), subagents (with usage),
+ * MCP servers, hooks, and plugins. Skills keep a preview of the most recently
+ * updated one so the screen is never just bare counts. Agents with none of the
+ * five are shown explicitly
  * as such rather than hidden (so "no store" reads as a fact, not a bug).
  *
  * Everything is read LIVE from the agent home dirs on the server (never
@@ -10,8 +11,8 @@
  * plugins a `null` list means the agent has no such concept (the kind is left
  * off its card) while `[]` means supported but nothing configured. "Nothing
  * installed" is a normal, first-class state, never an error. Invocation counts
- * (skills only) come from the index and are ABSENT — not 0 — for agents whose
- * format records no skill invocation.
+ * (skills and subagents) come from the index and are ABSENT — not 0 — for
+ * agents whose format records no such invocation.
  */
 
 import { useEffect, useState } from 'react';
@@ -19,9 +20,12 @@ import { Link } from 'react-router';
 import type {
   AgentExtensions,
   AgentSkills,
+  AgentSubagents,
   ExtensionsResponse,
   SkillsConnectorOverview,
   SkillsResponse,
+  SubagentsConnectorOverview,
+  SubagentsResponse,
 } from '@claudescope/shared';
 import { api } from '../../api/client.js';
 import { AgentBadge, ErrorBox, Spinner } from '../../components';
@@ -33,23 +37,37 @@ interface CardData {
   label: string;
   skills?: SkillsConnectorOverview;
   skillsAgent?: AgentSkills;
+  subagents?: SubagentsConnectorOverview;
+  subagentsAgent?: AgentSubagents;
   ext?: AgentExtensions;
 }
 
-/** Skills-response order first, then agents only the extensions response knows. */
-function buildCards(skills: SkillsResponse, extensions: ExtensionsResponse): CardData[] {
+/** Skills-response order first, then agents only the subagents or extensions responses know. */
+function buildCards(
+  skills: SkillsResponse,
+  subagents: SubagentsResponse,
+  extensions: ExtensionsResponse,
+): CardData[] {
   const cards: CardData[] = skills.connectors.map((c) => ({
     connectorId: c.connectorId,
     label: c.label,
     skills: c,
     skillsAgent: skills.agents.find((a) => a.connectorId === c.connectorId),
-    ext: extensions.agents.find((a) => a.connectorId === c.connectorId),
   }));
-  for (const e of extensions.agents) {
-    if (!cards.some((c) => c.connectorId === e.connectorId)) {
-      cards.push({ connectorId: e.connectorId, label: e.label, ext: e });
+  const cardFor = (connectorId: string, label: string): CardData => {
+    let card = cards.find((c) => c.connectorId === connectorId);
+    if (!card) {
+      card = { connectorId, label };
+      cards.push(card);
     }
+    return card;
+  };
+  for (const s of subagents.connectors) {
+    const card = cardFor(s.connectorId, s.label);
+    card.subagents = s;
+    card.subagentsAgent = subagents.agents.find((a) => a.connectorId === s.connectorId);
   }
+  for (const e of extensions.agents) cardFor(e.connectorId, e.label).ext = e;
   return cards;
 }
 
@@ -63,9 +81,13 @@ export function ExtensionsPage() {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    Promise.all([api.skills(controller.signal), api.extensions(controller.signal)])
-      .then(([skills, extensions]) => {
-        setCards(buildCards(skills, extensions));
+    Promise.all([
+      api.skills(controller.signal),
+      api.subagents(controller.signal),
+      api.extensions(controller.signal),
+    ])
+      .then(([skills, subagents, extensions]) => {
+        setCards(buildCards(skills, subagents, extensions));
         setLoading(false);
       })
       .catch((err: unknown) => {
@@ -80,8 +102,8 @@ export function ExtensionsPage() {
     <div className="tv-skills">
       <h1 className="tv-page-title">Extensions</h1>
       <p className="tv-skills__lede tv-muted">
-        Everything each agent can load from its home directory — skills, MCP servers, hooks, and plugins —
-        read live. Skills also show how often they were invoked.
+        Everything each agent can load from its home directory — skills, subagents, MCP servers, hooks, and
+        plugins — read live. Skills and subagents also show how often they were used.
       </p>
 
       {loading ? (
@@ -110,12 +132,14 @@ function plural(n: number, one: string, many = `${one}s`): string {
 }
 
 function AgentExtensionsCard({ card }: { card: CardData }) {
-  const { connectorId, label, skills: c, skillsAgent, ext } = card;
+  const { connectorId, label, skills: c, skillsAgent, subagents: sub, subagentsAgent, ext } = card;
   const skillsSupported = c?.supported ?? false;
+  const subagentsSupported = sub?.supported ?? false;
   const mcp = ext?.mcpServers ?? null;
   const hooks = ext?.hooks ?? null;
   const plugins = ext?.plugins ?? null;
-  const anySupported = skillsSupported || mcp !== null || hooks !== null || plugins !== null;
+  const anySupported =
+    skillsSupported || subagentsSupported || mcp !== null || hooks !== null || plugins !== null;
 
   const body = (
     <>
@@ -146,6 +170,22 @@ function AgentExtensionsCard({ card }: { card: CardData }) {
               {c.unlocated > 0 ? <> · {c.unlocated} used but not installed globally</> : null}
             </div>
           ) : null}
+          {subagentsSupported && sub ? (
+            <div
+              className="tv-skills-card__counts tv-muted"
+              title={!sub.usageSignal ? subagentsAgent?.usageNote : undefined}
+            >
+              {plural(sub.installed, 'subagent')}
+              {sub.usageSignal && sub.installed > 0 ? (
+                <>
+                  {' '}
+                  · {sub.used} used · {sub.neverUsed} never used
+                </>
+              ) : null}
+              {sub.unlocated > 0 ? <> · {sub.unlocated} used but not defined globally</> : null}
+              {!sub.usageSignal ? <> · usage unavailable</> : null}
+            </div>
+          ) : null}
           {mcp ? (
             <div className="tv-skills-card__counts tv-muted">{plural(mcp.length, 'MCP server')}</div>
           ) : null}
@@ -166,7 +206,7 @@ function AgentExtensionsCard({ card }: { card: CardData }) {
         </>
       ) : (
         <div className="tv-skills-card__empty tv-muted">
-          {label} has no skills, MCP servers, hooks, or plugins in its home directory.
+          {label} has no skills, subagents, MCP servers, hooks, or plugins in its home directory.
         </div>
       )}
     </>
