@@ -35,6 +35,7 @@ import type {
 import type { OpencodeRawSession } from './db.js';
 import { toolNamesCsv } from '../tool-names.js';
 import { skillNamesCsv } from '../skill-names.js';
+import { subagentNamesCsv } from '../subagent-names.js';
 import { toolErrorCount, toolErrorText } from '../tool-errors.js';
 import type { CanonicalRow } from '../canonical.js';
 import { num, str } from '../json.js';
@@ -145,6 +146,11 @@ interface ToolBlocks {
   results: ToolResultBlock[];
 }
 
+/** The agent a `task` call spawns: `agent` in newer opencode, `subagent_type` before. */
+function taskAgentType(input: Record<string, unknown>): string {
+  return str(input.agent) || str(input.subagent_type);
+}
+
 /**
  * Map one `tool` part to canonical tool_use block(s) + their tool_result(s),
  * paired by `callID`. `apply_patch` fans out to one block PER touched file (so
@@ -210,7 +216,7 @@ function toolPartBlocks(data: Record<string, unknown>): ToolBlocks {
       name: 'Task',
       input: {
         description: str(input.description),
-        subagent_type: str(input.subagent_type),
+        subagent_type: taskAgentType(input),
         prompt: str(input.prompt),
       },
     };
@@ -380,7 +386,7 @@ export function taskSpawns(
       const childId = str(metadata.sessionId);
       if (childId) {
         map.set(childId, {
-          agentType: str(input.subagent_type),
+          agentType: taskAgentType(input),
           description: str(input.description),
         });
       }
@@ -426,6 +432,7 @@ export function toCanonicalRows(session: OpencodeRawSession, filePath: string): 
       tool_error_count: toolErrorCount(content),
       tool_error_text: toolErrorText(content),
       skill_names: skillNamesCsv(content),
+      subagent_names: subagentNamesCsv(content),
       text_content: text,
       // A child's title must not clobber the parent's via the titles projection
       // (both files now share one session_id) — emit none for sidechain rows.

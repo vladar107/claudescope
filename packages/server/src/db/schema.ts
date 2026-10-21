@@ -58,7 +58,9 @@
 //      nullable `events.pricing_model` override) instead of being dropped outright.
 // v26: events.speed ('fast' | NULL) — Claude Code fast-mode and Codex priority-tier
 //      usage now price at exact-id-only fast rates instead of standard ones.
-export const SCHEMA_VERSION = 26;
+// v27: events.subagent_names — the subagent_type of canonical Task/Agent spawns,
+//      for the subagent-usage breakdown on the Extensions page.
+export const SCHEMA_VERSION = 27;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -128,6 +130,9 @@ export const SCHEMA_DDL: readonly string[] = [
      -- Comma-joined skill argument of canonical Skill tool calls, shaped like
      -- tool_names, which on its own only ever says "Skill".
      skill_names     VARCHAR DEFAULT '',
+     -- Comma-joined subagent_type of canonical Task/Agent spawns, one entry per
+     -- spawn, shaped like skill_names.
+     subagent_names  VARCHAR DEFAULT '',
      -- FTS document key: hash(file_path, uuid), unique per row because
      -- (file_path, uuid) is — a fork/resume copy repeats the uuid, but in
      -- ANOTHER file. Keep it LAST: loadFile stages by column order.

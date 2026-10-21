@@ -42,6 +42,7 @@ import type {
 import { codexSessionsDir } from '../../settings.js';
 import { toolNamesCsv } from '../tool-names.js';
 import { skillNamesCsv } from '../skill-names.js';
+import { subagentNamesCsv } from '../subagent-names.js';
 import { toolErrorCount, toolErrorText } from '../tool-errors.js';
 import { compactionRow, type CanonicalRow } from '../canonical.js';
 import { num, rec, str } from '../json.js';
@@ -416,6 +417,7 @@ export function parseGuardianRollout(path: string): CanonicalRow[] | null {
       tool_error_count: null,
       tool_error_text: null,
       skill_names: '',
+      subagent_names: '',
       text_content: '',
     });
   }
@@ -1313,6 +1315,7 @@ export function toCanonicalRows(session: CodexSession, filePath: string): Canoni
       tool_error_count: toolErrorCount(arr),
       tool_error_text: toolErrorText(arr),
       skill_names: skillNamesCsv(arr),
+      subagent_names: subagentNamesCsv(arr),
       text_content: text,
     };
   });

@@ -38,6 +38,7 @@ import { basename, dirname } from 'node:path';
 import type { AssistantEvent, ContentBlock, MessageUsage, SystemEvent, UserEvent } from '@claudescope/shared';
 import { toolNamesCsv } from '../tool-names.js';
 import { skillNamesCsv } from '../skill-names.js';
+import { subagentNamesCsv } from '../subagent-names.js';
 import { toolErrorCount, toolErrorText } from '../tool-errors.js';
 import { compactionRow, type CanonicalRow } from '../canonical.js';
 import { num, rec, str } from '../json.js';
@@ -494,6 +495,33 @@ export function subagentRuns(path: string): PiSubagentRun[] {
 }
 
 
+/**
+ * `events.subagent_names` for a pi row, in block order. The single
+ * `{agent, task}` spawn is already a canonical `Task`; the batch forms
+ * (`{tasks:[{agent, task}…]}` parallel, `{chain:[{agent, task}…]}` sequential)
+ * stay raw `subagent` calls, so their agents are read here — one entry per task.
+ */
+function piSubagentNamesCsv(content: readonly ContentBlock[]): string {
+  const names: string[] = [];
+  for (const b of content) {
+    if (b.type !== 'tool_use') continue;
+    if (b.name !== 'subagent') {
+      const csv = subagentNamesCsv([b]);
+      if (csv) names.push(csv);
+      continue;
+    }
+    const input = (b.input ?? {}) as { tasks?: unknown; chain?: unknown };
+    for (const list of [input.tasks, input.chain]) {
+      if (!Array.isArray(list)) continue;
+      for (const t of list) {
+        const agent = str((t as { agent?: unknown } | null)?.agent);
+        if (agent && !agent.includes(',')) names.push(agent);
+      }
+    }
+  }
+  return names.join(',');
+}
+
 /** Flatten a parsed session into canonical index rows for one file. */
 export function toCanonicalRows(session: PiSession, filePath: string): CanonicalRow[] {
   return session.events.map((e) => {
@@ -544,6 +572,7 @@ export function toCanonicalRows(session: PiSession, filePath: string): Canonical
       tool_error_count: toolErrorCount(content),
       tool_error_text: toolErrorText(content),
       skill_names: skillNamesCsv(content),
+      subagent_names: piSubagentNamesCsv(content),
       text_content: text,
     };
   });

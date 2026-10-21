@@ -35,6 +35,13 @@ beforeAll(async () => {
     jsonl([
       { ...base, type: 'user', uuid: 'u1', parentUuid: null, timestamp: '2026-01-01T10:00:00.000Z', isSidechain: false, message: { role: 'user', content: 'go' } },
       { ...base, type: 'assistant', uuid: 'a1', parentUuid: 'u1', timestamp: '2026-01-01T10:00:05.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-8', id: 'm1', content: [{ type: 'tool_use', id: 't1', name: 'Edit', input: {} }, { type: 'tool_use', id: 't2', name: 'Bash', input: {} }], usage: { input_tokens: 10, output_tokens: 5 } } },
+      // Two typed spawns (Agent + legacy Task name) and one untyped one — the
+      // implicit general-purpose agent, which records nothing.
+      { ...base, type: 'assistant', uuid: 'a2', parentUuid: 'a1', timestamp: '2026-01-01T10:00:06.000Z', isSidechain: false, message: { role: 'assistant', model: 'claude-opus-4-8', id: 'm2', content: [
+        { type: 'tool_use', id: 't3', name: 'Agent', input: { description: 'Review', prompt: 'Review the diff', subagent_type: 'code-reviewer' } },
+        { type: 'tool_use', id: 't4', name: 'Task', input: { description: 'Untyped', prompt: 'Look around' } },
+        { type: 'tool_use', id: 't5', name: 'Task', input: { description: 'Explore', prompt: 'Map the repo', subagent_type: 'Explore' } },
+      ], usage: { input_tokens: 10, output_tokens: 5 } } },
     ]),
   );
 
@@ -77,6 +84,12 @@ describe('tool_names indexing', () => {
       "SELECT tool_names FROM events WHERE type='assistant' AND tool_names <> '' AND session_id LIKE 'codex-%'",
     );
     expect(rows.map((r) => r.tool_names)).toContain('Bash');
+  });
+
+  it('captures the subagent_type of Claude Code Agent/Task spawns, one entry per typed spawn', async () => {
+    const conn = await getConnection();
+    const rows = await queryRows(conn, "SELECT subagent_names FROM events WHERE uuid IN ('a1', 'a2') ORDER BY uuid");
+    expect(rows.map((r) => r.subagent_names)).toEqual(['', 'code-reviewer,Explore']);
   });
 
   it('leaves tool_names empty for non-tool events', async () => {

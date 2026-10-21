@@ -41,6 +41,7 @@ import type {
 import { resolveImageWithin } from '../safe-image.js';
 import { toolNamesCsv } from '../tool-names.js';
 import { skillNamesCsv } from '../skill-names.js';
+import { subagentNamesCsv } from '../subagent-names.js';
 import type { CanonicalRow } from '../canonical.js';
 import { rec, str } from '../json.js';
 
@@ -632,6 +633,7 @@ export function toCanonicalRows(session: AntigravitySession, filePath: string): 
       tool_error_count: null, // Antigravity's typed result records carry no error signal
       tool_error_text: null,
       skill_names: skillNamesCsv(content),
+      subagent_names: subagentNamesCsv(content),
       text_content: text,
     };
   });

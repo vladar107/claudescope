@@ -55,8 +55,9 @@ const ERROR_BODY = `
 /**
  * One shared pass over a message's content blocks, as a LATERAL join: plain
  * text (text/thinking bodies for FTS), tool_use count + names, the skill
- * argument of `Skill` calls, and the count and bodies of tool_results flagged
- * `is_error` — six aggregates from a single `json_each` scan per row
+ * argument of `Skill` calls, the `subagent_type` of `Task`/`Agent` spawns, and
+ * the count and bodies of tool_results flagged `is_error` — seven aggregates
+ * from a single `json_each` scan per row
  * (correlated subqueries would re-scan the array per aggregate, which
  * measurably slows cold indexing). For a plain-string `content` the scan yields
  * scalar rows no block filter matches, so every aggregate comes back empty and
@@ -87,6 +88,13 @@ const BLOCK_AGG_LATERAL = `
           AND json_type(b.value, '$.input.skill') = 'VARCHAR'
           AND json_extract_string(b.value, '$.input.skill') <> ''
       ) AS skill_names,
+      string_agg(json_extract_string(b.value, '$.input.subagent_type'), ',') FILTER (
+        WHERE json_extract_string(b.value, '$.type') = 'tool_use'
+          AND json_extract_string(b.value, '$.name') IN ('Task', 'Agent')
+          AND json_type(b.value, '$.input.subagent_type') = 'VARCHAR'
+          AND json_extract_string(b.value, '$.input.subagent_type') <> ''
+          AND NOT contains(json_extract_string(b.value, '$.input.subagent_type'), ',')
+      ) AS subagent_names,
       string_agg(
         coalesce(
           json_extract_string(b.value, '$.text'),
@@ -154,6 +162,17 @@ const SKILL_NAMES_EXPR = `
   CASE
     WHEN message IS NULL OR ${STRING_CONTENT} THEN ''
     ELSE COALESCE(blocks.skill_names, '')
+  END`;
+
+/**
+ * Comma-joined `$.input.subagent_type` of `Task`/`Agent` tool_use blocks ('' when
+ * none). A spawn without a type (the implicit general-purpose agent) records
+ * nothing.
+ */
+const SUBAGENT_NAMES_EXPR = `
+  CASE
+    WHEN message IS NULL OR ${STRING_CONTENT} THEN ''
+    ELSE COALESCE(blocks.subagent_names, '')
   END`;
 
 /**
@@ -240,6 +259,7 @@ function eventsProjectionSql(filePath: string): string {
       ${TOOL_ERROR_COUNT_EXPR} AS tool_error_count,
       ${TOOL_ERROR_TEXT_EXPR} AS tool_error_text,
       ${SKILL_NAMES_EXPR} AS skill_names,
+      ${SUBAGENT_NAMES_EXPR} AS subagent_names,
       ${TEXT_CONTENT_EXPR} AS text_content,
       json_extract_string(message, '$.id') AS message_id,
       json_extract_string(forkedFrom, '$.sessionId') AS forked_from_session_id
