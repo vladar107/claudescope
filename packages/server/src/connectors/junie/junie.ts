@@ -23,6 +23,7 @@ import { ndjsonCache } from '../ndjson-cache.js';
 import { parseSession, toCanonicalRows } from './normalize.js';
 import { junieHooks, junieMcpServers, juniePlugins } from './extensions.js';
 import { junieSkills } from './skills.js';
+import { junieSubagents } from './subagents.js';
 
 const cache = ndjsonCache('junie');
 
@@ -128,6 +129,7 @@ export const junieConnector: AgentConnector = {
   loadSession,
   globalMemory,
   skills: junieSkills,
+  subagents: junieSubagents,
   mcpServers: junieMcpServers,
   hooks: junieHooks,
   plugins: juniePlugins,

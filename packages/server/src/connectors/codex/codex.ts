@@ -30,6 +30,7 @@ import {
 } from './normalize.js';
 import { codexHooks, codexMcpServers, codexPlugins } from './extensions.js';
 import { codexSkills } from './skills.js';
+import { codexSubagents } from './subagents.js';
 
 const cache = ndjsonCache('codex');
 
@@ -172,6 +173,7 @@ export const codexConnector: AgentConnector = {
   loadSession,
   globalMemory: codexGlobalMemory,
   skills: codexSkills,
+  subagents: codexSubagents,
   mcpServers: codexMcpServers,
   hooks: codexHooks,
   plugins: codexPlugins,

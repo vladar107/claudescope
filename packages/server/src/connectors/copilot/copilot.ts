@@ -24,6 +24,7 @@ import { ndjsonCache } from '../ndjson-cache.js';
 import { parseCopilotSession, toCanonicalRows, type CopilotSession } from './normalize.js';
 import { copilotGlobalMemory } from './memory.js';
 import { copilotSkills } from './skills.js';
+import { copilotSubagents } from './subagents.js';
 import { copilotHookEntries, copilotMcpServers, copilotPlugins } from './extensions.js';
 
 const cache = ndjsonCache('copilot');
@@ -110,6 +111,7 @@ export const copilotConnector: AgentConnector = {
   loadSession,
   globalMemory: copilotGlobalMemory,
   skills: copilotSkills,
+  subagents: copilotSubagents,
   mcpServers: copilotMcpServers,
   hooks: copilotHookEntries,
   plugins: copilotPlugins,

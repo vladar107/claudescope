@@ -21,6 +21,7 @@ import { MAX_TOOL_ERROR_TEXT } from '../tool-errors.js';
 import { globalMemory, memorySlugForCwd, projectMemory } from './memory.js';
 import { claudeCodeHooks, claudeCodeMcpServers, claudeCodePlugins } from './extensions.js';
 import { claudeCodeSkills } from './skills.js';
+import { claudeCodeSubagents } from './subagents.js';
 
 /**
  * Shared `read_ndjson` options for the line-delimited Claude transcripts.
@@ -499,6 +500,7 @@ export const claudeCodeConnector: AgentConnector = {
   projectMemory,
   projectMemorySlug: memorySlugForCwd,
   skills: claudeCodeSkills,
+  subagents: claudeCodeSubagents,
   mcpServers: claudeCodeMcpServers,
   hooks: claudeCodeHooks,
   plugins: claudeCodePlugins,
