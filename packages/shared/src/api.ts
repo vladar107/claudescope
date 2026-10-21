@@ -843,6 +843,80 @@ export interface SkillsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Subagents — custom subagent definitions, read live from agent home dirs
+// ---------------------------------------------------------------------------
+
+/**
+ * One subagent definition an agent can spawn, read live from its home dir
+ * (never indexed). `name` is the name a spawn records it under
+ * (`events.subagent_names`); a plugin-shipped Claude Code agent is
+ * `plugin:agent`. Origins mean what they mean for skills ({@link SkillOrigin}).
+ */
+export interface InstalledSubagent {
+  name: string;
+  /** Frontmatter / config `description`, when present. */
+  description?: string;
+  /** Model the definition pins, as written (`haiku`, `inherit`, a full id, …). */
+  model?: string;
+  origin: SkillOrigin;
+  plugin?: SkillPlugin;
+  /** The definition file as the agent sees it, home contracted to `~`. */
+  sourcePath: string;
+  /** Resolved target when `sourcePath` goes through a symlink; absent otherwise. */
+  realPath?: string;
+  /** ISO mtime of the definition file. */
+  updatedAt: string;
+  /** Other agents that read the very same definition (same resolved path). */
+  visibleTo: string[];
+  /** Spawn figures; absent when the agent's format records no subagent spawn. */
+  usage?: SkillUsage;
+}
+
+/**
+ * A subagent the transcripts show spawned but that no definition in this
+ * agent's home dir names — a built-in agent, a project-level definition, or
+ * one removed since.
+ */
+export interface UnlocatedSubagent {
+  name: string;
+  usage: SkillUsage;
+}
+
+/** Every subagent one agent can see, plus the spawned-but-unlocated ones. */
+export interface AgentSubagents {
+  connectorId: string;
+  label: string;
+  /** False when this agent's format records no subagent spawn (every `usage` is absent). */
+  usageSignal: boolean;
+  /** Why usage is unavailable or how it is counted, when that needs saying. */
+  usageNote?: string;
+  subagents: InstalledSubagent[];
+  unlocated: UnlocatedSubagent[];
+}
+
+/**
+ * Per-connector rollup for the Extensions landing card. Agents whose format
+ * has no user-level subagent definitions have `supported: false`;
+ * `used`/`neverUsed` only mean something when `usageSignal` is true.
+ */
+export interface SubagentsConnectorOverview {
+  connectorId: string;
+  label: string;
+  supported: boolean;
+  usageSignal: boolean;
+  installed: number;
+  used: number;
+  neverUsed: number;
+  unlocated: number;
+}
+
+/** GET /api/subagents */
+export interface SubagentsResponse {
+  connectors: SubagentsConnectorOverview[];
+  agents: AgentSubagents[];
+}
+
+// ---------------------------------------------------------------------------
 // Extensions — MCP servers, hooks, and plugins, read live from agent home dirs
 // ---------------------------------------------------------------------------
 

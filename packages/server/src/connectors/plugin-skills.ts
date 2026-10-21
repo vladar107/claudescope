@@ -23,13 +23,15 @@ import type { SkillEntry } from './types.js';
 
 const MANIFESTS = ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json'];
 
-interface Manifest {
+/** The manifest fields plugin readers use; every one is optional and untrusted. */
+export interface Manifest {
   skills?: unknown;
   commands?: unknown;
+  agents?: unknown;
 }
 
 /** The manifest `skills`/`commands` paths, resolved under `root`; escapes dropped. */
-function manifestPaths(root: string, value: unknown): string[] {
+export function manifestPaths(root: string, value: unknown): string[] {
   const raw = typeof value === 'string' ? [value] : Array.isArray(value) ? value : [];
   const out: string[] = [];
   for (const v of raw) {
@@ -42,7 +44,8 @@ function manifestPaths(root: string, value: unknown): string[] {
   return out;
 }
 
-function readManifests(root: string): Manifest[] {
+/** Every plugin manifest present at `root`, parsed; malformed or absent ones are skipped. */
+export function readManifests(root: string): Manifest[] {
   const out: Manifest[] = [];
   for (const name of MANIFESTS) {
     try {
