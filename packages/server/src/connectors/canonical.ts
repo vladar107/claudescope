@@ -53,6 +53,7 @@ export const CANONICAL_COLUMNS = {
   tool_error_count: 'INTEGER',
   tool_error_text: 'VARCHAR',
   skill_names: 'VARCHAR',
+  subagent_names: 'VARCHAR',
   text_content: 'VARCHAR',
 } as const;
 
@@ -118,6 +119,8 @@ export interface CanonicalRow {
   /** Failed tool_result bodies, newline-joined; NULL when the row has none. */
   tool_error_text: string | null;
   skill_names: string;
+  /** Comma-joined `subagent_type` of canonical `Task`/`Agent` spawns ('' when none). */
+  subagent_names: string;
   text_content: string;
   /** Session title; read by the aux projection, ignored by the events one. */
   title?: string;
@@ -165,6 +168,7 @@ export function compactionRow(
     tool_error_count: null,
     tool_error_text: null,
     skill_names: '',
+    subagent_names: '',
     text_content: '',
     compaction_trigger: meta.trigger ?? null,
     compaction_pre_tokens: meta.preTokens ?? null,

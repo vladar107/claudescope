@@ -59,6 +59,7 @@ import type {
 import { resolveImageWithin } from '../safe-image.js';
 import { toolNamesCsv } from '../tool-names.js';
 import { skillNamesCsv } from '../skill-names.js';
+import { subagentNamesCsv } from '../subagent-names.js';
 import { toolErrorCount, toolErrorText } from '../tool-errors.js';
 import { compactionRow, type CanonicalRow } from '../canonical.js';
 import { num, rec, str } from '../json.js';
@@ -556,6 +557,7 @@ export function toCanonicalRows(session: CopilotSession, filePath: string): Cano
       tool_error_count: toolErrorCount(content),
       tool_error_text: toolErrorText(content),
       skill_names: skillNamesCsv(content),
+      subagent_names: subagentNamesCsv(content),
       text_content: text,
       title: session.title,
     };

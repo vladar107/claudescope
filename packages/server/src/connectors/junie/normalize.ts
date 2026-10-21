@@ -469,6 +469,7 @@ export function toCanonicalRows(session: JunieSession, filePath: string): Canoni
       tool_error_count: null, // Junie results are 'modified: path' strings — no error signal
       tool_error_text: null,
       skill_names: skillNamesCsv(arr),
+      subagent_names: '', // Junie's spawn_subagent never reaches events.jsonl
       text_content: text,
       title: session.title,
     };

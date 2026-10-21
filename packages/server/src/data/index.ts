@@ -380,7 +380,7 @@ async function loadFile(
       ${costExpr} AS cost_usd,
       ev.text_content,
       ev.message_id, ev.forked_from_session_id, TRUE AS usage_canonical,
-      ev.tool_error_count, ev.tool_error_text, ev.skill_names,
+      ev.tool_error_count, ev.tool_error_text, ev.skill_names, ev.subagent_names,
       hash(ev.file_path, ev.uuid) AS doc_id
     FROM (
       ${connector.eventsProjectionSql(file.path)}

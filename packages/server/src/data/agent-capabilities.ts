@@ -184,6 +184,49 @@ export function skillUsageAvailabilityNote(connectorId: string): string | undefi
 }
 
 /**
+ * Agents whose transcripts name the subagent a spawn delegates to, so
+ * `events.subagent_names` carries real names: each maps its native spawn onto
+ * a canonical `Task`/`Agent` with `input.subagent_type`
+ * (`connectors/subagent-names.ts`; pi's batch `subagent` calls are read in its
+ * normalizer). Junie's `spawn_subagent` never reaches `events.jsonl`, so its
+ * subagents carry an ABSENT usage, never 0. Separate from
+ * {@link hasSubagentLinkage}: that is about nesting a child run, this about
+ * naming the agent. Every connector must sit in exactly one of the two sets
+ * (`connector-subagent-signal.test.ts`).
+ */
+const SUBAGENT_INVOCATION_SIGNAL = new Set([
+  'claude-code',
+  'codex',
+  'pi',
+  'opencode',
+  'copilot',
+  'antigravity',
+  'grok',
+]);
+const NO_SUBAGENT_INVOCATION_SIGNAL = new Set(['junie']);
+
+export function hasSubagentInvocationSignal(connectorId: string): boolean {
+  return SUBAGENT_INVOCATION_SIGNAL.has(connectorId);
+}
+
+export function connectorsWithSubagentInvocationSignal(): string[] {
+  return [...SUBAGENT_INVOCATION_SIGNAL];
+}
+
+export function connectorsWithoutSubagentInvocationSignal(): string[] {
+  return [...NO_SUBAGENT_INVOCATION_SIGNAL];
+}
+
+/** Why an agent's subagent usage is unavailable (see {@link hasSubagentInvocationSignal}). */
+const SUBAGENT_USAGE_NOTES: Record<string, string> = {
+  junie: "Junie's transcripts don't record which subagent it delegated to, so subagent usage is unavailable.",
+};
+
+export function subagentUsageAvailabilityNote(connectorId: string): string | undefined {
+  return SUBAGENT_USAGE_NOTES[connectorId];
+}
+
+/**
  * Why an agent's usage figures read n/a (or skewed) on the agent comparison —
  * the human sentence behind {@link usageGranularity} and the nulls around it.
  * A property of the source format, so it lives here rather than in the route.
