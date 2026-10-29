@@ -239,6 +239,17 @@ context compaction and injects the command to read the pre-compaction
 transcript; see the [plugin guide](./plugins/claudescope/README.md) for its
 behavior, opt-out, and local development.
 
+### Raycast
+
+<a href="https://www.raycast.com/vladar107/claudescope"><img src="https://www.raycast.com/vladar107/claudescope/install_button@2x.png?v=1.1" height="64" alt="Install Claudescope from the Raycast Store"></a>
+
+On macOS, the [Raycast extension](https://www.raycast.com/vladar107/claudescope)
+searches the sessions Claudescope has indexed and opens the exact matching
+message in the web app. Commands: **Search ClaudeScope**, **ClaudeScope Recent
+Sessions**, and **Open ClaudeScope**. It needs Claudescope 0.17.0 or later on
+`PATH`; if it can't find the executable, set its absolute path in the extension
+preferences.
+
 ### Scripting (CLI)
 
 The same lookups work from the terminal — read-only query subcommands that
