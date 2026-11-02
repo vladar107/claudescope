@@ -391,3 +391,33 @@ describe('opencode session fingerprint', () => {
     expect(after.lastModifiedMs).toBe(9999);
   });
 });
+
+describe('opencode in-flight tool parts', () => {
+  it('leaves a running call open and never fans an unconfirmed apply_patch into edits', async () => {
+    const { buildEvents } = await import('../src/connectors/opencode/normalize.js');
+    const part = (data: unknown): string => JSON.stringify(data);
+    const events = buildEvents({
+      id: 'ses_live',
+      directory: '/tmp/ocproj',
+      title: 'Live',
+      parentId: null,
+      rootId: 'ses_live',
+      messages: [{ id: 'a1', data: part({ role: 'assistant', time: { created: 1000 } }) }],
+      partsByMessage: new Map([
+        [
+          'a1',
+          [
+            part({ type: 'tool', tool: 'bash', callID: 'call_b', state: { status: 'running', input: { command: 'sleep 9' } } }),
+            part({
+              type: 'tool', tool: 'apply_patch', callID: 'call_p',
+              state: { status: 'running', input: {}, metadata: { files: [{ filePath: '/x', type: 'add', patch: '' }] } },
+            }),
+          ],
+        ],
+      ]),
+    });
+    expect(events).toHaveLength(1);
+    const content = (events[0] as { message: { content: { type: string; name?: string }[] } }).message.content;
+    expect(content.map((b) => b.name)).toEqual(['Bash', 'apply_patch']);
+  });
+});
