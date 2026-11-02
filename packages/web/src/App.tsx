@@ -1,11 +1,13 @@
 import { Navigate, NavLink, Route, Routes, useLocation, useParams } from 'react-router';
-import { Cpu, FolderOpen, LineChart, Puzzle, Search, Settings, type LucideIcon } from 'lucide-react';
+import { Activity, Cpu, FolderOpen, LineChart, Puzzle, Search, Settings, type LucideIcon } from 'lucide-react';
 import { ErrorBoundary } from './components';
 import { useServerStatus } from './status/StatusProvider.js';
 import { BrowsePage } from './pages/browse/BrowsePage.js';
 import { ProjectLayout } from './pages/browse/ProjectLayout.js';
 import { SessionListPage } from './pages/browse/SessionList.js';
 import { SessionPage } from './pages/session/SessionPage.js';
+import { LivePage } from './pages/live/LivePage.js';
+import { useLiveCount } from './pages/live/useLiveCount.js';
 import { SearchPage } from './pages/search/SearchPage.js';
 import { AnalyticsPage } from './pages/analytics/AnalyticsPage.js';
 import { MemoryPage } from './pages/memory/MemoryPage.js';
@@ -22,10 +24,13 @@ interface NavItem {
   icon: LucideIcon;
   /** `end` for routes that should only match exactly (the index route). */
   end?: boolean;
+  /** Live session count shown as a pill on the item. */
+  badge?: 'live';
 }
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Browse', icon: FolderOpen, end: true },
+  { to: '/live', label: 'Live', icon: Activity, badge: 'live' },
   { to: '/memory', label: 'Memory', icon: Cpu },
   { to: '/extensions', label: 'Extensions', icon: Puzzle },
   { to: '/search', label: 'Search', icon: Search },
@@ -41,6 +46,7 @@ function SkillsRedirect() {
 /** Left navigation sidebar. */
 function Sidebar() {
   const { updateAvailable, version } = useServerStatus();
+  const liveCount = useLiveCount();
 
   return (
     <nav className="tv-nav">
@@ -55,7 +61,7 @@ function Sidebar() {
         />
         <span className="tv-nav__brand-text">Claudescope</span>
       </NavLink>
-      {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+      {NAV_ITEMS.map(({ to, label, icon: Icon, end, badge }) => (
         <NavLink
           key={to}
           to={to}
@@ -64,6 +70,14 @@ function Sidebar() {
         >
           <Icon size={16} aria-hidden="true" />
           {label}
+          {badge === 'live' && liveCount > 0 ? (
+            <>
+              <span className="tv-nav__badge" aria-hidden="true">
+                {liveCount}
+              </span>
+              <span className="tv-visually-hidden">{`, ${liveCount} live session${liveCount === 1 ? '' : 's'}`}</span>
+            </>
+          ) : null}
         </NavLink>
       ))}
       <div className="tv-nav__spacer" />
@@ -105,6 +119,7 @@ export function App() {
               <Route path="memory" element={<ProjectMemoryPage />} />
             </Route>
             <Route path="/sessions/:id" element={<SessionPage />} />
+            <Route path="/live" element={<LivePage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/memory" element={<MemoryPage />} />

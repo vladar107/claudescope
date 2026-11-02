@@ -13,6 +13,8 @@ import type {
   ExtensionsResponse,
   HealthResponse,
   IndexerStatus,
+  LiveCountResponse,
+  LiveResponse,
   MemoryResponse,
   PricingRefreshResponse,
   ProjectMemoryResponse,
@@ -307,6 +309,16 @@ export const api = {
       })}`,
       { signal },
     );
+  },
+
+  /** GET /api/live?windowMin= — sessions written to within the window, with an inferred state. */
+  live(windowMin: number, signal?: AbortSignal): Promise<LiveResponse> {
+    return request<LiveResponse>(`/live${qs({ windowMin })}`, { signal });
+  },
+
+  /** GET /api/live/count?windowMin= — stat-only count for the nav badge. */
+  liveCount(windowMin: number, signal?: AbortSignal): Promise<LiveCountResponse> {
+    return request<LiveCountResponse>(`/live/count${qs({ windowMin })}`, { signal });
   },
 
   /** GET /api/sources */

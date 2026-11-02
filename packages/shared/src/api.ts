@@ -1266,3 +1266,69 @@ export interface AgentComparisonResponse {
   rows: AgentComparisonRow[];
   prLinked: PrLinkedStats;
 }
+
+// ---------------------------------------------------------------------------
+// Live — sessions written to recently, with a state inferred from the
+// transcript tail (never from the agent process, which Claudescope never sees)
+// ---------------------------------------------------------------------------
+
+/** Allowed `windowMin` values for the live endpoints; anything else falls back to the default. */
+export const LIVE_WINDOW_MINUTES = [5, 15, 60] as const;
+export const LIVE_DEFAULT_WINDOW_MINUTES = 15;
+
+/**
+ * What a live session is doing, read from the last block of its last
+ * main-thread item:
+ * - `idle`: the agent finished — assistant text with no open tool call, a user
+ *   interrupt, or a local command. Nothing is running; the next move is the user's.
+ * - `working`: a user prompt, a closed tool call, or thinking only.
+ * - `tool`: a tool call with no result yet (see {@link LiveSession.openTool}).
+ * - `subagents`: a subagent run is still active (its own tail is not `idle`).
+ * - `ended`: the agent's format recorded a session end (Copilot only).
+ * - `unknown`: the tail matches no rule, or the agent's format has no usable tail.
+ * "Possibly stuck" is not a state: the client derives it from the timestamps.
+ */
+export type LiveState = 'idle' | 'working' | 'tool' | 'subagents' | 'ended' | 'unknown';
+
+/** An open tool call at the tail of a live session. */
+export interface LiveOpenTool {
+  name: string;
+  /** The call's input, with long string fields capped. */
+  input: unknown;
+  /** Timestamp of the turn that made the call, epoch ms; absent when unparsable. */
+  sinceMs?: number;
+}
+
+/** One session written to within the live window. */
+export interface LiveSession {
+  /** Stored metrics; capability-absent figures stay absent, never 0. */
+  meta: SessionMeta;
+  state: LiveState;
+  /** Latest mtime across the session's files, epoch ms. */
+  lastWriteMs: number;
+  /** Timestamp of the last main-thread item, epoch ms — when the current state began. */
+  stateSinceMs?: number;
+  openTool?: LiveOpenTool;
+  /** Subagent runs, split by whether each is still active. */
+  subagents: { running: number; done: number };
+  /**
+   * How the agent records token usage, so the UI can tell "not recorded"
+   * (`none`) and "lands at session end" (`session-level`) apart from a real $0.
+   */
+  usageGranularity: AgentUsageGranularity;
+}
+
+/** GET /api/live */
+export interface LiveResponse {
+  windowMinutes: number;
+  /** Most recently written first. */
+  sessions: LiveSession[];
+  /** Candidates left out by the cap. */
+  truncated: number;
+}
+
+/** GET /api/live/count — stat-only, for the nav badge (no transcript is parsed). */
+export interface LiveCountResponse {
+  windowMinutes: number;
+  count: number;
+}

@@ -41,7 +41,7 @@ const COMPLETE_SYNTHETIC_TURN = [
 ];
 
 /** True only for a complete, reserved harness turn stored as user text. */
-function isSyntheticTurn(raw: string): boolean {
+export function isSyntheticTurn(raw: string): boolean {
   const text = raw.trim();
   return COMPLETE_SYNTHETIC_TURN.some((pattern) => pattern.test(text));
 }

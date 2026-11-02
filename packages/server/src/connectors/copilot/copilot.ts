@@ -74,10 +74,14 @@ function auxProjections(filePath: string): AuxProjections {
   };
 }
 
-async function loadSession(_sessionId: string, paths: string[]): Promise<SessionData> {
+async function loadSession(
+  _sessionId: string,
+  paths: string[],
+  opts: { resolveImages?: boolean } = {},
+): Promise<SessionData> {
   // resolveImages: pull saved-attachment bytes off disk for the detail view.
   const sessions = paths
-    .map((p) => parseCopilotSession(p, { resolveImages: true }))
+    .map((p) => parseCopilotSession(p, { resolveImages: opts.resolveImages ?? true }))
     .filter((s): s is CopilotSession => s !== null);
   const mainEvents = sessions.flatMap((s) => s.events);
   // Inline subagent runs, segmented out by the normalizer. `agentId` IS the
@@ -94,7 +98,13 @@ async function loadSession(_sessionId: string, paths: string[]): Promise<Session
       events: sub.events,
     })),
   );
-  return { mainEvents, subagents };
+  // A session spread over several files ended only if its last end marker is.
+  const endedAt = sessions
+    .map((s) => s.endedAt)
+    .filter((t): t is string => t !== undefined)
+    .sort()
+    .pop();
+  return { mainEvents, subagents, ...(endedAt ? { endedAt } : {}) };
 }
 
 export const copilotConnector: AgentConnector = {
