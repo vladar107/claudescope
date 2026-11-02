@@ -119,4 +119,5 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0092 | [Fast-mode pricing](./0092-fast-mode-pricing.md) | done |
 | 0093 | [Extensions page](./0093-extensions-page.md) | done |
 | 0094 | [Subagent definitions on the Extensions page](./0094-subagent-definitions.md) | done |
+| 0095 | [Live tab: active sessions, subagents, and agent-to-agent messages](./0095-live-tab.md) | in-progress |
 | 0096 | [Back off failed-file retries](./0096-back-off-failed-file-retries.md) | done |
