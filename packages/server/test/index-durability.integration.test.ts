@@ -148,6 +148,7 @@ const pricingWith = (defaultInput: unknown): string =>
 
 let reindex: () => Promise<ReindexResponse>;
 let failNextFinalizeForTests: () => void;
+let expireFailedLoadBackoffForTests: () => void;
 let conn: DuckDBConnection;
 let queryRows: typeof import('../src/db/duckdb.js').queryRows;
 let sqlString: typeof import('../src/db/duckdb.js').sqlString;
@@ -176,7 +177,7 @@ beforeAll(async () => {
   writeFileSync(pricingPath, pricingWith(3));
   writeFileSync(keepFile, row('sessKeep', 'k1') + row('sessKeep', 'k2') + row('sessKeep', 'k3'));
 
-  ({ reindex, failNextFinalizeForTests } = await import('../src/data/index.js'));
+  ({ reindex, failNextFinalizeForTests, expireFailedLoadBackoffForTests } = await import('../src/data/index.js'));
   const duck = await import('../src/db/duckdb.js');
   ({ queryRows, sqlString, closeConnection } = duck);
   conn = await duck.getConnection();
@@ -241,12 +242,51 @@ describe('a projection failure validation cannot foresee', () => {
 
       // Readable again → the pass recovers and picks up the appended turn.
       chmodSync(doomed, 0o644);
+      expireFailedLoadBackoffForTests();
       const recovered = await reindex();
       expect(recovered.failed).toBe(0);
       expect(recovered.reindexed).toBe(1);
       expect(await countEvents(doomed)).toBe(3);
 
       rmSync(doomed, { force: true });
+      await reindex();
+    },
+  );
+
+  it.skipIf(!canMakeUnreadable)(
+    'backs off while unchanged, retries once due, and retries at once on a change',
+    async () => {
+      const stuck = join(projDir, 'sessStuck.jsonl');
+      writeFileSync(stuck, row('sessStuck', 's1'));
+      chmodSync(stuck, 0o000);
+
+      expect((await reindex()).failed).toBe(1);
+
+      // Readable again but byte-identical: a retry would now succeed, so
+      // reindexed === 0 proves the backed-off file was skipped.
+      chmodSync(stuck, 0o644);
+      const skipped = await reindex();
+      expect(skipped.failed).toBe(0);
+      expect(skipped.reindexed).toBe(0);
+      expect(await countEvents(stuck)).toBe(0);
+
+      expireFailedLoadBackoffForTests();
+      const due = await reindex();
+      expect(due.failed).toBe(0);
+      expect(due.reindexed).toBe(1);
+      expect(await countEvents(stuck)).toBe(1);
+
+      appendFileSync(stuck, row('sessStuck', 's2'));
+      chmodSync(stuck, 0o000);
+      expect((await reindex()).failed).toBe(1);
+      chmodSync(stuck, 0o644);
+      expect((await reindex()).reindexed).toBe(0);
+      appendFileSync(stuck, row('sessStuck', 's3'));
+      const changed = await reindex();
+      expect(changed.reindexed).toBe(1);
+      expect(await countEvents(stuck)).toBe(3);
+
+      rmSync(stuck, { force: true });
       await reindex();
     },
   );

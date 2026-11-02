@@ -57,6 +57,25 @@ export function failNextFinalizeForTests(): void {
   failNextFinalize = true;
 }
 
+/** Files whose load failed, keyed by path with the (mtime, size) they failed
+ *  at. A file still at that signature is retried only with exponential backoff
+ *  (1 min doubling to 1 h): an oversized transcript (e.g. a DuckDB
+ *  out-of-memory on a multi-hundred-MB file) otherwise holds the shared
+ *  connection for seconds on every pass, while a transient failure still
+ *  recovers without the file changing. A change retries immediately.
+ *  In memory only — a restart retries once, which is acceptable. */
+const failedLoads = new Map<
+  string,
+  { mtime: number; size: number; connectorId: string; attempts: number; retryAtMs: number }
+>();
+const FAILED_LOAD_BASE_DELAY_MS = 60_000;
+const FAILED_LOAD_MAX_DELAY_MS = 3_600_000;
+
+/** Test seam: make every remembered failure due for retry now. */
+export function expireFailedLoadBackoffForTests(): void {
+  for (const meta of failedLoads.values()) meta.retryAtMs = 0;
+}
+
 /** Min interval between mid-first-build partial `sessions` rebuilds (ms).
  *  Env-overridable so tests can force a rebuild after every file. */
 const PARTIAL_REBUILD_MS = Number(process.env.PARTIAL_REBUILD_MS ?? 3000);
@@ -822,6 +841,7 @@ export async function rebuildIndex(): Promise<ReindexResponse> {
       // the rebuild's own pass must create the index rather than debounce it.
       ftsStale = false;
       lastFtsRebuildAt = 0;
+      failedLoads.clear();
       // Empty `files` table ⇒ doReindex reloads everything from the sources.
       return stampLastPass(await doReindex());
     } finally {
@@ -941,7 +961,19 @@ async function doReindex(opts?: { flushFts?: boolean }): Promise<ReindexResponse
   }
 
   // Precompute the changed set so progress reports a stable total up front.
+  for (const [path, meta] of failedLoads) {
+    if (!discoveredPaths.has(path) && !failedConnectors.has(meta.connectorId)) failedLoads.delete(path);
+  }
   const changed = discovered.filter(({ file }) => {
+    const knownFailure = failedLoads.get(file.path);
+    if (
+      knownFailure &&
+      knownFailure.mtime === file.mtimeMs &&
+      knownFailure.size === file.size &&
+      Date.now() < knownFailure.retryAtMs
+    ) {
+      return false;
+    }
     const prev = existing.get(file.path);
     return !(prev && prev.mtime === file.mtimeMs && prev.size === file.size);
   });
@@ -990,6 +1022,7 @@ async function doReindex(opts?: { flushFts?: boolean }): Promise<ReindexResponse
                   ${cwd ? sqlString(cwd) : 'NULL'}, ${sqlString(connector.id)}, now())
         `);
         reindexed += 1;
+        failedLoads.delete(file.path);
 
         // During the first build (server not yet ready), periodically rebuild
         // the derived `sessions` so /api/projects grows while indexing instead
@@ -1004,6 +1037,17 @@ async function doReindex(opts?: { flushFts?: boolean }): Promise<ReindexResponse
         }
       } catch (err) {
         failed += 1;
+        const prior = failedLoads.get(file.path);
+        const attempts =
+          prior && prior.mtime === file.mtimeMs && prior.size === file.size ? prior.attempts + 1 : 1;
+        const delay = Math.min(FAILED_LOAD_BASE_DELAY_MS * 2 ** (attempts - 1), FAILED_LOAD_MAX_DELAY_MS);
+        failedLoads.set(file.path, {
+          mtime: file.mtimeMs,
+          size: file.size,
+          connectorId: connector.id,
+          attempts,
+          retryAtMs: Date.now() + delay,
+        });
         console.warn(`claudescope: skipping unreadable transcript ${file.path}:`, err);
       } finally {
         // Skipped files still advance the counter so processed reaches total.
