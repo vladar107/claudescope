@@ -1,0 +1,136 @@
+/* Live tab — sessions written to recently. Relies on global tokens. */
+
+.tv-live__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--tv-space-4);
+  margin-bottom: var(--tv-space-4);
+  flex-wrap: wrap;
+}
+.tv-live__sub {
+  margin: var(--tv-space-1) 0 0;
+  font-size: var(--tv-fs-base);
+}
+.tv-live__inline-select {
+  margin: 0 var(--tv-space-1);
+  padding: 1px var(--tv-space-2);
+}
+
+.tv-live__controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--tv-space-1);
+}
+.tv-live__field {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+}
+.tv-live__note {
+  margin: 0;
+  font-size: var(--tv-fs-sm);
+}
+
+.tv-live__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius-sm);
+  background: var(--tv-bg-elevated);
+}
+.tv-live__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--tv-fs-sm);
+}
+.tv-live__table th,
+.tv-live__table td {
+  padding: var(--tv-space-2) var(--tv-space-3);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--tv-border);
+}
+.tv-live__table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.tv-live__table thead th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  color: var(--tv-fg-faint);
+  white-space: nowrap;
+}
+.tv-live__session {
+  min-width: 220px;
+}
+.tv-live__title {
+  color: var(--tv-fg);
+  font-size: var(--tv-fs-md);
+  font-weight: 600;
+  word-break: break-word;
+}
+.tv-live__title:hover {
+  text-decoration: underline;
+}
+.tv-live__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tv-space-1);
+  align-items: center;
+  margin-top: 4px;
+  font-size: var(--tv-fs-sm);
+}
+.tv-live__nowrap {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.tv-live__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--tv-border);
+  background: var(--tv-bg-inset);
+  color: var(--tv-fg-muted);
+  font-size: var(--tv-fs-sm);
+  white-space: nowrap;
+}
+.tv-live__dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.tv-live__pill--idle {
+  color: var(--tv-accent);
+}
+.tv-live__pill--working,
+.tv-live__pill--subagents {
+  color: var(--tv-assistant);
+}
+.tv-live__pill--tool {
+  color: var(--tv-tool);
+}
+.tv-live__pill--stuck {
+  color: var(--tv-warning);
+  font-weight: 600;
+}
+.tv-live__detail {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.tv-live__more {
+  margin: var(--tv-space-2) 0 0;
+  font-size: var(--tv-fs-sm);
+}
+.tv-live__footer {
+  margin-top: var(--tv-space-3);
+  font-size: var(--tv-fs-sm);
+}

@@ -83,14 +83,18 @@ function auxProjections(_filePath: string): AuxProjections {
 /**
  * Load a session's events, splitting the resolved files into the main transcript
  * (its conv-id equals the session id) and one subagent per re-parented child
- * transcript. Images are resolved here (detail view only).
+ * transcript. Images are resolved here (detail view only) unless `opts` opts out.
  */
-async function loadSession(sessionId: string, paths: string[]): Promise<SessionData> {
+async function loadSession(
+  sessionId: string,
+  paths: string[],
+  opts: { resolveImages?: boolean } = {},
+): Promise<SessionData> {
   const present = paths.filter((p) => existsSync(p));
   const mainEvents: RawEvent[] = [];
   const subagents: SubagentSource[] = [];
   for (const p of present) {
-    const parsed = parseAntigravitySession(p, { resolveImages: true });
+    const parsed = parseAntigravitySession(p, { resolveImages: opts.resolveImages ?? true });
     if (parsed.convId === sessionId) {
       mainEvents.push(...parsed.events);
     } else {

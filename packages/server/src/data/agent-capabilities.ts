@@ -116,6 +116,59 @@ export function hasInterruptSignal(connectorId: string): boolean {
   return INTERRUPT_SIGNAL.has(connectorId);
 }
 
+/** Prefix of the user-message text Claude Code stores on an interrupt (both
+ *  variants: `…by user]` and `…by user for tool use]`). */
+export const INTERRUPT_PREFIX = '[Request interrupted by user';
+
+/**
+ * Agents whose assembled thread tail says what the session is doing right now:
+ * it ends in assistant prose, a tool call or a user prompt. Junie's UI-event
+ * stream has no assistant prose, so a tail read from it would be a fabricated
+ * `tool`/`working`; its live state is `unknown`.
+ */
+const LIVE_STATE_SIGNAL = new Set([
+  'claude-code', 'codex', 'pi', 'opencode', 'copilot', 'antigravity', 'grok',
+]);
+
+/** The other side of {@link LIVE_STATE_SIGNAL} (enforced by `connector-live-signal.test.ts`). */
+const NO_LIVE_STATE_SIGNAL = new Set(['junie']);
+
+export function hasLiveStateSignal(connectorId: string): boolean {
+  return LIVE_STATE_SIGNAL.has(connectorId);
+}
+
+export function connectorsWithLiveStateSignal(): string[] {
+  return [...LIVE_STATE_SIGNAL];
+}
+
+export function connectorsWithoutLiveStateSignal(): string[] {
+  return [...NO_LIVE_STATE_SIGNAL];
+}
+
+/**
+ * Agents whose format writes an explicit end-of-session marker, surfaced as
+ * `SessionData.endedAt`. Only Copilot (`session.shutdown`); every other format
+ * just stops growing, so "running" can't be told from "finished".
+ */
+const SESSION_END_SIGNAL = new Set(['copilot']);
+
+/** The other side of {@link SESSION_END_SIGNAL} (enforced by `connector-live-signal.test.ts`). */
+const NO_SESSION_END_SIGNAL = new Set([
+  'claude-code', 'codex', 'pi', 'opencode', 'junie', 'antigravity', 'grok',
+]);
+
+export function hasSessionEndSignal(connectorId: string): boolean {
+  return SESSION_END_SIGNAL.has(connectorId);
+}
+
+export function connectorsWithSessionEndSignal(): string[] {
+  return [...SESSION_END_SIGNAL];
+}
+
+export function connectorsWithoutSessionEndSignal(): string[] {
+  return [...NO_SESSION_END_SIGNAL];
+}
+
 /**
  * Agents whose transcripts link a subagent run back to the session that spawned
  * it. Junie delegates by running `junie …` as a plain terminal command, so its

@@ -103,8 +103,14 @@ export interface AgentConnector {
    * Read a single session's files (already resolved from the `files` table) and
    * normalize them into the domain `SessionData` consumed by the thread
    * assembler. `paths` are all files recorded for the session.
+   * `resolveImages: false` skips reading image bytes off disk (default true);
+   * connectors that never resolve images ignore it.
    */
-  loadSession(sessionId: string, paths: string[]): Promise<SessionData>;
+  loadSession(
+    sessionId: string,
+    paths: string[],
+    opts?: { resolveImages?: boolean },
+  ): Promise<SessionData>;
 
   /**
    * Optional: live-stat ONE of this connector's discovered files — the same

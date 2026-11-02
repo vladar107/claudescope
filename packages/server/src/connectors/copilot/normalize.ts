@@ -93,6 +93,9 @@ export interface CopilotSession {
   title: string;
   events: CopilotThreadEvent[];
   subagents: CopilotSubagent[];
+  /** `session.shutdown` timestamp, unless a conversational event follows it.
+   *  Read by `loadSession` only — never projected into the indexed rows. */
+  endedAt?: string;
 }
 
 
@@ -456,11 +459,13 @@ export function parseCopilotSession(
   };
 
   let shutdown: MessageUsage | null = null;
+  let endedAt: string | undefined;
   for (const ev of lines) {
     const d = rec(ev.data);
     const ts = str(ev.timestamp);
     if (ev.type === 'subagent.started' || ev.type === 'subagent.completed') continue; // metadata (pass 1)
     const stream = str(ev.agentId) ? subStream(str(ev.agentId)) : main;
+    if (endedAt && (ev.type === 'user.message' || ev.type === 'assistant.message')) endedAt = undefined;
     if (ev.type === 'session.model_change') {
       if (str(d.newModel)) stream.model = str(d.newModel);
     } else if (ev.type === 'user.message') {
@@ -473,6 +478,7 @@ export function parseCopilotSession(
       if (str(d.reason) === 'compaction') pushCompaction(stream, ts);
     } else if (ev.type === 'session.shutdown') {
       shutdown = shutdownUsage(d);
+      if (ts) endedAt = ts;
     }
     // session.start (pass 1), system.message, session.info, hook.*, tool.*,
     // permission.*, abort, and any unknown/new type are tolerated and skipped.
@@ -504,7 +510,15 @@ export function parseCopilotSession(
     });
   }
 
-  return { sessionId, cwd, branch, title, events: main.events, subagents };
+  return {
+    sessionId,
+    cwd,
+    branch,
+    title,
+    events: main.events,
+    subagents,
+    ...(endedAt ? { endedAt } : {}),
+  };
 }
 
 

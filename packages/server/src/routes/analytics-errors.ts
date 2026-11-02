@@ -31,11 +31,7 @@ import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { scopeFilters } from '../data/analytics-scope.js';
 import { toolCallRowsSql } from '../data/analytics-metrics.js';
-import { errorAvailabilityNote, hasInterruptSignal } from '../data/agent-capabilities.js';
-
-/** Prefix of the user-message text Claude Code stores on an interrupt (both
- *  variants: `…by user]` and `…by user for tool use]`). */
-const INTERRUPT_PREFIX = '[Request interrupted by user';
+import { errorAvailabilityNote, hasInterruptSignal, INTERRUPT_PREFIX } from '../data/agent-capabilities.js';
 
 export interface ErrorScope {
   project?: string;
