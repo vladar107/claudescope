@@ -162,13 +162,21 @@ function toolPartBlocks(data: Record<string, unknown>): ToolBlocks {
   const state = (data.state ?? {}) as Record<string, unknown>;
   const input = (state.input ?? {}) as Record<string, unknown>;
   const output = str(state.output);
-  const isError = str(state.status) === 'error' || state.error != null;
+  const status = str(state.status);
+  const isError = status === 'error' || state.error != null;
+  // A pending/running part has no result yet: leave the call open so live-state
+  // can report it, and never fan an unconfirmed patch out into canonical edits.
+  const terminal = status === 'completed' || status === 'error';
   const result = (id: string, content: string): ToolResultBlock => ({
     type: 'tool_result',
     tool_use_id: id,
     content,
     ...(isError ? { is_error: true } : {}),
   });
+
+  if (tool === 'apply_patch' && !terminal) {
+    return { uses: [{ type: 'tool_use', id: callID, name: 'apply_patch', input }], results: [] };
+  }
 
   if (tool === 'apply_patch') {
     const metadata = (state.metadata ?? {}) as Record<string, unknown>;
@@ -230,7 +238,10 @@ function toolPartBlocks(data: Record<string, unknown>): ToolBlocks {
     use = { type: 'tool_use', id: callID, name: tool, input };
   }
   // `read` output is wrapped in <path>/<type>/<content> — unwrap it; others raw.
-  return { uses: [use], results: [result(callID, tool === 'read' ? unwrapReadOutput(output) : output)] };
+  return {
+    uses: [use],
+    results: terminal ? [result(callID, tool === 'read' ? unwrapReadOutput(output) : output)] : [],
+  };
 }
 
 // --- content blocks ---------------------------------------------------------
