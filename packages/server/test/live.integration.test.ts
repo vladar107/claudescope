@@ -169,7 +169,13 @@ describe('GET /api/live', () => {
         },
       ]),
     );
-    const after = (await getLive()).sessions.find((s) => s.meta.id === 'sessCache')!;
+    const pastFloor = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 1_100);
+    let after: LiveResponse['sessions'][number];
+    try {
+      after = (await getLive()).sessions.find((s) => s.meta.id === 'sessCache')!;
+    } finally {
+      pastFloor.mockRestore();
+    }
     expect(after.state).toBe('tool');
     expect(after.openTool?.name).toBe('Bash');
     expect(loadsOf('sessCache')).toBe(loads + 1);
@@ -217,6 +223,125 @@ describe('GET /api/live/count', () => {
     const count = await getCount();
     expect(loadSession).not.toHaveBeenCalled();
     expect(count.count).toBe((await getLive()).sessions.length);
+  });
+});
+
+const appendText = (file: string, id: string, n: number, text: string): void =>
+  appendFileSync(
+    file,
+    jsonl([
+      {
+        sessionId: id, cwd: '/tmp/projLive', isSidechain: false, type: 'assistant', uuid: `${id}-x${n}`,
+        parentUuid: n === 1 ? `${id}-a1` : `${id}-x${n - 1}`, timestamp: new Date().toISOString(),
+        message: { role: 'assistant', model: 'claude-opus-4-8', id: `${id}-mx${n}`, content: [{ type: 'text', text }], usage: { input_tokens: 1, output_tokens: 1 } },
+      },
+    ]),
+  );
+
+const atOffset = async <T>(offsetMs: number, fn: () => Promise<T>, base = Date.now()): Promise<T> => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(base + offsetMs);
+  try {
+    return await fn();
+  } finally {
+    clock.mockRestore();
+  }
+};
+
+describe('live revalidation', () => {
+  it('answers 304 to a matching If-None-Match and a fresh ETag once a transcript changes', async () => {
+    const first = await app.inject({ method: 'GET', url: '/api/live' });
+    const etag = first.headers.etag as string;
+    expect(etag).toMatch(/^W\/"[0-9a-f]{40}"$/);
+    expect(first.headers['cache-control']).toBe('no-cache');
+
+    const same = await app.inject({ method: 'GET', url: '/api/live', headers: { 'if-none-match': etag } });
+    expect(same.statusCode).toBe(304);
+    expect(same.body).toBe('');
+
+    appendText(join(projectsDir, 'enc-projLive', 'sessNew.jsonl'), 'sessNew', 1, 'a brand new reply');
+    const changed = await atOffset(1_100, () =>
+      app.inject({ method: 'GET', url: '/api/live', headers: { 'if-none-match': etag } }),
+    );
+    expect(changed.statusCode).toBe(200);
+    expect(changed.headers.etag).not.toBe(etag);
+    expect((changed.json() as LiveResponse).sessions.find((s) => s.meta.id === 'sessNew')?.lastText).toBe(
+      'a brand new reply',
+    );
+  });
+
+  it('re-derives a session at most once per second even when its fingerprint keeps changing', async () => {
+    const file = join(projectsDir, 'enc-projLive', 'sessMid.jsonl');
+    await getLive();
+    const loads = loadsOf('sessMid');
+    const base = Date.now();
+    appendText(file, 'sessMid', 1, 'one');
+    await atOffset(1_500, getLive, base);
+    expect(loadsOf('sessMid')).toBe(loads + 1);
+    appendText(file, 'sessMid', 2, 'two');
+    const within = await atOffset(1_600, getLive, base);
+    expect(loadsOf('sessMid')).toBe(loads + 1);
+    expect(within.sessions.find((s) => s.meta.id === 'sessMid')?.lastText).toBe('one');
+  });
+});
+
+describe('live finished', () => {
+  it('lists a session written 30 minutes ago from stats alone, outside the window and absent from the 60 minute one', async () => {
+    writeSession('sessFin', 30 * MIN);
+    await reindex();
+    await vi.waitFor(async () => {
+      expect((await getLive('?windowMin=15')).finished.map((f) => f.meta.id)).toContain('sessFin');
+    });
+    loadSession.mockClear();
+    const live = await getLive('?windowMin=15');
+    expect(loadSession).not.toHaveBeenCalled();
+    expect(live.sessions.map((s) => s.meta.id)).not.toContain('sessFin');
+    const ids = live.finished.map((f) => f.meta.id);
+    expect(ids.indexOf('sessOld')).toBeLessThan(ids.indexOf('sessFin'));
+    expect(live.finished.every((f) => f.lastWriteMs < Date.now() - 15 * MIN)).toBe(true);
+
+    const wide = await getLive('?windowMin=60');
+    expect(wide.finished).toEqual([]);
+  });
+});
+
+describe('live runs and tool errors', () => {
+  it('reaches the response for a Claude Code session with a subagent file', async () => {
+    const dir = join(projectsDir, 'enc-projLive');
+    const id = 'sessRuns';
+    const t = (s: number) => new Date(Date.now() - s * 1000).toISOString();
+    const base = { sessionId: id, cwd: '/tmp/projLive', version: '2.1.0' };
+    writeFileSync(
+      join(dir, `${id}.jsonl`),
+      jsonl([
+        { ...base, isSidechain: false, type: 'user', uuid: 'r-u1', parentUuid: null, timestamp: t(30), message: { role: 'user', content: 'go' } },
+        { ...base, isSidechain: false, type: 'assistant', uuid: 'r-a1', parentUuid: 'r-u1', timestamp: t(25), message: { role: 'assistant', model: 'claude-opus-4-8', id: 'r-m1', content: [{ type: 'tool_use', id: 'toolu_bad', name: 'Bash', input: { command: 'false' } }, { type: 'tool_use', id: 'toolu_sp', name: 'Task', input: { description: 'dig', subagent_type: 'Explore' } }], usage: { input_tokens: 1, output_tokens: 1 } } },
+        { ...base, isSidechain: false, type: 'user', uuid: 'r-u2', parentUuid: 'r-a1', timestamp: t(20), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_bad', is_error: true, content: 'exit 1' }] } },
+      ]),
+    );
+    const subDir = join(dir, id, 'subagents');
+    mkdirSync(subDir, { recursive: true });
+    const sub = { ...base, isSidechain: true, agentId: 'r1' };
+    writeFileSync(
+      join(subDir, 'agent-r1.jsonl'),
+      jsonl([
+        { ...sub, type: 'user', uuid: 'rs-u1', parentUuid: null, timestamp: t(15), message: { role: 'user', content: 'dig' } },
+        { ...sub, type: 'assistant', uuid: 'rs-a1', parentUuid: 'rs-u1', timestamp: t(5), message: { role: 'assistant', model: 'claude-opus-4-8', id: 'rs-m1', content: [{ type: 'tool_use', id: 'toolu_g', name: 'Grep', input: { pattern: 'x' } }], usage: { input_tokens: 1, output_tokens: 1 } } },
+      ]),
+    );
+    writeFileSync(
+      join(subDir, 'agent-r1.meta.json'),
+      JSON.stringify({ agentType: 'Explore', description: 'dig', toolUseId: 'toolu_sp' }),
+    );
+    await reindex();
+    await vi.waitFor(async () => {
+      expect((await getLive()).sessions.map((s) => s.meta.id)).toContain('sessRuns');
+    });
+    const s = (await getLive()).sessions.find((x) => x.meta.id === id)!;
+    expect(s.toolErrors).toBe(1);
+    expect(s.runs).toHaveLength(1);
+    expect(s.runs[0]).toMatchObject({ agentId: 'r1', agentType: 'Explore', active: true, state: 'tool' });
+    expect(s.runs[0]!.openTool?.name).toBe('Grep');
+    expect(s.subagents).toEqual({ running: 1, done: 0 });
   });
 });
 

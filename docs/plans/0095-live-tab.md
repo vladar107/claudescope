@@ -2,7 +2,7 @@
 
 - **Status:** in-progress
 - **Date:** 2026-11-02
-- **PR:** https://github.com/vladar107/claudescope/pull/130 (stage 1)
+- **PR:** https://github.com/vladar107/claudescope/pull/130 (stage 1), https://github.com/vladar107/claudescope/pull/131 (stage 2)
 
 ## Context
 
@@ -77,8 +77,9 @@ usable on its own.
 - **Time-dependent values are computed on the client.** The server returns
   `lastWriteMs`, `openSinceMs`, and the base state. The client works out ages,
   open duration, and the "possibly stuck" overlay (threshold is a UI control).
-  So the stage 2 ETag (fingerprints + `dataVersion`) never freezes a value
-  that changes with time alone.
+  The stage 2 ETag is a hash of the response body, so it changes exactly
+  when a visible value does. That includes time-driven subagent liveness, and
+  a value that changes with time alone is never frozen.
 - **Honest absence, declared per connector.** New capability maps go in
   `data/agent-capabilities.ts`, each with a conformance test that walks the
   registry (the `TOOL_ERROR_SIGNAL` pattern):
@@ -172,19 +173,18 @@ Acceptance:
 
 | Chunk | Task | Tier (Jev) | Depends |
 | --- | --- | --- | --- |
-| C4 | `/api/live` detail: the last assistant snippet, per-run subagent state and open tool, tool/error counts. Add a response ETag over fingerprints + `dataVersion` → `304`, and a per-session re-derive floor of 1 s. The web formats the one-line tool summary by exporting `toolDescriptor` from `ToolBlock.tsx`; the server sends only the capped input. | Complex (Jev complex 0.94) | Stage 1 |
-| C5 | Web: cards grouped by Idle / Working, a 2–3 s poll only while the tab is visible and something is live (copy `useLiveSession`), a "Finished in the last hour" table, and a ticking "last write" age. | Complex (Jev 0.67 → decided complex: poll lifecycle + grouping edge cases) | C4 contract |
+| C4 | `/api/live` detail: the last assistant snippet, per-run subagent state and open tool, tool/error counts. Add a weak ETag over the response body → `304`, a stat-only "finished in the last hour" list, and a per-session re-derive floor of 1 s. The web formats the one-line tool summary by exporting `toolDescriptor` from `ToolBlock.tsx`; the server sends only the capped input. | Complex (Jev complex 0.94) | Stage 1 |
+| C5 | Web: cards grouped by Idle / Working, a 2.5 s poll while the tab is visible and something is working, 30 s otherwise, a "Finished in the last hour" table, and a ticking "last write" age. | Complex (Jev 0.67 → decided complex: poll lifecycle + grouping edge cases) | C4 contract |
 
 Waves: orchestrator extends the C1 types → **W1** C4 ∥ C5 → review → PR.
 
 Acceptance:
 
-- Tests: unchanged fingerprints and `dataVersion` return `304`, a
-  `dataVersion` bump alone returns `200`, and two requests within the floor
-  re-derive once.
-- In the browser, polling stops when the tab is hidden or nothing is live, and
-  a running fixture flips from `tool` to `idle` within one poll after an
-  append.
+- Tests: an unchanged response returns `304`, an append returns `200` with a
+  new ETag, and two requests within the floor re-derive once.
+- In the browser, polling pauses while the tab is hidden and drops to 30 s
+  when nothing is working. A running fixture flips from `tool` to `idle`
+  within one poll after an append.
 
 ### Stage 3 — Session focus: agent tree and messages (board 3)
 

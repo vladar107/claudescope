@@ -11,8 +11,9 @@
  * further reindex.
  */
 
+import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import type { LiveCountResponse, LiveResponse, LiveSession, SessionMeta } from '@claudescope/shared';
+import type { LiveCountResponse, LiveFinished, LiveResponse, LiveSession, SessionMeta } from '@claudescope/shared';
 import { LIVE_DEFAULT_WINDOW_MINUTES, LIVE_WINDOW_MINUTES } from '@claudescope/shared';
 import { connectorById } from '../connectors/registry.js';
 import { hasPromptSizedUsage, usageGranularity } from '../data/agent-capabilities.js';
@@ -24,6 +25,11 @@ import { reindexIntervalMs } from '../settings.js';
 import { rowToSessionMeta } from './sessions.js';
 
 const LIVE_CAP = 20;
+const FINISHED_CAP = 10;
+const FINISHED_MAX_AGE_MS = 60 * 60_000;
+// An actively written transcript changes its fingerprint on every poll from
+// every open tab; within this floor the cached result is served regardless.
+const REDERIVE_FLOOR_MS = 1000;
 // Only subagent-run liveness reads the clock and window, so a result for a
 // session with runs ages out well inside the client's 30 s poll; one without
 // runs is valid for as long as its fingerprint matches.
@@ -70,6 +76,29 @@ function findLiveSessions(snap: LiveSnapshot, nowMs: number, windowMs: number): 
   return live;
 }
 
+/** Sessions last written within the hour but already past the live window, newest first. */
+function findFinishedSessions(
+  snap: LiveSnapshot,
+  nowMs: number,
+  windowMs: number,
+  liveIds: ReadonlySet<string>,
+): LiveFinished[] {
+  if (windowMs >= FINISHED_MAX_AGE_MS) return [];
+  const floor = Math.floor(nowMs - FINISHED_MAX_AGE_MS - reindexIntervalMs());
+  const finished: LiveFinished[] = [];
+  for (const [id, files] of snap.files) {
+    if (liveIds.has(id) || Math.max(...files.map((f) => f.mtime_ms)) < floor) continue;
+    const { lastModifiedMs } = fingerprintFromRows(files);
+    if (lastModifiedMs >= nowMs - windowMs || lastModifiedMs < nowMs - FINISHED_MAX_AGE_MS) continue;
+    const row = snap.sessionRows.get(id);
+    if (!row) continue;
+    const meta = rowToSessionMeta(row);
+    finished.push({ meta, lastWriteMs: lastModifiedMs, usageGranularity: usageGranularity(meta.connectorId) });
+  }
+  finished.sort((a, b) => b.lastWriteMs - a.lastWriteMs || (a.meta.id < b.meta.id ? -1 : 1));
+  return finished.slice(0, FINISHED_CAP);
+}
+
 async function deriveFor(
   meta: SessionMeta,
   candidate: LiveCandidate,
@@ -77,13 +106,16 @@ async function deriveFor(
   windowMs: number,
 ): Promise<LiveStateResult> {
   const hit = cache.get(candidate.id);
-  if (
-    hit &&
-    hit.fingerprint === candidate.fingerprint &&
-    (!hit.hasRuns ||
-      (hit.windowMs === windowMs && nowMs - hit.derivedAtMs <= RUNS_CACHE_MAX_AGE_MS))
-  ) {
-    return hit.result;
+  if (hit) {
+    const age = nowMs - hit.derivedAtMs;
+    if (age >= 0 && age < REDERIVE_FLOOR_MS && hit.windowMs === windowMs) return hit.result;
+    if (
+      age >= 0 &&
+      hit.fingerprint === candidate.fingerprint &&
+      (!hit.hasRuns || (hit.windowMs === windowMs && age <= RUNS_CACHE_MAX_AGE_MS))
+    ) {
+      return hit.result;
+    }
   }
   const paths = candidate.files.map((f) => f.path);
   const { mainEvents, subagents, endedAt } = await connectorById(
@@ -122,7 +154,7 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
 
   app.get<{ Querystring: { windowMin?: string } }>(
     '/api/live',
-    async (req): Promise<LiveResponse> => {
+    async (req, reply) => {
       const { windowMinutes, windowMs } = windowMsFrom(req.query.windowMin);
       const nowMs = Date.now();
       const snap = await getLiveSnapshot();
@@ -147,7 +179,7 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
           derived = await deriveFor(meta, candidate, nowMs, windowMs);
         } catch (err) {
           req.log.warn({ sessionId: candidate.id, err: (err as Error).name }, 'live state derivation failed');
-          derived = { state: 'unknown', subagents: { running: 0, done: 0 } };
+          derived = { state: 'unknown', subagents: { running: 0, done: 0 }, runs: [] };
         }
         sessions.push({
           meta,
@@ -156,11 +188,24 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
           ...(derived.stateSinceMs !== undefined ? { stateSinceMs: derived.stateSinceMs } : {}),
           ...(derived.openTool ? { openTool: derived.openTool } : {}),
           subagents: derived.subagents,
+          runs: derived.runs,
+          ...(derived.lastText !== undefined ? { lastText: derived.lastText } : {}),
+          ...(derived.toolErrors !== undefined ? { toolErrors: derived.toolErrors } : {}),
           usageGranularity: usageGranularity(meta.connectorId),
         });
       }
 
-      return { windowMinutes, sessions, truncated: live.length - kept.length };
+      const body: LiveResponse = {
+        windowMinutes,
+        sessions,
+        truncated: live.length - kept.length,
+        finished: findFinishedSessions(snap, nowMs, windowMs, new Set(live.map((c) => c.id))),
+      };
+      const payload = JSON.stringify(body);
+      const etag = `W/"${createHash('sha1').update(payload).digest('hex')}"`;
+      reply.header('ETag', etag).header('Cache-Control', 'no-cache');
+      if (req.headers['if-none-match'] === etag) return reply.code(304).send();
+      return reply.type('application/json; charset=utf-8').send(payload);
     },
   );
 }

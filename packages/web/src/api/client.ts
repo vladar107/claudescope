@@ -72,6 +72,9 @@ interface RequestInitLite {
   method?: string;
   body?: unknown;
   signal?: AbortSignal;
+  headers?: Record<string, string>;
+  /** Resolve a 304 as `data: undefined` instead of raising. */
+  allowNotModified?: boolean;
 }
 
 /**
@@ -83,7 +86,7 @@ async function requestWithHeaders<T>(
   path: string,
   init?: RequestInitLite,
 ): Promise<{ data: T; headers: Headers }> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
+  const headers: Record<string, string> = { Accept: 'application/json', ...init?.headers };
   const hasBody = init?.body !== undefined;
   if (hasBody) headers['Content-Type'] = 'application/json';
 
@@ -93,6 +96,10 @@ async function requestWithHeaders<T>(
     body: hasBody ? JSON.stringify(init?.body) : undefined,
     signal: init?.signal,
   });
+
+  if (res.status === 304 && init?.allowNotModified) {
+    return { data: undefined as T, headers: res.headers };
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -123,6 +130,12 @@ export interface ListSessionsParams {
 export interface ListSessionsResult {
   rows: SessionMeta[];
   total: number;
+}
+
+/** `data` is null when the server answered 304: keep what is on screen. */
+export interface LiveResult {
+  data: LiveResponse | null;
+  etag?: string;
 }
 
 export interface SearchParams {
@@ -312,8 +325,14 @@ export const api = {
   },
 
   /** GET /api/live?windowMin= — sessions written to within the window, with an inferred state. */
-  live(windowMin: number, signal?: AbortSignal): Promise<LiveResponse> {
-    return request<LiveResponse>(`/live${qs({ windowMin })}`, { signal });
+  live(windowMin: number, signal?: AbortSignal, etag?: string): Promise<LiveResult> {
+    return requestWithHeaders<LiveResponse>(`/live${qs({ windowMin })}`, {
+      signal,
+      headers: etag ? { 'If-None-Match': etag } : undefined,
+      allowNotModified: true,
+    }).then(({ data, headers }) =>
+      data ? { data, etag: headers.get('ETag') ?? undefined } : { data: null, etag },
+    );
   },
 
   /** GET /api/live/count?windowMin= — stat-only count for the nav badge. */
