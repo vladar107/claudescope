@@ -1322,6 +1322,39 @@ export interface LiveSession {
   runs: LiveRun[];
   /** Failed tool calls on the main thread; absent when the agent's format records no failures. */
   toolErrors?: number;
+  /**
+   * Thread items (main + runs) per minute over the last 30 minutes, as sparse
+   * pairs keyed by absolute epoch minute (`floor(ms / 60_000)`), so a cached
+   * value never goes stale as time passes. Minutes with no items are omitted.
+   */
+  activity?: LiveMinuteCount[];
+  /** Main-thread compactions; absent when the agent's format records none. */
+  compactions?: LiveCompaction[];
+  /**
+   * Estimated cost per minute over the last 60 minutes (canonical usage only),
+   * sparse like `activity`; absent when the agent has no per-response usage.
+   * From the index, so it lags by up to one reindex interval.
+   */
+  costMinutes?: LiveMinuteCost[];
+}
+
+export interface LiveMinuteCount {
+  /** Epoch minute: `floor(ms / 60_000)`. */
+  minute: number;
+  count: number;
+}
+
+export interface LiveMinuteCost {
+  /** Epoch minute: `floor(ms / 60_000)`. */
+  minute: number;
+  costUsd: number;
+}
+
+export interface LiveCompaction {
+  /** Epoch ms of the compacted turn, when known. */
+  at?: number;
+  /** Prompt size just before the compaction, when known. */
+  preTokens?: number;
 }
 
 /** One subagent run of a live session. */

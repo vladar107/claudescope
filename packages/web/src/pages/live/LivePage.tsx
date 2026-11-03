@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import {
   LIVE_WINDOW_MINUTES,
   type AgentUsageGranularity,
   type LiveFinished,
   type LiveResponse,
   type LiveRun,
+  type AnalyticsTotals,
   type LiveSession,
 } from '@claudescope/shared';
 import { api } from '../../api/client.js';
-import { AgentBadge, ErrorBox, formatCost, Spinner } from '../../components';
+import { AgentBadge, ErrorBox, formatCost, formatCount, Spinner } from '../../components';
 import { useServerStatus } from '../../status/StatusProvider.js';
 import { useDataVersionRefetch } from '../../status/useDataVersionRefetch.js';
 import { contextPct } from '../browse/format.js';
@@ -30,12 +31,24 @@ import {
   stateLabel,
   toolSummary,
 } from './liveFormat.js';
+import {
+  burnRate,
+  formatRate,
+  readNotify,
+  recentActivity,
+  SPARK_MINUTES,
+  sparkPoints,
+  writeNotify,
+} from './liveTrends.js';
+import { TIME_ZONE, todayInTimeZone } from '../analytics/format.js';
 import './live.css';
 
 /** Refetch cadence while something is working and the tab is visible. */
 const FAST_REFRESH_MS = 2_500;
 /** Refetch cadence otherwise, and after a failed fetch (sessions still age out without a data change). */
 const SLOW_REFRESH_MS = 30_000;
+/** Refetch cadence while the tab is hidden and idle notifications are on. */
+const HIDDEN_NOTIFY_REFRESH_MS = 15_000;
 /** Re-render cadence for the relative ages. */
 const TICK_MS = 1_000;
 const MINUTE_MS = 60_000;
@@ -67,7 +80,8 @@ function isWorking(live: LiveSession): boolean {
  * server, and says only that nothing was written — not why.
  */
 export function LivePage() {
-  const { indexer } = useServerStatus();
+  const { indexer, dataVersion } = useServerStatus();
+  const navigate = useNavigate();
   const intervalS = indexer?.intervalMs ? Math.max(1, Math.round(indexer.intervalMs / 1000)) : null;
   const indexNote = `Refreshes every few seconds while something is working, else ${
     intervalS ? `every ~${intervalS} s` : 'with the index'
@@ -81,6 +95,11 @@ export function LivePage() {
   const [settled, setSettled] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
   const [now, setNow] = useState(() => Date.now());
+  const [notify, setNotify] = useState(readNotify);
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
+  const [notifyBlocked, setNotifyBlocked] = useState(false);
+  const [today, setToday] = useState<{ totals?: AnalyticsTotals; failed?: boolean }>({});
 
   const inflight = useRef<AbortController | null>(null);
   const hasData = useRef(false);
@@ -136,13 +155,15 @@ export function LivePage() {
   const working = useMemo(() => (data?.sessions ?? []).some(isWorking), [data]);
 
   // One timer chained off each settled fetch, so requests never overlap and a failure backs off.
+  // A hidden tab stops polling unless notifications are on: idle transitions are only seen by polling.
   useEffect(() => {
-    const delay = !failed && working ? FAST_REFRESH_MS : SLOW_REFRESH_MS;
+    const hidden = document.visibilityState !== 'visible';
+    const delay = hidden ? HIDDEN_NOTIFY_REFRESH_MS : !failed && working ? FAST_REFRESH_MS : SLOW_REFRESH_MS;
     const timer = window.setTimeout(() => {
-      if (document.visibilityState === 'visible') refresh(true);
+      if (document.visibilityState === 'visible' || notifyRef.current) refresh(true);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [settled, working, failed, refresh]);
+  }, [settled, working, failed, refresh, notify]);
 
   useEffect(() => {
     const onVisible = () => {
@@ -153,6 +174,138 @@ export function LivePage() {
   }, [refresh]);
 
   useDataVersionRefetch(() => refresh(true));
+
+  // Today's totals follow the index (dataVersion) and the local date, never the 2.5 s poll.
+  const nowMinute = Math.floor(now / MINUTE_MS);
+  const todayDate = useMemo(() => todayInTimeZone(), [nowMinute]);
+  useEffect(() => {
+    if (dataVersion === null) return;
+    const date = todayDate;
+    const controller = new AbortController();
+    api
+      .analytics({ groupBy: 'day', from: date, to: date, timeZone: TIME_ZONE }, controller.signal)
+      .then((res) => {
+        if (!controller.signal.aborted) setToday({ totals: res.totals });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setToday((prev) => (prev.totals ? prev : { failed: true }));
+      });
+    return () => controller.abort();
+  }, [dataVersion, todayDate]);
+
+  // Permission can be revoked in the browser after opting in: drop the opt-in rather than keep
+  // polling a hidden tab for notifications that can no longer fire.
+  useEffect(() => {
+    const check = () => {
+      if (!notifyRef.current) return;
+      if ('Notification' in window && Notification.permission === 'granted') return;
+      writeNotify(false);
+      setNotify(false);
+      setNotifyBlocked(true);
+    };
+    check();
+    document.addEventListener('visibilitychange', check);
+    return () => document.removeEventListener('visibilitychange', check);
+  }, []);
+
+  // Transitions are observed between successive responses; the first one is only recorded.
+  const prevStates = useRef<Map<string, LiveSession['state']> | null>(null);
+  const hiddenIdle = useRef(0);
+  const baseTitle = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!data) return;
+    const prev = prevStates.current;
+    prevStates.current = new Map(data.sessions.map((s) => [s.meta.id, s.state]));
+    if (!prev) return;
+    for (const s of data.sessions) {
+      const before = prev.get(s.meta.id);
+      if (s.state !== 'idle' || before === undefined || !RUNNING.includes(before)) continue;
+      if (notifyRef.current && document.visibilityState === 'hidden') {
+        baseTitle.current ??= document.title;
+        hiddenIdle.current += 1;
+        document.title = `(${hiddenIdle.current}) ${baseTitle.current}`;
+      }
+      if (notifyRef.current && 'Notification' in window && Notification.permission === 'granted') {
+        const note = new Notification(s.meta.title || 'Untitled session', {
+          body: `Idle — ${s.meta.projectDisplayName}`,
+          tag: s.meta.id,
+        });
+        note.onclick = () => {
+          window.focus();
+          navigate(`/sessions/${encodeURIComponent(s.meta.id)}`);
+          note.close();
+        };
+      }
+    }
+  }, [data, navigate]);
+
+  useEffect(() => {
+    const restore = () => {
+      if (document.visibilityState === 'visible' && baseTitle.current !== null) {
+        document.title = baseTitle.current;
+        baseTitle.current = null;
+        hiddenIdle.current = 0;
+      }
+    };
+    document.addEventListener('visibilitychange', restore);
+    return () => {
+      document.removeEventListener('visibilitychange', restore);
+      restore();
+      if (baseTitle.current !== null) document.title = baseTitle.current;
+    };
+  }, []);
+
+  const lanesRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'j' && e.key !== 'k') return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.closest('input, select, textarea') || target.isContentEditable)) return;
+      const links = Array.from(
+        lanesRef.current?.querySelectorAll<HTMLAnchorElement>('.tv-live__title') ?? [],
+      );
+      if (links.length === 0) return;
+      const at = links.indexOf(document.activeElement as HTMLAnchorElement);
+      const next =
+        e.key === 'j'
+          ? at < 0
+            ? 0
+            : Math.min(links.length - 1, at + 1)
+          : at < 0
+            ? links.length - 1
+            : Math.max(0, at - 1);
+      links[next]?.focus();
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const changeNotify = (on: boolean) => {
+    setNotifyBlocked(false);
+    if (!on) {
+      writeNotify(false);
+      setNotify(false);
+      return;
+    }
+    if (!('Notification' in window)) {
+      setNotifyBlocked(true);
+      return;
+    }
+    const apply = (permission: NotificationPermission) => {
+      const granted = permission === 'granted';
+      writeNotify(granted);
+      setNotify(granted);
+      setNotifyBlocked(!granted);
+    };
+    if (Notification.permission === 'default') {
+      void Notification.requestPermission().then(apply);
+    } else {
+      apply(Notification.permission);
+    }
+  };
 
   const changeWindow = (value: number) => {
     writeLiveWindow(value);
@@ -168,9 +321,19 @@ export function LivePage() {
   const truncated = data?.truncated ?? 0;
   const total = sessions.length + truncated;
   const stallMs = stallMin * MINUTE_MS;
-  const idleSessions = sessions.filter((s) => s.state === 'idle');
-  const workingSessions = sessions.filter(isWorking);
+  const isStuck = (s: LiveSession) => STALLABLE.includes(s.state) && now - s.lastWriteMs > stallMs;
+  const idleSessions = sessions
+    .filter((s) => s.state === 'idle')
+    .sort((a, b) => a.lastWriteMs - b.lastWriteMs);
   const otherSessions = sessions.filter((s) => s.state === 'ended' || s.state === 'unknown');
+  const workingSessions = sessions
+    .filter((s) => isWorking(s) && !isStuck(s))
+    .sort((a, b) => recentActivity(b, now) - recentActivity(a, now));
+  const stuckSessions = sessions
+    .filter((s) => isWorking(s) && isStuck(s))
+    .sort((a, b) => a.lastWriteMs - b.lastWriteMs);
+  const rates = sessions.map((s) => burnRate(s, now)).filter((r): r is number => r !== undefined);
+  const burn = rates.length > 0 ? formatRate(rates.reduce((a, b) => a + b, 0)) : '—';
 
   return (
     <section>
@@ -211,6 +374,17 @@ export function LivePage() {
               ))}
             </select>
           </label>
+          <label className="tv-live__field tv-muted">
+            <input
+              type="checkbox"
+              checked={notify}
+              onChange={(e) => changeNotify(e.target.checked)}
+            />
+            Notify me when a session goes idle
+          </label>
+          {notifyBlocked ? (
+            <p className="tv-muted tv-live__note">Notifications are blocked by the browser</p>
+          ) : null}
           <p className="tv-muted tv-live__note">{indexNote}</p>
         </div>
       </header>
@@ -224,9 +398,62 @@ export function LivePage() {
           {sessions.length === 0 ? (
             <p className="tv-muted">No sessions written to in the last {windowMin} min.</p>
           ) : null}
-          <CardSection title="Idle" sessions={idleSessions} now={now} stallMs={stallMs} />
-          <CardSection title="Working" sessions={workingSessions} now={now} stallMs={stallMs} />
-          <CardSection title="Ended or unknown" sessions={otherSessions} now={now} stallMs={stallMs} />
+          <dl className="tv-live__kpis">
+            <Kpi label={`In last ${windowMin} min`} value={String(total)} />
+            <Kpi label="Idle now" value={String(idleSessions.length)} />
+            <Kpi
+              label="Burn rate now"
+              value={burn}
+              title={rates.length === 0 ? 'No live cost data' : undefined}
+            />
+            <span className="tv-live__kpi-sep" aria-hidden="true" />
+            <Kpi
+              label="Spend today"
+              value={today.totals ? formatCost(today.totals.costUsd) : today.failed ? '—' : '…'}
+            />
+            <Kpi
+              label="Tokens today"
+              value={
+                today.totals ? formatCount(today.totals.totalTokens) : today.failed ? '—' : '…'
+              }
+            />
+          </dl>
+          <div className="tv-live__lanes" ref={lanesRef}>
+            <Lane
+              title="Idle"
+              hint="oldest idle first"
+              tone="idle"
+              sessions={idleSessions}
+              now={now}
+              stallMs={stallMs}
+            />
+            <Lane
+              title="Working"
+              hint="busiest first"
+              tone="working"
+              sessions={workingSessions}
+              now={now}
+              stallMs={stallMs}
+            />
+            <Lane
+              title="Possibly stuck"
+              hint="longest silent first"
+              tone="stuck"
+              sessions={stuckSessions}
+              now={now}
+              stallMs={stallMs}
+            />
+            {otherSessions.length > 0 ? (
+              <Lane
+                title="Ended or unknown"
+                hint="newest first"
+                tone="idle"
+                sessions={otherSessions}
+                now={now}
+                stallMs={stallMs}
+              />
+            ) : null}
+          </div>
           {truncated > 0 ? (
             <p className="tv-muted tv-live__more">{truncated} more not shown.</p>
           ) : null}
@@ -241,29 +468,67 @@ export function LivePage() {
   );
 }
 
-function CardSection({
+function Kpi({ label, value, title }: { label: string; value: string; title?: string }) {
+  return (
+    <div className="tv-live__kpi" title={title}>
+      <dt className="tv-muted">{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+function Lane({
   title,
+  hint,
+  tone,
   sessions,
   now,
   stallMs,
 }: {
   title: string;
+  hint: string;
+  tone: 'idle' | 'working' | 'stuck';
   sessions: LiveSession[];
   now: number;
   stallMs: number;
 }) {
-  if (sessions.length === 0) return null;
   return (
-    <div className="tv-live__section">
-      <h2 className="tv-live__h2">
+    <section className={`tv-live__lane tv-live__lane--${tone}`}>
+      <h2 className="tv-live__h2 tv-live__lane-head">
+        <span className="tv-live__dot" aria-hidden="true" />
         {title} <span className="tv-muted tv-live__count">{sessions.length}</span>
+        <span className="tv-muted tv-live__hint">{hint}</span>
       </h2>
-      <div className="tv-live__grid">
-        {sessions.map((live) => (
-          <LiveCard key={live.meta.id} live={live} now={now} stallMs={stallMs} />
-        ))}
-      </div>
-    </div>
+      {sessions.length === 0 ? (
+        <p className="tv-muted tv-live__none">None</p>
+      ) : (
+        <div className="tv-live__lane-cards">
+          {sessions.map((live) => (
+            <LiveCard key={live.meta.id} live={live} now={now} stallMs={stallMs} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Sparkline({ live, now }: { live: LiveSession; now: number }) {
+  const points = sparkPoints(live, now);
+  const total = points.reduce((a, b) => a + b, 0);
+  const max = Math.max(1, ...points);
+  const step = 120 / (SPARK_MINUTES - 1);
+  const d = points.map((v, i) => `${(i * step).toFixed(1)},${(22 - (v / max) * 20).toFixed(1)}`);
+  return (
+    <svg
+      className="tv-live__spark"
+      width="120"
+      height="24"
+      viewBox="0 0 120 24"
+      role="img"
+      aria-label={`Activity: ${total} events in the last ${SPARK_MINUTES} minutes`}
+    >
+      <polyline points={d.join(' ')} fill="none" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -303,6 +568,15 @@ function LiveCard({ live, now, stallMs }: { live: LiveSession; now: number; stal
     contextTokens != null && contextWindow ? Math.min(1, contextTokens / contextWindow) : undefined;
   const pct = contextPct(contextTokens, contextWindow);
 
+  const rate = burnRate(live, now);
+  let rateText = '';
+  if (live.state !== 'idle' && rate !== undefined) rateText = formatRate(rate);
+  else if (live.state !== 'idle' && live.usageGranularity === 'session-level') rateText = 'cost lands at session end';
+
+  const ticks = (live.compactions ?? [])
+    .map((c) => c.preTokens)
+    .filter((t): t is number => t != null && !!contextWindow && t > 0);
+
   let since = '';
   if (live.state === 'tool' && live.openTool?.sinceMs != null) {
     since = `for ${elapsed(live.openTool.sinceMs, now)}`;
@@ -311,7 +585,9 @@ function LiveCard({ live, now, stallMs }: { live: LiveSession; now: number; stal
   }
 
   return (
-    <article className={`tv-live__card${live.state === 'idle' ? ' tv-live__card--idle' : ''}`}>
+    <article
+      className={`tv-live__card tv-live__card--${stuck ? 'stuck' : live.state}${live.state === 'idle' ? ' tv-live__card--idle' : ''}`}
+    >
       <div className="tv-live__card-top">
         <AgentBadge connectorId={meta.connectorId} />
         <span className="tv-mono tv-muted tv-live__project">
@@ -326,6 +602,11 @@ function LiveCard({ live, now, stallMs }: { live: LiveSession; now: number; stal
       <Link to={`/sessions/${encodeURIComponent(meta.id)}`} className="tv-live__title">
         {meta.title || 'Untitled session'}
       </Link>
+
+      <div className="tv-live__trend">
+        <Sparkline live={live} now={now} />
+        {rateText ? <span className="tv-muted tv-live__rate">{rateText}</span> : null}
+      </div>
 
       <div className="tv-live__state-row">
         {stuck ? (
@@ -383,6 +664,13 @@ function LiveCard({ live, now, stallMs }: { live: LiveSession; now: number; stal
         {ratio !== undefined ? (
           <span className="tv-live__ctx">
             <span className="tv-live__bar" aria-hidden="true">
+              {ticks.map((t, i) => (
+                <span
+                  key={i}
+                  className="tv-live__tick"
+                  style={{ left: `${Math.min(100, (t / (contextWindow ?? 1)) * 100)}%` }}
+                />
+              ))}
               <span
                 className={`tv-live__bar-fill${ratio >= WARN_CONTEXT_RATIO ? ' tv-live__bar-fill--warn' : ''}`}
                 style={{ width: `${Math.round(ratio * 100)}%` }}

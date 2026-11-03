@@ -3,7 +3,7 @@ import type { RawEvent } from '@claudescope/shared';
 import { assembleThread, buildSubagentRuns } from '../src/data/parser.js';
 import type { SubagentSource } from '../src/data/session-loader.js';
 import { connectorsWithoutToolErrorSignal } from '../src/data/agent-capabilities.js';
-import { deriveLiveState } from '../src/data/live-state.js';
+import { deriveLiveState, trimMinutes, ACTIVITY_WINDOW_MS } from '../src/data/live-state.js';
 
 const NOW = Date.parse('2026-01-01T01:00:00.000Z');
 const WINDOW = 15 * 60_000;
@@ -276,5 +276,61 @@ describe('deriveLiveState', () => {
     it('is not ended when an item follows it', () => {
       expect(derive(events, { connectorId: 'copilot', endedAt: at(4, -1 * 60 - 30) }).state).not.toBe('ended');
     });
+  });
+});
+
+describe('activity and compactions', () => {
+  const minute = (minutesAgo: number) => Math.floor((NOW - minutesAgo * 60_000) / 60_000);
+  const spawn = toolUse('spawn1', 'Task', { description: 'dig', subagent_type: 'Explore' });
+  const boundary = (uuid: string, ts: string, pre: number) =>
+    ({
+      type: 'system',
+      subtype: 'compact_boundary',
+      uuid,
+      parentUuid: null,
+      sessionId: 's',
+      timestamp: ts,
+      cwd: '/x',
+      isSidechain: false,
+      content: 'Conversation compacted',
+      compactMetadata: { trigger: 'auto', preTokens: pre, postTokens: 10 },
+    }) as unknown as RawEvent;
+
+  it('counts main and run items per minute, then trims to the request clock', () => {
+    const r = derive(
+      [
+        row('user', 'u1', text('go'), at(40)),
+        row('assistant', 'a1', [spawn], at(10, 5)),
+        row('user', 'u2', text('again'), at(10, 20)),
+      ],
+      {
+        sources: [
+          {
+            agentId: 'r1',
+            agentType: 'Explore',
+            description: 'dig',
+            toolUseId: 'spawn1',
+            events: [row('user', 'r1', text('x'), at(10, 30)), row('assistant', 'r2', text('y'), at(2))],
+          },
+        ],
+      },
+    );
+    expect(r.activity).toEqual([
+      { minute: minute(40), count: 1 },
+      { minute: minute(10), count: 3 },
+      { minute: minute(2), count: 1 },
+    ]);
+    expect(trimMinutes(r.activity, NOW, ACTIVITY_WINDOW_MS).map((b) => b.minute)).toEqual([minute(10), minute(2)]);
+    expect(trimMinutes(r.activity, NOW + 21 * 60_000, ACTIVITY_WINDOW_MS).map((b) => b.minute)).toEqual([minute(2)]);
+  });
+
+  it('reports main-thread compactions only for agents that record them', () => {
+    const events = [
+      row('user', 'u1', text('go'), at(30)),
+      boundary('b1', at(20), 90_000),
+      row('assistant', 'a1', text('ok'), at(19)),
+    ];
+    expect(derive(events).compactions).toEqual([{ at: NOW - 19 * 60_000, preTokens: 90_000 }]);
+    expect(derive(events, { connectorId: 'grok' }).compactions).toBeUndefined();
   });
 });

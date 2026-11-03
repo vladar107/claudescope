@@ -265,3 +265,117 @@
 .tv-live__focus-link:hover {
   text-decoration: underline;
 }
+
+.tv-live__kpis {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--tv-space-2) var(--tv-space-5);
+  margin: 0 0 var(--tv-space-4);
+  padding: var(--tv-space-3);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--tv-radius);
+  background: var(--tv-bg-elevated);
+}
+.tv-live__kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tv-live__kpi dt {
+  font-size: var(--tv-fs-sm);
+}
+.tv-live__kpi dd {
+  margin: 0;
+  font-size: var(--tv-fs-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.tv-live__kpi-sep {
+  align-self: stretch;
+  width: 1px;
+  background: var(--tv-border);
+}
+
+.tv-live__lanes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  align-items: start;
+  gap: var(--tv-space-4);
+  margin-bottom: var(--tv-space-5);
+}
+.tv-live__lane {
+  min-width: 0;
+  --tv-live-lane: var(--tv-fg-muted);
+}
+.tv-live__lane--idle {
+  --tv-live-lane: var(--tv-accent);
+}
+.tv-live__lane--working {
+  --tv-live-lane: var(--tv-assistant);
+}
+.tv-live__lane--stuck {
+  --tv-live-lane: var(--tv-warning);
+}
+.tv-live__lane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+}
+.tv-live__lane-head .tv-live__dot {
+  background: var(--tv-live-lane);
+}
+.tv-live__hint {
+  margin-left: auto;
+  font-size: var(--tv-fs-sm);
+  font-weight: 400;
+}
+.tv-live__none {
+  margin: 0;
+}
+.tv-live__lane-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tv-space-3);
+}
+
+.tv-live__card {
+  --tv-live-spark: var(--tv-fg-muted);
+}
+.tv-live__card--idle {
+  --tv-live-spark: var(--tv-accent);
+}
+.tv-live__card--working,
+.tv-live__card--subagents {
+  --tv-live-spark: var(--tv-assistant);
+}
+.tv-live__card--tool {
+  --tv-live-spark: var(--tv-tool);
+}
+.tv-live__card--stuck {
+  --tv-live-spark: var(--tv-warning);
+}
+.tv-live__trend {
+  display: flex;
+  align-items: center;
+  gap: var(--tv-space-2);
+  font-size: var(--tv-fs-sm);
+}
+.tv-live__spark {
+  flex: 0 0 auto;
+  stroke: var(--tv-live-spark);
+}
+.tv-live__rate {
+  font-variant-numeric: tabular-nums;
+}
+.tv-live__bar {
+  position: relative;
+}
+.tv-live__tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--tv-fg);
+}
