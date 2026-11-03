@@ -5,7 +5,7 @@
  * agent that never records it.
  */
 
-import type { AgentUsageGranularity } from '@claudescope/shared';
+import type { AgentMessageSignal, AgentUsageGranularity } from '@claudescope/shared';
 
 /**
  * The agent a row with no recorded `connector_id` belongs to. Claude Code was
@@ -143,6 +143,33 @@ export function connectorsWithLiveStateSignal(): string[] {
 
 export function connectorsWithoutLiveStateSignal(): string[] {
   return [...NO_LIVE_STATE_SIGNAL];
+}
+
+/**
+ * What an agent's transcripts record about messages between agents:
+ * `mid-run` — spawn, report AND messages sent while a subagent runs (Claude
+ * Code's SendMessage / task notifications, Codex's send_message / wait_agent);
+ * `spawn-result` — only the spawn call and its result; `none` — no linkage at
+ * all (Junie). Enforced by `connector-live-signal.test.ts`.
+ */
+const MID_RUN_MESSAGE_SIGNAL = new Set(['claude-code', 'codex']);
+const SPAWN_RESULT_MESSAGE_SIGNAL = new Set(['pi', 'opencode', 'copilot', 'antigravity', 'grok']);
+const NO_MESSAGE_SIGNAL = new Set(['junie']);
+
+export function agentMessageSignal(connectorId: string): AgentMessageSignal {
+  if (MID_RUN_MESSAGE_SIGNAL.has(connectorId)) return 'mid-run';
+  if (NO_MESSAGE_SIGNAL.has(connectorId)) return 'none';
+  return 'spawn-result';
+}
+
+export function connectorsWithAgentMessageSignal(signal: AgentMessageSignal): string[] {
+  const set =
+    signal === 'mid-run'
+      ? MID_RUN_MESSAGE_SIGNAL
+      : signal === 'none'
+        ? NO_MESSAGE_SIGNAL
+        : SPAWN_RESULT_MESSAGE_SIGNAL;
+  return [...set];
 }
 
 /**

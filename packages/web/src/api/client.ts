@@ -15,6 +15,7 @@ import type {
   IndexerStatus,
   LiveCountResponse,
   LiveResponse,
+  LiveSessionDetail,
   MemoryResponse,
   PricingRefreshResponse,
   ProjectMemoryResponse,
@@ -135,6 +136,11 @@ export interface ListSessionsResult {
 /** `data` is null when the server answered 304: keep what is on screen. */
 export interface LiveResult {
   data: LiveResponse | null;
+  etag?: string;
+}
+
+export interface LiveSessionResult {
+  data: LiveSessionDetail | null;
   etag?: string;
 }
 
@@ -327,6 +333,22 @@ export const api = {
   /** GET /api/live?windowMin= — sessions written to within the window, with an inferred state. */
   live(windowMin: number, signal?: AbortSignal, etag?: string): Promise<LiveResult> {
     return requestWithHeaders<LiveResponse>(`/live${qs({ windowMin })}`, {
+      signal,
+      headers: etag ? { 'If-None-Match': etag } : undefined,
+      allowNotModified: true,
+    }).then(({ data, headers }) =>
+      data ? { data, etag: headers.get('ETag') ?? undefined } : { data: null, etag },
+    );
+  },
+
+  /** GET /api/live/:sessionId — one session's agents and the messages between them (404 when unknown). */
+  liveSession(
+    id: string,
+    windowMin: number,
+    signal?: AbortSignal,
+    etag?: string,
+  ): Promise<LiveSessionResult> {
+    return requestWithHeaders<LiveSessionDetail>(`/live/${encodeURIComponent(id)}${qs({ windowMin })}`, {
       signal,
       headers: etag ? { 'If-None-Match': etag } : undefined,
       allowNotModified: true,

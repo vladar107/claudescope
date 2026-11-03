@@ -1363,3 +1363,44 @@ export interface LiveCountResponse {
   windowMinutes: number;
   count: number;
 }
+
+/**
+ * What one message between agents was:
+ * - `spawn`: a parent started a subagent (text = the prompt it sent).
+ * - `message`: a message sent to an agent that already exists (Claude Code
+ *   SendMessage, Codex send_message / followup_task).
+ * - `result`: a subagent's final report reaching its parent.
+ * - `notification`: a status notice about a subagent (Claude Code task-notification).
+ * - `wait`: a parent waiting on a subagent (target may be unknown).
+ * - `stop`: a parent stopping or interrupting a subagent.
+ */
+export type AgentMessageKind = 'spawn' | 'message' | 'result' | 'notification' | 'wait' | 'stop';
+
+/** Which message kinds an agent's format records. */
+export type AgentMessageSignal = 'mid-run' | 'spawn-result' | 'none';
+
+/** One message between two agents of a session, in time order. */
+export interface AgentMessage {
+  kind: AgentMessageKind;
+  /** `main` for the main thread, else the sender run's agentId. */
+  from: string;
+  /** `main` or the target run's agentId; absent when the target is unknown. */
+  to?: string;
+  /** Epoch ms; absent when the record carries no usable timestamp. */
+  at?: number;
+  /** Message body, capped. */
+  text?: string;
+  /** e.g. a notification's `completed` / `failed`, or `error` for a failed call. */
+  status?: string;
+  /** uuid of the thread item that records it (deep link `/sessions/:id#<uuid>`). */
+  anchorUuid?: string;
+  /** agentId of the run whose thread holds the anchor; absent for the main thread. */
+  anchorAgentId?: string;
+}
+
+/** GET /api/live/:sessionId — one session's agents and the messages between them. */
+export interface LiveSessionDetail {
+  session: LiveSession;
+  messages: AgentMessage[];
+  messageSignal: AgentMessageSignal;
+}

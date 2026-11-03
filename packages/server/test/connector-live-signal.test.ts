@@ -101,3 +101,21 @@ describe('session-end signal declaration', () => {
     expect(data.endedAt).toBeUndefined();
   });
 });
+
+describe('agent-message signal declaration', () => {
+  it('classifies every registered connector exactly once', () => {
+    const all = (['mid-run', 'spawn-result', 'none'] as const).flatMap((signal) => {
+      const ids = caps.connectorsWithAgentMessageSignal(signal);
+      for (const id of ids) expect(caps.agentMessageSignal(id)).toBe(signal);
+      return ids;
+    });
+    expect(all.sort()).toEqual([...registryIds].sort());
+  });
+
+  it('gives only mid-run connectors an inter-agent hook', async () => {
+    const { connectors } = await import('../src/connectors/registry.js');
+    for (const c of connectors) {
+      expect(c.interAgentSignals !== undefined, c.id).toBe(caps.agentMessageSignal(c.id) === 'mid-run');
+    }
+  });
+});

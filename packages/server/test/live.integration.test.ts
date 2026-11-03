@@ -10,7 +10,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import type { LiveCountResponse, LiveResponse } from '@claudescope/shared';
+import type { LiveCountResponse, LiveResponse, LiveSessionDetail } from '@claudescope/shared';
 
 vi.mock('../src/db/duckdb.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../src/db/duckdb.js')>();
@@ -354,5 +354,118 @@ describe('live cap', () => {
     expect(live.sessions).toHaveLength(20);
     expect(live.truncated).toBe(count.count - 20);
     expect(live.truncated).toBeGreaterThan(0);
+  });
+});
+
+describe('GET /api/live/:sessionId', () => {
+  const getDetail = (id: string) => app.inject({ method: 'GET', url: `/api/live/${id}` });
+
+  it('returns the session with spawn and result edges for a Claude Code subagent', async () => {
+    const res = await getDetail('sessRuns');
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as LiveSessionDetail;
+    expect(body.messageSignal).toBe('mid-run');
+    expect(body.session.meta.id).toBe('sessRuns');
+    expect(body.session.runs.map((r) => r.agentId)).toEqual(['r1']);
+    expect(body.messages.map((m) => [m.kind, m.from, m.to])).toEqual([['spawn', 'main', 'r1']]);
+    expect(body.messages[0]!.anchorUuid).toBe('r-a1');
+  });
+
+  it('adds a result edge once the subagent has finished', async () => {
+    const dir = join(projectsDir, 'enc-projLive');
+    const id = 'sessDone';
+    const t = (sec: number) => new Date(Date.now() - sec * 1000).toISOString();
+    const base = { sessionId: id, cwd: '/tmp/projLive', version: '2.1.0' };
+    const msg = (role: string, content: unknown) => ({ role, content });
+    writeFileSync(
+      join(dir, `${id}.jsonl`),
+      jsonl([
+        { ...base, isSidechain: false, type: 'user', uuid: 'd-u1', parentUuid: null, timestamp: t(300), message: msg('user', 'go') },
+        { ...base, isSidechain: false, type: 'assistant', uuid: 'd-a1', parentUuid: 'd-u1', timestamp: t(290), message: { ...msg('assistant', [{ type: 'tool_use', id: 'toolu_d', name: 'Agent', input: { description: 'dig', prompt: 'find it' } }]), model: 'claude-opus-4-8', id: 'd-m1', usage: { input_tokens: 1, output_tokens: 1 } } },
+        { ...base, isSidechain: false, type: 'user', uuid: 'd-u2', parentUuid: 'd-a1', timestamp: t(200), message: msg('user', [{ type: 'tool_result', tool_use_id: 'toolu_d', content: 'found it' }]) },
+      ]),
+    );
+    const subDir = join(dir, id, 'subagents');
+    mkdirSync(subDir, { recursive: true });
+    const sub = { ...base, isSidechain: true, agentId: 'd1' };
+    writeFileSync(
+      join(subDir, 'agent-d1.jsonl'),
+      jsonl([
+        { ...sub, type: 'user', uuid: 'ds-u1', parentUuid: null, timestamp: t(280), message: msg('user', 'find it') },
+        { ...sub, type: 'assistant', uuid: 'ds-a1', parentUuid: 'ds-u1', timestamp: t(210), message: { ...msg('assistant', [{ type: 'text', text: 'found it' }]), model: 'claude-opus-4-8', id: 'ds-m1', usage: { input_tokens: 1, output_tokens: 1 } } },
+      ]),
+    );
+    writeFileSync(join(subDir, 'agent-d1.meta.json'), JSON.stringify({ agentType: 'Explore', description: 'dig', toolUseId: 'toolu_d' }));
+    await reindex();
+    const body = (await getDetail(id)).json() as LiveSessionDetail;
+    expect(body.messages.map((m) => [m.kind, m.from, m.to])).toEqual([
+      ['spawn', 'main', 'd1'],
+      ['result', 'd1', 'main'],
+    ]);
+    expect(body.messages[0]!.text).toBe('find it');
+  });
+
+  it('answers 404 for an unknown id', async () => {
+    const res = await getDetail('nope');
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'Session not found' });
+  });
+
+  it('works for a session outside the live window', async () => {
+    const body = (await getDetail('sessOld')).json() as LiveSessionDetail;
+    expect(body.session.meta.id).toBe('sessOld');
+    expect(body.messages).toEqual([]);
+  });
+
+  it('answers 304 to a matching If-None-Match', async () => {
+    const first = await getDetail('sessRuns');
+    const etag = String(first.headers.etag);
+    const again = await app.inject({ method: 'GET', url: '/api/live/sessRuns', headers: { 'if-none-match': etag } });
+    expect(again.statusCode).toBe(304);
+  });
+
+  it('does not re-query the index or re-parse a finished old session with runs on repeat polls', async () => {
+    const dir = join(projectsDir, 'enc-projLive');
+    const id = 'sessAncient';
+    const old = new Date(Date.now() - 24 * 60 * MIN);
+    const t = (sec: number) => new Date(old.getTime() + sec * 1000).toISOString();
+    const base = { sessionId: id, cwd: '/tmp/projLive', version: '2.1.0' };
+    const msg = (role: string, content: unknown) => ({ role, content });
+    const main = join(dir, `${id}.jsonl`);
+    writeFileSync(
+      main,
+      jsonl([
+        { ...base, isSidechain: false, type: 'user', uuid: 'x-u1', parentUuid: null, timestamp: t(0), message: msg('user', 'go') },
+        { ...base, isSidechain: false, type: 'assistant', uuid: 'x-a1', parentUuid: 'x-u1', timestamp: t(5), message: { ...msg('assistant', [{ type: 'tool_use', id: 'toolu_x', name: 'Agent', input: { description: 'dig', prompt: 'find it' } }]), model: 'claude-opus-4-8', id: 'x-m1', usage: { input_tokens: 1, output_tokens: 1 } } },
+        { ...base, isSidechain: false, type: 'user', uuid: 'x-u2', parentUuid: 'x-a1', timestamp: t(60), message: msg('user', [{ type: 'tool_result', tool_use_id: 'toolu_x', content: 'found it' }]) },
+      ]),
+    );
+    const subDir = join(dir, id, 'subagents');
+    mkdirSync(subDir, { recursive: true });
+    const sub = { ...base, isSidechain: true, agentId: 'x1' };
+    const subFile = join(subDir, 'agent-x1.jsonl');
+    writeFileSync(
+      subFile,
+      jsonl([
+        { ...sub, type: 'user', uuid: 'xs-u1', parentUuid: null, timestamp: t(10), message: msg('user', 'find it') },
+        { ...sub, type: 'assistant', uuid: 'xs-a1', parentUuid: 'xs-u1', timestamp: t(50), message: { ...msg('assistant', [{ type: 'text', text: 'found it' }]), model: 'claude-opus-4-8', id: 'xs-m1', usage: { input_tokens: 1, output_tokens: 1 } } },
+      ]),
+    );
+    const metaFile = join(subDir, 'agent-x1.meta.json');
+    writeFileSync(metaFile, JSON.stringify({ agentType: 'Explore', description: 'dig', toolUseId: 'toolu_x' }));
+    for (const f of [main, subFile, metaFile]) utimesSync(f, old, old);
+    await reindex();
+
+    expect(((await getDetail(id)).json() as LiveSessionDetail).messages.map((m) => m.kind)).toEqual(['spawn', 'result']);
+    queryRows.mockClear();
+    const loads = loadsOf(id);
+    const later = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 40_000);
+    try {
+      await getDetail(id);
+    } finally {
+      later.mockRestore();
+    }
+    expect(queryRows).not.toHaveBeenCalled();
+    expect(loadsOf(id)).toBe(loads);
   });
 });

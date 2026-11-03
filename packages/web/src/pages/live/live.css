@@ -256,3 +256,12 @@
 .tv-live__cost {
   margin-left: auto;
 }
+
+.tv-live__focus-link {
+  align-self: flex-start;
+  font-size: var(--tv-fs-sm);
+  color: var(--tv-accent);
+}
+.tv-live__focus-link:hover {
+  text-decoration: underline;
+}

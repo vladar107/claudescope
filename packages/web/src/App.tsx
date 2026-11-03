@@ -7,6 +7,7 @@ import { ProjectLayout } from './pages/browse/ProjectLayout.js';
 import { SessionListPage } from './pages/browse/SessionList.js';
 import { SessionPage } from './pages/session/SessionPage.js';
 import { LivePage } from './pages/live/LivePage.js';
+import { LiveFocusPage } from './pages/live/LiveFocusPage.js';
 import { useLiveCount } from './pages/live/useLiveCount.js';
 import { SearchPage } from './pages/search/SearchPage.js';
 import { AnalyticsPage } from './pages/analytics/AnalyticsPage.js';
@@ -120,6 +121,7 @@ export function App() {
             </Route>
             <Route path="/sessions/:id" element={<SessionPage />} />
             <Route path="/live" element={<LivePage />} />
+            <Route path="/live/:sessionId" element={<LiveFocusPage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/memory" element={<MemoryPage />} />
