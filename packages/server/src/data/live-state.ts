@@ -8,8 +8,17 @@
  * items and blocks instead.
  */
 
-import type { LiveOpenTool, LiveRun, LiveState, SubagentRun, ThreadItem } from '@claudescope/shared';
+import type {
+  LiveCompaction,
+  LiveMinuteCount,
+  LiveOpenTool,
+  LiveRun,
+  LiveState,
+  SubagentRun,
+  ThreadItem,
+} from '@claudescope/shared';
 import {
+  hasCompactionSignal,
   hasInterruptSignal,
   hasLiveStateSignal,
   hasSessionEndSignal,
@@ -45,6 +54,51 @@ export interface LiveStateResult {
   runs: LiveRun[];
   /** Failed main-thread tool calls; present only where the format records failures. */
   toolErrors?: number;
+  /**
+   * Per-minute item counts over the last ACTIVITY_KEEP_MS of `nowMs`. A cached
+   * result is trimmed to the request's clock with {@link trimMinutes}, which
+   * only drops old buckets; anything newer changes the fingerprint and
+   * re-derives.
+   */
+  activity: LiveMinuteCount[];
+  /** Main-thread compactions; present only where the agent records them. */
+  compactions?: LiveCompaction[];
+}
+
+export const ACTIVITY_KEEP_MS = 60 * 60_000;
+export const ACTIVITY_WINDOW_MS = 30 * 60_000;
+
+function activityOf(threads: ThreadItem[][], nowMs: number): LiveMinuteCount[] {
+  const floor = nowMs - ACTIVITY_KEEP_MS;
+  const buckets = new Map<number, number>();
+  for (const thread of threads) {
+    for (const item of thread) {
+      const ms = parseMs(item.timestamp);
+      if (ms === undefined || ms < floor || ms > nowMs) continue;
+      const minute = Math.floor(ms / 60_000);
+      buckets.set(minute, (buckets.get(minute) ?? 0) + 1);
+    }
+  }
+  return [...buckets].map(([minute, count]) => ({ minute, count })).sort((a, b) => a.minute - b.minute);
+}
+
+/** The buckets within the last `windowMs` of `nowMs`; the stored ones may predate it. */
+export function trimMinutes<T extends { minute: number }>(buckets: T[], nowMs: number, windowMs: number): T[] {
+  const floor = Math.floor((nowMs - windowMs) / 60_000);
+  return buckets.filter((b) => b.minute >= floor);
+}
+
+function compactionsOf(thread: ThreadItem[]): LiveCompaction[] {
+  const out: LiveCompaction[] = [];
+  for (const item of thread) {
+    if (!item.compaction) continue;
+    const at = parseMs(item.timestamp);
+    out.push({
+      ...(at !== undefined ? { at } : {}),
+      ...(item.compaction.preTokens !== undefined ? { preTokens: item.compaction.preTokens } : {}),
+    });
+  }
+  return out;
 }
 
 /**
@@ -192,6 +246,8 @@ export function deriveLiveState(input: LiveStateInput): LiveStateResult {
     runs: liveRuns,
     ...(lastText !== undefined ? { lastText } : {}),
     ...(hasToolErrorSignal(connectorId) ? { toolErrors: countToolErrors(thread) } : {}),
+    activity: activityOf([thread, ...runs.map((r) => r.thread)], nowMs),
+    ...(hasCompactionSignal(connectorId) ? { compactions: compactionsOf(thread) } : {}),
   };
 
   const stateSinceMs = parseMs(thread[thread.length - 1]?.timestamp);

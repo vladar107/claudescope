@@ -13,9 +13,11 @@
  * becomes active must be re-indexed first, which invalidates the snapshot.
  */
 
-import { LIVE_WINDOW_MINUTES } from '@claudescope/shared';
+import { LIVE_WINDOW_MINUTES, type LiveMinuteCost } from '@claudescope/shared';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { reindexIntervalMs } from '../settings.js';
+import { usageGranularity } from './agent-capabilities.js';
+import { usageRowsSql } from './analytics-metrics.js';
 import { getDataVersion } from './index.js';
 
 export interface SnapshotFile {
@@ -28,9 +30,14 @@ export interface LiveSnapshot {
   dataVersion: number;
   files: Map<string, SnapshotFile[]>;
   sessionRows: Map<string, Record<string, unknown>>;
+  /** Per-minute cost of per-response sessions, from the build time's last hour (+ reindex lag). */
+  costMinutes: Map<string, LiveMinuteCost[]>;
 }
 
 const MAX_WINDOW_MS = Math.max(...(LIVE_WINDOW_MINUTES as readonly number[])) * 60_000;
+
+/** How far back per-minute cost is kept for each live session (the burn rate reads the last 10 minutes). */
+export const COST_KEEP_MS = 60 * 60_000;
 
 let snapshot: LiveSnapshot | null = null;
 let building: Promise<LiveSnapshot> | null = null;
@@ -68,7 +75,37 @@ async function build(): Promise<LiveSnapshot> {
     );
     for (const row of rows) sessionRows.set(String(row.id), row);
   }
-  return { dataVersion: version, files, sessionRows };
+
+  // One grouped query per build, never per request; `ts` is UTC-naive, which
+  // epoch_ms() reads as UTC.
+  const costMinutes = new Map<string, LiveMinuteCost[]>();
+  const costIds = [...sessionRows]
+    .filter(([, row]) => usageGranularity(String(row.connector_id ?? '')) === 'per-response')
+    .map(([id]) => id);
+  if (costIds.length > 0) {
+    const costFloor = Math.floor(Date.now() - COST_KEEP_MS - reindexIntervalMs());
+    const rows = await queryRows(
+      conn,
+      `SELECT e.session_id AS session_id,
+              CAST(epoch_ms(e.ts) // 60000 AS BIGINT) AS minute,
+              SUM(e.cost_usd) AS cost_usd
+       FROM events e
+       WHERE e.session_id IN (${costIds.map(sqlString).join(', ')})
+         AND ${usageRowsSql('e')}
+         AND e.cost_usd > 0
+         AND e.ts >= epoch_ms(${costFloor}::BIGINT)
+       GROUP BY 1, 2
+       ORDER BY 1, 2`,
+    );
+    for (const r of rows) {
+      const id = String(r.session_id);
+      const entry = { minute: Number(r.minute), costUsd: Number(r.cost_usd) };
+      const list = costMinutes.get(id);
+      if (list) list.push(entry);
+      else costMinutes.set(id, [entry]);
+    }
+  }
+  return { dataVersion: version, files, sessionRows, costMinutes };
 }
 
 function startBuild(): Promise<LiveSnapshot> {

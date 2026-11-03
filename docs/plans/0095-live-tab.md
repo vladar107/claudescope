@@ -1,8 +1,8 @@
 # 0095 — Live tab: active sessions, subagents, and agent-to-agent messages
 
-- **Status:** in-progress
+- **Status:** done
 - **Date:** 2026-11-02
-- **PR:** https://github.com/vladar107/claudescope/pull/130 (stage 1), https://github.com/vladar107/claudescope/pull/131 (stage 2), https://github.com/vladar107/claudescope/pull/132 (stage 3)
+- **PR:** https://github.com/vladar107/claudescope/pull/130 (stage 1), https://github.com/vladar107/claudescope/pull/131 (stage 2), https://github.com/vladar107/claudescope/pull/132 (stage 3), https://github.com/vladar107/claudescope/pull/133 (stage 4)
 
 ## Context
 
@@ -218,10 +218,24 @@ Waves: **W1** C9 ∥ C10 → **W2** C11 → final review → PR.
 
 Acceptance:
 
-- Integration tests: buckets sum to the window's event count, burn rate
-  ignores non-canonical usage, and "today" honors a non-UTC timezone across
-  midnight.
-- Notifications never fire before opt-in, and fire once per transition.
+- Integration tests:
+  - activity counts items across main and runs, and a cached result is
+    trimmed to the request's clock without re-deriving
+  - cost minutes count only canonical usage and line up with the usage minute
+  - cost is absent for agents without per-response usage
+- "Today" reuses `/api/analytics?groupBy=day` with the browser timezone, so
+  it inherits that route's timezone tests.
+- In the browser, notifications are requested only on opt-in. They never fire
+  on the first load, and the opt-in is dropped if permission is revoked.
+
+As built, three things differ from the chunk rows above:
+
+- Compactions are read from the assembled thread (`ThreadItem.compaction`),
+  not the `compactions` table, so the live path issues no query for them.
+- "Today" uses the existing analytics endpoint rather than a new server
+  figure.
+- "Sessions today" is dropped, because that endpoint has no per-day session
+  count.
 
 **Worker tiers.** The session runs on Opus. Complex chunks go to Sonnet,
 simple chunks to Haiku, and C6 (read-only) to Haiku `Explore`. At most three

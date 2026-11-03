@@ -33,6 +33,7 @@ Claudescope works whether you use one agent or all eight. Adding another is just
 ## What it can do
 
 - **Multi-agent** — Claude Code, Codex, Junie, pi, opencode, GitHub Copilot CLI, Google Antigravity, and xAI Grok CLI sessions side by side, each labeled with an **agent badge**. A project that several agents touched shows one card with all its agent tags; drill in and **filter the session list by agent**.
+- **Live** — every session written to in the last 5 min, 15 min, or hour, across all agents, in **Idle / Working / Possibly stuck** lanes. Each card shows what the session is doing right now (the open tool and how long it has run, or its last message when idle), its running **subagents** and their tools, context and compactions, cost so far, and an activity sparkline; a strip above adds burn rate now and spend today. A per-session view draws the **agent tree and the messages between agents** — spawns, mid-run messages, notifications, and results — on a timeline that deep-links into the transcript. Optional browser notifications fire when a session goes idle.
 - **Browse** every session grouped by project — titles, dates, message/tool counts, token totals, cost, git branch, PR links.
 - **Read** a session as a clean threaded conversation: markdown, syntax-highlighted code, collapsible thinking, paired tool calls + results, **syntax-highlighted red/green diffs** for edits, attachments, and sidechain/subagent turns. A built-in **find-in-session** bar (⌘/Ctrl+F) searches the whole transcript — including collapsed thinking, tool, and subagent content — auto-expanding and highlighting matches, with a user/assistant filter.
 - **Review changes** via a **Files changed** tab that aggregates every edit/write in the session by file, with per-file diffs and +/− counts (diffs load lazily per file).
@@ -453,6 +454,14 @@ served from cache (legitimately high for Claude Code, which re-reads cached cont
   changing it is rebuilt at most every `FTS_REBUILD_MIN_INTERVAL_MS` and the
   first quiet scan (or `POST /api/reindex`) catches up. Session lists and
   analytics update on every scan, and **Exact** search is always current.
+- **Live states are inferred from the transcript**, never from the agent
+  process (which Claudescope never sees). A session is *idle* when its last
+  turn ends in text, *working* or *running a tool* otherwise, and *possibly
+  stuck* when it has written nothing for the threshold you pick — a long
+  command and a pending approval look the same. What each agent cannot record
+  shows as "not recorded" rather than zero: Copilot's cost lands only at session
+  end, Antigravity records no tokens, mid-run messages between agents exist only
+  for Claude Code and Codex, and Junie records no subagent linkage at all.
 - **Thinking blocks** appear empty because Claude Code stores only a signature
   (and Codex only encrypted reasoning), not the plaintext — the app notes this
   explicitly. (Not a bug.)

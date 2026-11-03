@@ -469,3 +469,68 @@ describe('GET /api/live/:sessionId', () => {
     expect(loadsOf(id)).toBe(loads);
   });
 });
+
+describe('live activity, compactions and cost', () => {
+  const dir = join(projectsDir, 'enc-projLive');
+  const t = (secsAgo: number) => new Date(Date.now() - secsAgo * 1000).toISOString();
+  const usage = (output: number) => ({ input_tokens: 1_000_000, output_tokens: output });
+
+  it('trims a cached run-less session activity to the request clock without a re-derive', async () => {
+    writeSession('sessAct', 0);
+    await reindex();
+    await vi.waitFor(async () => {
+      expect((await getLive('?windowMin=60')).sessions.map((s) => s.meta.id)).toContain('sessAct');
+    });
+    const find = async (q: string) => (await getLive(q)).sessions.find((s) => s.meta.id === 'sessAct')!;
+    expect((await find('?windowMin=60')).activity!.length).toBeGreaterThan(0);
+    const loads = loadsOf('sessAct');
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 25 * MIN);
+    try {
+      expect((await find('?windowMin=60')).activity).toEqual([]);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(loadsOf('sessAct')).toBe(loads);
+  });
+
+  it('prices one canonical row per billed call and reports compactions, on list and detail', async () => {
+    const id = 'sessCost';
+    const [usageA, usageB] = [t(100), t(99)];
+    const base = { sessionId: id, cwd: '/tmp/projLive', version: '2.1.0', isSidechain: false };
+    const asst = (uuid: string, parent: string, ts: string, output: number) => ({
+      ...base, type: 'assistant', uuid, parentUuid: parent, timestamp: ts,
+      message: { role: 'assistant', model: 'claude-opus-4-8', id: 'c-m1', content: [{ type: 'text', text: uuid }], usage: usage(output) },
+    });
+    writeFileSync(
+      join(dir, `${id}.jsonl`),
+      jsonl([
+        { ...base, type: 'user', uuid: 'c-u1', parentUuid: null, timestamp: t(200), message: { role: 'user', content: 'go' } },
+        { ...base, type: 'system', subtype: 'compact_boundary', uuid: 'c-b1', parentUuid: null, timestamp: t(150), content: 'Conversation compacted', compactMetadata: { trigger: 'auto', preTokens: 77_000, postTokens: 5_000 } },
+        asst('c-a1', 'c-u1', usageA, 100),
+        asst('c-a2', 'c-a1', usageB, 200),
+      ]),
+    );
+    await reindex();
+    await vi.waitFor(async () => {
+      expect((await getLive()).sessions.map((s) => s.meta.id)).toContain(id);
+    });
+    const s = (await getLive()).sessions.find((x) => x.meta.id === id)!;
+    const total = s.costMinutes!.reduce((n, b) => n + b.costUsd, 0);
+    expect(total).toBeCloseTo(5.005, 6);
+    const usageMinutes = [usageA, usageB].map((iso) => Math.floor(Date.parse(iso) / 60_000));
+    expect(s.costMinutes!.every((b) => usageMinutes.includes(b.minute))).toBe(true);
+    expect(s.compactions).toEqual([expect.objectContaining({ preTokens: 77_000 })]);
+    const detail = (await app.inject({ method: 'GET', url: `/api/live/${id}` })).json() as LiveSessionDetail;
+    expect(detail.session.costMinutes).toEqual(s.costMinutes);
+    expect(detail.session.compactions).toEqual(s.compactions);
+  });
+
+  it('omits cost for an agent without per-response usage', async () => {
+    const { toLiveSession } = await import('../src/routes/live.js');
+    const meta = { id: 'x', connectorId: 'antigravity' } as Parameters<typeof toLiveSession>[0];
+    const s = toLiveSession(meta, 0, { state: 'idle', subagents: { running: 0, done: 0 }, runs: [], activity: [] }, Date.now(), [
+      { minute: 1, costUsd: 1 },
+    ]);
+    expect(s.costMinutes).toBeUndefined();
+  });
+});

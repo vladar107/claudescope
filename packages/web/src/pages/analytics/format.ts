@@ -36,3 +36,31 @@ export function shortKey(key: string, groupBy: AnalyticsGroupBy): string {
   if (parts.length <= 2) return key;
   return parts.slice(-2).join('-');
 }
+
+function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+/** The browser's IANA time zone, sent with analytics queries so days are local. */
+export const TIME_ZONE = browserTimeZone();
+
+/** Today's date (YYYY-MM-DD) in {@link TIME_ZONE}. */
+export function todayInTimeZone(): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((candidate) => candidate.type === type)?.value ?? '';
+    return `${part('year')}-${part('month')}-${part('day')}`;
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}

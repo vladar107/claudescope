@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type {
   AgentMessage,
+  LiveMinuteCost,
   LiveCountResponse,
   LiveFinished,
   LiveResponse,
@@ -28,9 +29,14 @@ import { agentMessageSignal, hasPromptSizedUsage, usageGranularity } from '../da
 import { buildAgentMessages } from '../data/agent-messages.js';
 import { fingerprintFromRows } from '../data/fingerprint.js';
 import { getDataVersion } from '../data/index.js';
-import { deriveLiveState, type LiveStateResult } from '../data/live-state.js';
+import {
+  ACTIVITY_WINDOW_MS,
+  deriveLiveState,
+  trimMinutes,
+  type LiveStateResult,
+} from '../data/live-state.js';
 import { assembleThread, buildSubagentRuns } from '../data/parser.js';
-import { getLiveSnapshot, type LiveSnapshot, type SnapshotFile } from '../data/live-snapshot.js';
+import { COST_KEEP_MS, getLiveSnapshot, type LiveSnapshot, type SnapshotFile } from '../data/live-snapshot.js';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
 import { reindexIntervalMs } from '../settings.js';
 import { rowToSessionMeta } from './sessions.js';
@@ -122,9 +128,16 @@ async function loadThread(meta: SessionMeta, candidate: LiveCandidate) {
   return { thread, runs, endedAt };
 }
 
-const UNKNOWN_STATE: LiveStateResult = { state: 'unknown', subagents: { running: 0, done: 0 }, runs: [] };
+const UNKNOWN_STATE: LiveStateResult = { state: 'unknown', subagents: { running: 0, done: 0 }, runs: [], activity: [] };
 
-function toLiveSession(meta: SessionMeta, lastWriteMs: number, derived: LiveStateResult): LiveSession {
+export function toLiveSession(
+  meta: SessionMeta,
+  lastWriteMs: number,
+  derived: LiveStateResult,
+  nowMs: number,
+  costMinutes: LiveMinuteCost[] | undefined,
+): LiveSession {
+  const perResponse = usageGranularity(meta.connectorId) === 'per-response';
   return {
     meta,
     state: derived.state,
@@ -136,6 +149,9 @@ function toLiveSession(meta: SessionMeta, lastWriteMs: number, derived: LiveStat
     ...(derived.lastText !== undefined ? { lastText: derived.lastText } : {}),
     ...(derived.toolErrors !== undefined ? { toolErrors: derived.toolErrors } : {}),
     usageGranularity: usageGranularity(meta.connectorId),
+    activity: trimMinutes(derived.activity, nowMs, ACTIVITY_WINDOW_MS),
+    ...(derived.compactions ? { compactions: derived.compactions } : {}),
+    ...(perResponse ? { costMinutes: trimMinutes(costMinutes ?? [], nowMs, COST_KEEP_MS) } : {}),
   };
 }
 
@@ -322,7 +338,7 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
           req.log.warn({ sessionId: candidate.id, err: (err as Error).name }, 'live state derivation failed');
           derived = UNKNOWN_STATE;
         }
-        sessions.push(toLiveSession(meta, candidate.lastModifiedMs, derived));
+        sessions.push(toLiveSession(meta, candidate.lastModifiedMs, derived, nowMs, snap.costMinutes.get(candidate.id)));
       }
 
       const body: LiveResponse = {
@@ -338,19 +354,21 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { sessionId: string }; Querystring: { windowMin?: string } }>(
     '/api/live/:sessionId',
     async (req, reply) => {
-      const found = await findCandidate(await getLiveSnapshot(), req.params.sessionId);
+      const snap = await getLiveSnapshot();
+      const found = await findCandidate(snap, req.params.sessionId);
       if (!found) return reply.code(404).send({ error: 'Session not found' });
       const { meta, candidate } = found;
       const { windowMs } = windowMsFrom(req.query.windowMin);
+      const nowMs = Date.now();
       let entry: DetailEntry;
       try {
-        entry = await detailFor(meta, candidate, Date.now(), windowMs);
+        entry = await detailFor(meta, candidate, nowMs, windowMs);
       } catch (err) {
         req.log.warn({ sessionId: candidate.id, err: (err as Error).name }, 'live detail derivation failed');
         entry = { fingerprint: '', windowMs, hasRuns: false, anyActive: false, derived: UNKNOWN_STATE, messages: [], derivedAtMs: 0 };
       }
       const body: LiveSessionDetail = {
-        session: toLiveSession(meta, candidate.lastModifiedMs, entry.derived),
+        session: toLiveSession(meta, candidate.lastModifiedMs, entry.derived, nowMs, snap.costMinutes.get(candidate.id)),
         messages: entry.messages.slice(-DETAIL_MESSAGES_MAX),
         messageSignal: agentMessageSignal(meta.connectorId),
       };
