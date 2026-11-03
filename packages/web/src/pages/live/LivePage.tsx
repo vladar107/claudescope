@@ -4,20 +4,12 @@ import {
   LIVE_WINDOW_MINUTES,
   type AgentUsageGranularity,
   type LiveFinished,
-  type LiveOpenTool,
   type LiveResponse,
   type LiveRun,
   type LiveSession,
-  type LiveState,
 } from '@claudescope/shared';
 import { api } from '../../api/client.js';
-import {
-  AgentBadge,
-  ErrorBox,
-  formatCost,
-  Spinner,
-  toolInputFileName,
-} from '../../components';
+import { AgentBadge, ErrorBox, formatCost, Spinner } from '../../components';
 import { useServerStatus } from '../../status/StatusProvider.js';
 import { useDataVersionRefetch } from '../../status/useDataVersionRefetch.js';
 import { contextPct } from '../browse/format.js';
@@ -29,6 +21,15 @@ import {
   writeLiveWindow,
   writeStored,
 } from './prefs.js';
+import {
+  ago,
+  elapsed,
+  RUNNING,
+  runName,
+  STALLABLE,
+  stateLabel,
+  toolSummary,
+} from './liveFormat.js';
 import './live.css';
 
 /** Refetch cadence while something is working and the tab is visible. */
@@ -45,62 +46,6 @@ const WINDOW_OPTIONS = LIVE_WINDOW_MINUTES.map((m) => ({
   value: m,
   label: m === 60 ? '1 hour' : `${m} min`,
 }));
-
-/** States that should be writing while they run; silence in them is the stuck signal. */
-const STALLABLE: LiveState[] = ['tool', 'working', 'subagents'];
-const RUNNING: LiveState[] = ['working', 'tool', 'subagents'];
-
-function stateLabel(state: LiveState, openTool?: LiveOpenTool): string {
-  switch (state) {
-    case 'idle':
-      return 'Idle';
-    case 'working':
-      return 'Working';
-    case 'tool':
-      return openTool?.name ? `Running ${openTool.name}` : 'Running tool';
-    case 'subagents':
-      return 'Subagents running';
-    case 'ended':
-      return 'Ended';
-    case 'unknown':
-      return 'Unknown';
-  }
-}
-
-function asRecord(v: unknown): Record<string, unknown> {
-  return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
-}
-
-/** One-line summary of what a tool call is operating on: file name, else the first useful string field. */
-function toolSummary(tool: LiveOpenTool): string {
-  const file = toolInputFileName(tool.input);
-  if (file) return `${tool.name} ${file}`;
-  const input = asRecord(tool.input);
-  for (const key of ['command', 'pattern', 'query', 'url', 'description', 'prompt']) {
-    const value = input[key];
-    if (typeof value === 'string' && value.trim()) {
-      return `${tool.name} ${value.trim().split('\n')[0]}`;
-    }
-  }
-  return tool.name;
-}
-
-function ago(ms: number, now: number): string {
-  const sec = Math.max(0, Math.floor((now - ms) / 1000));
-  if (sec < 60) return `${sec} s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} m ago`;
-  const hr = Math.floor(min / 60);
-  return hr < 24 ? `${hr} h ago` : `${Math.floor(hr / 24)} d ago`;
-}
-
-function elapsed(ms: number, now: number): string {
-  const sec = Math.max(0, Math.floor((now - ms) / 1000));
-  if (sec < 60) return `${sec} s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} m ${sec % 60} s`;
-  return `${Math.floor(min / 60)} h ${min % 60} m`;
-}
 
 function costLabel(
   granularity: AgentUsageGranularity,
@@ -345,10 +290,6 @@ function runLines(runs: LiveRun[]): RunLine[] {
   return out;
 }
 
-function runName(run: LiveRun): string {
-  return run.description || run.agentType || 'subagent';
-}
-
 function LiveCard({ live, now, stallMs }: { live: LiveSession; now: number; stallMs: number }) {
   const { meta } = live;
   const idleMs = now - live.lastWriteMs;
@@ -465,6 +406,11 @@ function LiveCard({ live, now, stallMs }: { live: LiveSession; now: number; stal
           {costLabel(live.usageGranularity, live.state === 'ended', meta.totalCostUsd)}
         </span>
       </footer>
+      {live.runs.length > 0 ? (
+        <Link to={`/live/${encodeURIComponent(meta.id)}`} className="tv-live__focus-link">
+          Agents &amp; messages
+        </Link>
+      ) : null}
     </article>
   );
 }

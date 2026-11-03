@@ -29,6 +29,7 @@ import {
   type CodexSession,
 } from './normalize.js';
 import { codexHooks, codexMcpServers, codexPlugins } from './extensions.js';
+import { codexInterAgentSignals } from './inter-agent.js';
 import { codexSkills } from './skills.js';
 import { codexSubagents } from './subagents.js';
 
@@ -170,6 +171,7 @@ export const codexConnector: AgentConnector = {
   eventsProjectionSql,
   auxProjections,
   fallbackTitleCandidateSql,
+  interAgentSignals: codexInterAgentSignals,
   loadSession,
   globalMemory: codexGlobalMemory,
   skills: codexSkills,

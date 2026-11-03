@@ -2,7 +2,7 @@
 
 - **Status:** in-progress
 - **Date:** 2026-11-02
-- **PR:** https://github.com/vladar107/claudescope/pull/130 (stage 1), https://github.com/vladar107/claudescope/pull/131 (stage 2)
+- **PR:** https://github.com/vladar107/claudescope/pull/130 (stage 1), https://github.com/vladar107/claudescope/pull/131 (stage 2), https://github.com/vladar107/claudescope/pull/132 (stage 3)
 
 ## Context
 
@@ -191,7 +191,7 @@ Acceptance:
 | Chunk | Task | Tier (Jev) | Depends |
 | --- | --- | --- | --- |
 | C6 | Read-only research on the user's real transcripts and the connectors: how each agent records spawn prompts, mid-run messages (Claude Code `SendMessage`, `<task-notification>` rows, background agents; Codex `send_input`/`wait_agent`/`close_agent`), and results. Also check whether Codex `task_complete`/`turn_aborted` (dropped by the normalizer today) would give a firmer idle/interrupt signal than the tail rules. Output: a shapes summary plus synthetic fixture lines. Nothing is copied verbatim from real transcripts. | Lookup (Jev 0.26 → decided: read-only lookup, cheapest tier per tiering rules) | — |
-| C7 | `data/agent-messages.ts`: build the `AgentMessage[]` ledger from the thread + `SubagentRun`s (nested runs included). Add an `agentMessageCalls?` connector hook for format-specific tool names, `AGENT_MESSAGE_SIGNAL` + its conformance test, and `GET /api/live/:sessionId` (tree + ledger + per-run live state; works for any session). | Complex (Jev complex 0.97) | C6 |
+| C7 | `data/agent-messages.ts`: build the `AgentMessage[]` ledger from the thread + `SubagentRun`s (nested runs included). Add an `interAgentSignals?` connector hook for format-specific tool names and user-row patterns (Claude Code `SendMessage`, `TaskOutput`, `TaskStop`, `<task-notification>`, `<agent-message from>`; Codex `send_message`, `followup_task`, `wait_agent`, `interrupt_agent`), `AGENT_MESSAGE_SIGNAL` + its conformance test, and `GET /api/live/:sessionId` (tree + ledger + per-run live state; works for any session). | Complex (Jev complex 0.97) | C6 |
 | C8 | Web: `/live/:sessionId` focus page with the agent tree, a swimlane timeline (one lane per agent), and message detail. "Jump to transcript" goes to `/sessions/:id` and lands on `anchorUuid` with the instant jump + `holdAnchor` (never smooth scroll). Link to it from each Live card. | Complex (Jev 0.48 → decided complex: layout of nested runs + anchor landing) | C7 contract |
 
 Waves: **W1** C6 → orchestrator adds the `AgentMessage` types → **W2** C7 ∥ C8
@@ -238,7 +238,7 @@ worker: it writes no code and doesn't inherit the implementation context.
 - `packages/server/src/data/agent-capabilities.ts`: `SESSION_END_SIGNAL`,
   `AGENT_MESSAGE_SIGNAL`.
 - `packages/server/src/connectors/types.ts` + Claude Code and Codex
-  connectors: `agentMessageCalls?` hook (stage 3).
+  connectors: `interAgentSignals?` hook (stage 3).
 - `packages/server/src/routes/live.ts` (new), `routes/index.ts`: registration.
 - `packages/web/src/pages/live/*` (new), `App.tsx`: route and nav,
   `api/client.ts`.
@@ -276,7 +276,7 @@ canvas boards with Playwright screenshots before presenting.
 - **Codex and Copilot interrupts read as `working`** (then "possibly
   stuck"). Codex's `turn_aborted` and Copilot's `abort` are dropped by their
   normalizers, and the agents aren't in `INTERRUPT_SIGNAL`. Adding them changes
-  interrupt analytics too, so C6 decides it deliberately.
+  interrupt analytics too. C6 confirmed the signals exist (`task_complete`, `turn_aborted`); wiring them in is left for a separate change.
 - **opencode in-flight tools** used to get a `tool_result` regardless of
   status. They now stay open until `completed`/`error`. An in-flight
   `apply_patch` stays a raw call, so Files changed reports only confirmed
