@@ -22,6 +22,41 @@ import type {
 } from '@claudescope/shared';
 import type { SessionData } from '../data/session-loader.js';
 
+/** A non-spawn tool call that talks to another agent, in canonical terms. */
+export interface InterAgentCall {
+  kind: 'message' | 'wait' | 'stop';
+  /** The agent it addresses, as the format names it (id, name or path); absent when none. */
+  target?: string;
+  text?: string;
+}
+
+/** A user-row text that reports on a subagent (its hand-back or a status notice). */
+export interface InterAgentNotice {
+  kind: 'result' | 'notification';
+  /** The subagent the notice is about, as the format names it. */
+  from: string;
+  text?: string;
+  status?: string;
+}
+
+/**
+ * Format-specific recognizers for messages between agents that the canonical
+ * `Task` spawn does not cover. Only connectors declared `mid-run` in
+ * `AGENT_MESSAGE_SIGNAL` implement it. All hooks are pure and must return
+ * null / false for anything they do not positively recognise.
+ */
+export interface InterAgentSignals {
+  /** Maps a tool call (never a spawn) to a message / wait / stop edge. */
+  fromToolCall?(name: string, input: unknown): InterAgentCall | null;
+  /** Maps one user-row text block to a hand-back or status notice. */
+  fromUserText?(text: string): InterAgentNotice | null;
+  /**
+   * True when a spawn call's result only acknowledges a launch (the agent
+   * keeps running), so it is not the subagent's report.
+   */
+  isAsyncLaunch?(input: unknown, resultText: string): boolean;
+}
+
 /** A discovered source file with the stats used for incremental change detection. */
 export interface DiscoveredFile {
   path: string;
@@ -103,8 +138,14 @@ export interface AgentConnector {
    * Read a single session's files (already resolved from the `files` table) and
    * normalize them into the domain `SessionData` consumed by the thread
    * assembler. `paths` are all files recorded for the session.
+   * `resolveImages: false` skips reading image bytes off disk (default true);
+   * connectors that never resolve images ignore it.
    */
-  loadSession(sessionId: string, paths: string[]): Promise<SessionData>;
+  loadSession(
+    sessionId: string,
+    paths: string[],
+    opts?: { resolveImages?: boolean },
+  ): Promise<SessionData>;
 
   /**
    * Optional: live-stat ONE of this connector's discovered files — the same
@@ -194,6 +235,9 @@ export interface AgentConnector {
    * connector. Paths are absolute; the data layer contracts them.
    */
   mcpServers?(): McpServerEntry[];
+
+  /** Optional: recognizers for mid-run messages between agents (see {@link InterAgentSignals}). */
+  interAgentSignals?: InterAgentSignals;
 
   /** Optional: configured lifecycle hooks; same contract as {@link mcpServers}. */
   hooks?(): HookEntry[];

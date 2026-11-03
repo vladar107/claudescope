@@ -243,7 +243,7 @@ export function assembleThread(events: RawEvent[], opts: AssembleOptions = {}): 
 }
 
 /** Tool names whose tool_use spawns a subagent run. */
-const SUBAGENT_TOOL_NAMES = new Set(['Agent', 'Task']);
+export const SUBAGENT_TOOL_NAMES = new Set(['Agent', 'Task']);
 
 /** Total input + output + cache tokens for a turn's usage. */
 function usageTokens(usage?: MessageUsage): number {

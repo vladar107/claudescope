@@ -457,6 +457,17 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   walking again per subagent rollout. Whole-file re-normalization of a
   changed rollout is deliberate: rows depend on cross-record correlation, and
   DuckDB re-reads the whole cache anyway.
+- **Live state comes from the assembled thread, never from SQL rows or a
+  process.** `data/live-state.ts` reads the tail of `assembleThread` output
+  (tool-result-only rows are dropped there, so reason over items and blocks).
+  A subagent run is active from its own tail and recency, never from the
+  spawning call's result: Codex `spawn_agent` and background agents return
+  at once. What a format can't tell is declared (`LIVE_STATE_SIGNAL`,
+  `SESSION_END_SIGNAL`, `agentMessageSignal()`), and inter-agent records go
+  through the `interAgentSignals` connector hook. The live routes must not
+  query DuckDB per request — candidates, metrics, and cost minutes come from
+  `data/live-snapshot.ts`, refreshed in the background on `dataVersion`; a
+  per-request query queues behind indexer passes (seconds on a real machine).
 - **Release is maintainer-only** and tag-triggered (npm Trusted Publishing /
   OIDC). See `CONTRIBUTING.md`.
 

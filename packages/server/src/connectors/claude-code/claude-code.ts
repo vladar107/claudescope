@@ -20,6 +20,7 @@ import type { AgentConnector, AuxProjections, DiscoveredFile } from '../types.js
 import { MAX_TOOL_ERROR_TEXT } from '../tool-errors.js';
 import { globalMemory, memorySlugForCwd, projectMemory } from './memory.js';
 import { claudeCodeHooks, claudeCodeMcpServers, claudeCodePlugins } from './extensions.js';
+import { claudeInterAgentSignals } from './inter-agent.js';
 import { claudeCodeSkills } from './skills.js';
 import { claudeCodeSubagents } from './subagents.js';
 
@@ -499,6 +500,7 @@ export const claudeCodeConnector: AgentConnector = {
   globalMemory,
   projectMemory,
   projectMemorySlug: memorySlugForCwd,
+  interAgentSignals: claudeInterAgentSignals,
   skills: claudeCodeSkills,
   subagents: claudeCodeSubagents,
   mcpServers: claudeCodeMcpServers,

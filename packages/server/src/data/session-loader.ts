@@ -42,13 +42,28 @@ export interface SubagentSource {
 export interface SessionData {
   mainEvents: RawEvent[];
   subagents: SubagentSource[];
+  /**
+   * Timestamp of the session's explicit end marker, when the format writes one
+   * and nothing conversational follows it (a resumed session clears it). Only
+   * connectors declared in `SESSION_END_SIGNAL` ever set it.
+   */
+  endedAt?: string;
+}
+
+/** Options for {@link loadSessionData}. */
+export interface LoadSessionOptions {
+  /** Read saved image bytes off disk (default true). The live path skips them. */
+  resolveImages?: boolean;
 }
 
 /**
  * Resolve a session's files from the index and delegate reading to its owning
  * connector. Returns empty collections if the session is unknown.
  */
-export async function loadSessionData(sessionId: string): Promise<SessionData> {
+export async function loadSessionData(
+  sessionId: string,
+  opts?: LoadSessionOptions,
+): Promise<SessionData> {
   const conn = await getConnection();
   const rows = await queryRows(
     conn,
@@ -58,5 +73,5 @@ export async function loadSessionData(sessionId: string): Promise<SessionData> {
   if (paths.length === 0) return { mainEvents: [], subagents: [] };
 
   const connectorId = rows[0]?.connector_id != null ? String(rows[0].connector_id) : null;
-  return connectorById(connectorId).loadSession(sessionId, paths);
+  return connectorById(connectorId).loadSession(sessionId, paths, opts);
 }

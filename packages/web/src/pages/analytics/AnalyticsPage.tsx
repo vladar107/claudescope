@@ -38,7 +38,7 @@ import { ToolUsageChart } from './ToolUsageChart.js';
 import { SkillUsageChart } from './SkillUsageChart.js';
 import type { BreakdownMetric, BreakdownSort } from './BreakdownChart.js';
 import { TimeSeriesChart } from './TimeSeriesChart.js';
-import { formatCount, formatCost, formatPct } from './format.js';
+import { formatCount, formatCost, formatPct, TIME_ZONE, todayInTimeZone } from './format.js';
 import { SessionEfficiencyTable } from './SessionEfficiencyTable.js';
 import './analytics.css';
 
@@ -57,32 +57,6 @@ const SORT_OPTIONS: { value: BreakdownSort; label: string }[] = [
   { value: 'tokens', label: 'Tokens' },
   { value: 'cost', label: 'Cost' },
 ];
-
-function browserTimeZone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  } catch {
-    return 'UTC';
-  }
-}
-
-const TIME_ZONE = browserTimeZone();
-
-function todayInTimeZone(): string {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: TIME_ZONE,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).formatToParts(new Date());
-    const part = (type: Intl.DateTimeFormatPartTypes) =>
-      parts.find((candidate) => candidate.type === type)?.value ?? '';
-    return `${part('year')}-${part('month')}-${part('day')}`;
-  } catch {
-    return new Date().toISOString().slice(0, 10);
-  }
-}
 
 /** Fetch state for one analytics query. */
 interface QueryState {

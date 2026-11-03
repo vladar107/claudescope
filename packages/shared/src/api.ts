@@ -1266,3 +1266,174 @@ export interface AgentComparisonResponse {
   rows: AgentComparisonRow[];
   prLinked: PrLinkedStats;
 }
+
+// ---------------------------------------------------------------------------
+// Live — sessions written to recently, with a state inferred from the
+// transcript tail (never from the agent process, which Claudescope never sees)
+// ---------------------------------------------------------------------------
+
+/** Allowed `windowMin` values for the live endpoints; anything else falls back to the default. */
+export const LIVE_WINDOW_MINUTES = [5, 15, 60] as const;
+export const LIVE_DEFAULT_WINDOW_MINUTES = 15;
+
+/**
+ * What a live session is doing, read from the last block of its last
+ * main-thread item:
+ * - `idle`: the agent finished — assistant text with no open tool call, a user
+ *   interrupt, or a local command. Nothing is running; the next move is the user's.
+ * - `working`: a user prompt, a closed tool call, or thinking only.
+ * - `tool`: a tool call with no result yet (see {@link LiveSession.openTool}).
+ * - `subagents`: a subagent run is still active (its own tail is not `idle`).
+ * - `ended`: the agent's format recorded a session end (Copilot only).
+ * - `unknown`: the tail matches no rule, or the agent's format has no usable tail.
+ * "Possibly stuck" is not a state: the client derives it from the timestamps.
+ */
+export type LiveState = 'idle' | 'working' | 'tool' | 'subagents' | 'ended' | 'unknown';
+
+/** An open tool call at the tail of a live session. */
+export interface LiveOpenTool {
+  name: string;
+  /** The call's input, with long string fields capped. */
+  input: unknown;
+  /** Timestamp of the turn that made the call, epoch ms; absent when unparsable. */
+  sinceMs?: number;
+}
+
+/** One session written to within the live window. */
+export interface LiveSession {
+  /** Stored metrics; capability-absent figures stay absent, never 0. */
+  meta: SessionMeta;
+  state: LiveState;
+  /** Latest mtime across the session's files, epoch ms. */
+  lastWriteMs: number;
+  /** Timestamp of the last main-thread item, epoch ms — when the current state began. */
+  stateSinceMs?: number;
+  openTool?: LiveOpenTool;
+  /** Subagent runs, split by whether each is still active. */
+  subagents: { running: number; done: number };
+  /**
+   * How the agent records token usage, so the UI can tell "not recorded"
+   * (`none`) and "lands at session end" (`session-level`) apart from a real $0.
+   */
+  usageGranularity: AgentUsageGranularity;
+  /** The last assistant text of the main thread, capped (shown under an idle session). */
+  lastText?: string;
+  /** Subagent runs, active first, then most recently written. */
+  runs: LiveRun[];
+  /** Failed tool calls on the main thread; absent when the agent's format records no failures. */
+  toolErrors?: number;
+  /**
+   * Thread items (main + runs) per minute over the last 30 minutes, as sparse
+   * pairs keyed by absolute epoch minute (`floor(ms / 60_000)`), so a cached
+   * value never goes stale as time passes. Minutes with no items are omitted.
+   */
+  activity?: LiveMinuteCount[];
+  /** Main-thread compactions; absent when the agent's format records none. */
+  compactions?: LiveCompaction[];
+  /**
+   * Estimated cost per minute over the last 60 minutes (canonical usage only),
+   * sparse like `activity`; absent when the agent has no per-response usage.
+   * From the index, so it lags by up to one reindex interval.
+   */
+  costMinutes?: LiveMinuteCost[];
+}
+
+export interface LiveMinuteCount {
+  /** Epoch minute: `floor(ms / 60_000)`. */
+  minute: number;
+  count: number;
+}
+
+export interface LiveMinuteCost {
+  /** Epoch minute: `floor(ms / 60_000)`. */
+  minute: number;
+  costUsd: number;
+}
+
+export interface LiveCompaction {
+  /** Epoch ms of the compacted turn, when known. */
+  at?: number;
+  /** Prompt size just before the compaction, when known. */
+  preTokens?: number;
+}
+
+/** One subagent run of a live session. */
+export interface LiveRun {
+  agentId: string;
+  agentType: string;
+  description: string;
+  /** True while the run is still working (see `deriveLiveState` for the rule). */
+  active: boolean;
+  /** The run's own tail state — `tool`, `working`, or `idle`. */
+  state: LiveState;
+  openTool?: LiveOpenTool;
+  /** Timestamp of the run's last item, epoch ms. */
+  lastItemMs?: number;
+  /** agentId of the run that spawned this one, when it is nested. */
+  parentAgentId?: string;
+}
+
+/** A session last written to within the hour but outside the live window. Stat-only: never parsed. */
+export interface LiveFinished {
+  meta: SessionMeta;
+  lastWriteMs: number;
+  usageGranularity: AgentUsageGranularity;
+}
+
+/** GET /api/live — served with an ETag; a matching `If-None-Match` gets a 304. */
+export interface LiveResponse {
+  windowMinutes: number;
+  /** Most recently written first. */
+  sessions: LiveSession[];
+  /** Candidates left out by the cap. */
+  truncated: number;
+  /** Recently finished sessions, newest first, capped; empty for the 1-hour window. */
+  finished: LiveFinished[];
+}
+
+/** GET /api/live/count — stat-only, for the nav badge (no transcript is parsed). */
+export interface LiveCountResponse {
+  windowMinutes: number;
+  count: number;
+}
+
+/**
+ * What one message between agents was:
+ * - `spawn`: a parent started a subagent (text = the prompt it sent).
+ * - `message`: a message sent to an agent that already exists (Claude Code
+ *   SendMessage, Codex send_message / followup_task).
+ * - `result`: a subagent's final report reaching its parent.
+ * - `notification`: a status notice about a subagent (Claude Code task-notification).
+ * - `wait`: a parent waiting on a subagent (target may be unknown).
+ * - `stop`: a parent stopping or interrupting a subagent.
+ */
+export type AgentMessageKind = 'spawn' | 'message' | 'result' | 'notification' | 'wait' | 'stop';
+
+/** Which message kinds an agent's format records. */
+export type AgentMessageSignal = 'mid-run' | 'spawn-result' | 'none';
+
+/** One message between two agents of a session, in time order. */
+export interface AgentMessage {
+  kind: AgentMessageKind;
+  /** `main` for the main thread, else the sender run's agentId. */
+  from: string;
+  /** `main` or the target run's agentId; absent when the target is unknown. */
+  to?: string;
+  /** Epoch ms; absent when the record carries no usable timestamp. */
+  at?: number;
+  /** Message body, capped. */
+  text?: string;
+  /** e.g. a notification's `completed` / `failed`, or `error` for a failed call. */
+  status?: string;
+  /** uuid of the thread item that records it (deep link `/sessions/:id#<uuid>`). */
+  anchorUuid?: string;
+  /** agentId of the run whose thread holds the anchor; absent for the main thread. */
+  anchorAgentId?: string;
+}
+
+/** GET /api/live/:sessionId — one session's agents and the messages between them. */
+export interface LiveSessionDetail {
+  session: LiveSession;
+  messages: AgentMessage[];
+  messageSignal: AgentMessageSignal;
+}

@@ -13,6 +13,7 @@ import { getIndexerStatus } from '../indexer-lifecycle.js';
 import { updateAvailable } from '../update-check.js';
 import { registerProjectsRoute } from './projects.js';
 import { registerSessionsRoutes } from './sessions.js';
+import { registerLiveRoutes } from './live.js';
 import { registerSearchRoute } from './search.js';
 import { registerAnalyticsRoute } from './analytics.js';
 import { registerSessionEfficiencyRoute } from './analytics-sessions.js';
@@ -86,6 +87,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   await registerProjectsRoute(app);
   await registerSessionsRoutes(app);
+  await registerLiveRoutes(app);
   await registerSearchRoute(app);
   await registerAnalyticsRoute(app);
   await registerSessionEfficiencyRoute(app);

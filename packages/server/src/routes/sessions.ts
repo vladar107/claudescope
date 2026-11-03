@@ -70,7 +70,7 @@ const SORT_SQL: Record<SessionSort, string> = {
   context: 'context_tokens DESC NULLS LAST, id',
 };
 
-function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
+export function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
   const rd = readRow(r, 'sessions');
   const cwd = rd.str('project_cwd');
   const modelsStr = rd.str('models');
