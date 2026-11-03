@@ -8,11 +8,12 @@
  * items and blocks instead.
  */
 
-import type { LiveOpenTool, LiveState, SubagentRun, ThreadItem } from '@claudescope/shared';
+import type { LiveOpenTool, LiveRun, LiveState, SubagentRun, ThreadItem } from '@claudescope/shared';
 import {
   hasInterruptSignal,
   hasLiveStateSignal,
   hasSessionEndSignal,
+  hasToolErrorSignal,
   INTERRUPT_PREFIX,
 } from './agent-capabilities.js';
 import { SUBAGENT_TOOL_NAMES } from './parser.js';
@@ -38,6 +39,12 @@ export interface LiveStateResult {
   /** Set only when state is `tool`; a `subagents` state drops it (the open call is a spawn). */
   openTool?: LiveOpenTool;
   subagents: { running: number; done: number };
+  /** Last main-thread assistant text, collapsed and capped; absent when none. */
+  lastText?: string;
+  /** Active runs first, then most recently written. */
+  runs: LiveRun[];
+  /** Failed main-thread tool calls; present only where the format records failures. */
+  toolErrors?: number;
 }
 
 /**
@@ -49,6 +56,7 @@ export interface LiveStateResult {
 const RUN_QUIET_MS = 90_000;
 
 const INPUT_STRING_CAP = 200;
+const LAST_TEXT_CAP = 200;
 const INPUT_DEPTH_CAP = 4;
 
 /** Copy of `value` with every string over the cap truncated; never mutates it. */
@@ -82,6 +90,29 @@ function itemText(item: ThreadItem): string {
 function isLocalCommandTurn(text: string): boolean {
   if (/^<(task-notification|system-reminder)>/i.test(text)) return false;
   return isSyntheticTurn(text);
+}
+
+function lastAssistantText(thread: ThreadItem[]): string | undefined {
+  for (let i = thread.length - 1; i >= 0; i--) {
+    const item = thread[i]!;
+    if (item.role !== 'assistant') continue;
+    for (let j = item.blocks.length - 1; j >= 0; j--) {
+      const block = item.blocks[j]!;
+      if (block.kind !== 'text') continue;
+      const collapsed = block.text.replace(/\s+/g, ' ').trim();
+      if (!collapsed) continue;
+      return collapsed.length > LAST_TEXT_CAP ? `${collapsed.slice(0, LAST_TEXT_CAP)}…` : collapsed;
+    }
+  }
+  return undefined;
+}
+
+function countToolErrors(thread: ThreadItem[]): number {
+  let n = 0;
+  for (const item of thread) {
+    for (const block of item.blocks) if (block.kind === 'tool' && block.result?.isError) n++;
+  }
+  return n;
 }
 
 interface Tail {
@@ -136,38 +167,53 @@ function tailOf(connectorId: string, thread: ThreadItem[]): Tail {
 export function deriveLiveState(input: LiveStateInput): LiveStateResult {
   const { connectorId, thread, runs, nowMs, windowMs, endedAt } = input;
 
-  let running = 0;
-  let done = 0;
-  for (const run of runs) {
+  const liveRuns: LiveRun[] = runs.map((run) => {
     const lastMs = parseMs(run.thread[run.thread.length - 1]?.timestamp);
     const age = lastMs === undefined ? Infinity : nowMs - lastMs;
-    const runTail = tailOf(connectorId, run.thread).state;
+    const tail = tailOf(connectorId, run.thread);
     const active =
-      age <= windowMs && (runTail === 'tool' || (runTail === 'working' && age <= RUN_QUIET_MS));
-    if (active) running++;
-    else done++;
-  }
-  const subagents = { running, done };
+      age <= windowMs && (tail.state === 'tool' || (tail.state === 'working' && age <= RUN_QUIET_MS));
+    return {
+      agentId: run.agentId,
+      agentType: run.agentType,
+      description: run.description,
+      active,
+      state: tail.state,
+      ...(tail.openTool ? { openTool: tail.openTool } : {}),
+      ...(lastMs !== undefined ? { lastItemMs: lastMs } : {}),
+      ...(run.parentAgentId ? { parentAgentId: run.parentAgentId } : {}),
+    };
+  });
+  liveRuns.sort((a, b) => Number(b.active) - Number(a.active) || (b.lastItemMs ?? 0) - (a.lastItemMs ?? 0));
+  const running = liveRuns.filter((r) => r.active).length;
+  const subagents = { running, done: liveRuns.length - running };
+  const lastText = lastAssistantText(thread);
+  const extras = {
+    runs: liveRuns,
+    ...(lastText !== undefined ? { lastText } : {}),
+    ...(hasToolErrorSignal(connectorId) ? { toolErrors: countToolErrors(thread) } : {}),
+  };
 
   const stateSinceMs = parseMs(thread[thread.length - 1]?.timestamp);
   const since = stateSinceMs !== undefined ? { stateSinceMs } : {};
 
-  if (!hasLiveStateSignal(connectorId)) return { state: 'unknown', ...since, subagents };
+  if (!hasLiveStateSignal(connectorId)) return { state: 'unknown', ...since, subagents, ...extras };
 
   const endedMs = hasSessionEndSignal(connectorId) ? parseMs(endedAt) : undefined;
   if (endedMs !== undefined && (stateSinceMs === undefined || stateSinceMs <= endedMs)) {
-    return { state: 'ended', ...since, subagents };
+    return { state: 'ended', ...since, subagents, ...extras };
   }
 
   const tail = tailOf(connectorId, thread);
   const openIsSpawn = tail.openTool !== undefined && SUBAGENT_TOOL_NAMES.has(tail.openTool.name);
   const overridden =
     running > 0 && tail.state !== 'unknown' && (tail.state !== 'tool' || openIsSpawn);
-  if (overridden) return { state: 'subagents', ...since, subagents };
+  if (overridden) return { state: 'subagents', ...since, subagents, ...extras };
   return {
     state: tail.state,
     ...since,
     ...(tail.openTool ? { openTool: tail.openTool } : {}),
     subagents,
+    ...extras,
   };
 }

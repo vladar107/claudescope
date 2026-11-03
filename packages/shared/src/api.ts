@@ -1316,15 +1316,46 @@ export interface LiveSession {
    * (`none`) and "lands at session end" (`session-level`) apart from a real $0.
    */
   usageGranularity: AgentUsageGranularity;
+  /** The last assistant text of the main thread, capped (shown under an idle session). */
+  lastText?: string;
+  /** Subagent runs, active first, then most recently written. */
+  runs: LiveRun[];
+  /** Failed tool calls on the main thread; absent when the agent's format records no failures. */
+  toolErrors?: number;
 }
 
-/** GET /api/live */
+/** One subagent run of a live session. */
+export interface LiveRun {
+  agentId: string;
+  agentType: string;
+  description: string;
+  /** True while the run is still working (see `deriveLiveState` for the rule). */
+  active: boolean;
+  /** The run's own tail state — `tool`, `working`, or `idle`. */
+  state: LiveState;
+  openTool?: LiveOpenTool;
+  /** Timestamp of the run's last item, epoch ms. */
+  lastItemMs?: number;
+  /** agentId of the run that spawned this one, when it is nested. */
+  parentAgentId?: string;
+}
+
+/** A session last written to within the hour but outside the live window. Stat-only: never parsed. */
+export interface LiveFinished {
+  meta: SessionMeta;
+  lastWriteMs: number;
+  usageGranularity: AgentUsageGranularity;
+}
+
+/** GET /api/live — served with an ETag; a matching `If-None-Match` gets a 304. */
 export interface LiveResponse {
   windowMinutes: number;
   /** Most recently written first. */
   sessions: LiveSession[];
   /** Candidates left out by the cap. */
   truncated: number;
+  /** Recently finished sessions, newest first, capped; empty for the 1-hour window. */
+  finished: LiveFinished[];
 }
 
 /** GET /api/live/count — stat-only, for the nav badge (no transcript is parsed). */

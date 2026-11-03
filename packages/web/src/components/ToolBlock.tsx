@@ -260,10 +260,17 @@ function shortToolId(id: string): string {
   return stripped.length > 10 ? stripped.slice(0, 8) : stripped;
 }
 
+/** The file name a tool input points at (`file_path`), or '' when it has none. */
+export function toolInputFileName(input: unknown): string {
+  const fp = str(asRecord(input).file_path);
+  if (!fp) return '';
+  return fp.split(/[/\\]/).filter(Boolean).pop() ?? fp;
+}
+
 /** A short, quiet descriptor for the collapsed tool line (file name, else call id). */
 function toolDescriptor(tool: ToolInteraction): string {
-  const fp = str(asRecord(tool.input).file_path);
-  if (fp) return fp.split(/[/\\]/).filter(Boolean).pop() ?? fp;
+  const file = toolInputFileName(tool.input);
+  if (file) return file;
   return tool.id ? `call · ${shortToolId(tool.id)}` : '';
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RawEvent } from '@claudescope/shared';
 import { assembleThread, buildSubagentRuns } from '../src/data/parser.js';
 import type { SubagentSource } from '../src/data/session-loader.js';
+import { connectorsWithoutToolErrorSignal } from '../src/data/agent-capabilities.js';
 import { deriveLiveState } from '../src/data/live-state.js';
 
 const NOW = Date.parse('2026-01-01T01:00:00.000Z');
@@ -181,6 +182,74 @@ describe('deriveLiveState', () => {
       const r = derive(events, { sources: [child(1)] });
       expect(r.state).toBe('tool');
       expect(r.subagents.running).toBe(1);
+    });
+  });
+
+  describe('runs, lastText and toolErrors', () => {
+    const spawn = (id: string, desc: string) => toolUse(id, 'Task', { description: desc, subagent_type: 'Explore' });
+    const src = (
+      agentId: string,
+      toolUseId: string,
+      events: RawEvent[],
+      extra: Partial<SubagentSource> = {},
+    ): SubagentSource => ({ agentId, agentType: 'Explore', description: agentId, toolUseId, events, ...extra });
+    const mainEvents = [
+      row('user', 'u1', text('go'), at(5)),
+      row('assistant', 'a1', [spawn('spawn1', 'parent')], at(4)),
+    ];
+
+    it('sorts active runs first then newest, and flags a nested run with its parent', () => {
+      const r = derive(mainEvents, {
+        sources: [
+          src('done1', 'spawn1', [row('user', 'd1', text('x'), at(3)), row('assistant', 'd2', text('fin'), at(2))]),
+          src('parent1', 'spawn1b', [
+            row('user', 'p1', text('x'), at(2)),
+            row('assistant', 'p2', [spawn('nested1', 'child')], at(1)),
+            row('user', 'p3', toolResult('nested1'), at(1, 1)),
+            row('assistant', 'p4', [toolUse('pt', 'Grep')], at(0, -5)),
+          ]),
+          src(
+            'child1',
+            'nested1',
+            [row('user', 'c1', text('x'), at(1)), row('assistant', 'c2', [toolUse('ct', 'Bash')], at(0, -10))],
+            { parentAgentId: 'parent1' },
+          ),
+        ],
+      });
+      expect(r.runs.map((x) => [x.agentId, x.active])).toEqual([
+        ['parent1', true],
+        ['child1', true],
+        ['done1', false],
+      ]);
+      expect(r.runs.find((x) => x.agentId === 'child1')).toMatchObject({
+        parentAgentId: 'parent1',
+        state: 'tool',
+        openTool: { name: 'Bash' },
+      });
+      expect(r.subagents).toEqual({ running: 2, done: 1 });
+    });
+
+    it('counts failed main-thread calls only where the agent records failures', () => {
+      const failed = [
+        row('user', 'u1', text('go'), at(5)),
+        row('assistant', 'a1', [toolUse('t1', 'Bash')], at(4)),
+        row('user', 'u2', [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'boom' }], at(3)),
+        row('assistant', 'a2', text('done'), at(2)),
+      ];
+      expect(derive(failed).toolErrors).toBe(1);
+      const without = connectorsWithoutToolErrorSignal()[0]!;
+      expect(derive(failed, { connectorId: without }).toolErrors).toBeUndefined();
+    });
+
+    it('collapses whitespace and caps the last assistant text', () => {
+      const r = derive([
+        row('user', 'u1', text('go'), at(5)),
+        row('assistant', 'a1', text(`first\n\n  line ${'y'.repeat(400)}`), at(4)),
+      ]);
+      expect(r.lastText!.startsWith('first line y')).toBe(true);
+      expect(r.lastText!.length).toBe(201);
+      expect(r.lastText!.endsWith('…')).toBe(true);
+      expect(derive([row('user', 'u1', text('go'), at(5))]).lastText).toBeUndefined();
     });
   });
 
