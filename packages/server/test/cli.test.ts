@@ -480,6 +480,53 @@ describe('update — offline registry lookup', () => {
   });
 });
 
+describe('main — live never starts the daemon', () => {
+  // A 5 s poller runs `claudescope live`; going through ensureDaemon would
+  // respawn a daemon the user just stopped, or SIGTERM a wedged one.
+  const runMain = async (...args: string[]) => {
+    const originalArgv = process.argv;
+    const errors: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((msg: string) => void errors.push(msg));
+    vi.mocked(spawn).mockClear();
+    process.argv = [process.execPath, 'cli.js', 'live', ...args];
+    try {
+      await cli.main();
+      return { exitCode: process.exitCode, errors };
+    } finally {
+      process.argv = originalArgv;
+      process.exitCode = undefined;
+    }
+  };
+
+  it('rejects an invalid --window before contacting the recorded daemon', async () => {
+    writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    const { exitCode, errors } = await runMain('--window', '7');
+    expect(exitCode).toBe(1);
+    expect(errors.join('\n')).toContain('--window must be one of: 5, 15, 60');
+    expect(kill).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['no record', false],
+    ['a recorded daemon that does not answer', true],
+  ])('exits 3 and spawns nothing with %s', async (_label, recorded) => {
+    if (recorded) writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('ECONNREFUSED'))));
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    const { exitCode, errors } = await runMain('--json');
+    expect(exitCode).toBe(3);
+    expect(errors).toEqual(['✗ claudescope is not running (start it with: claudescope start)']);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(kill.mock.calls.every(([, sig]) => sig === 0)).toBe(true);
+    expect(existsSync(DAEMON_FILE)).toBe(recorded);
+  });
+});
+
 describe('main — unknown flag', () => {
   // parseArgs is strict, so an unrecognized flag throws ERR_PARSE_ARGS_UNKNOWN_OPTION;
   // that must surface as a UsageError (message only, no stack) like every other

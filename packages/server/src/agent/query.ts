@@ -8,8 +8,8 @@
  * stderr (ensureDaemon), so stdout stays clean for piping.
  */
 
-import type { AnalyticsGroupBy, SearchScope, SearchType, SessionSort } from '@claudescope/shared';
-import { digestToMarkdown } from '@claudescope/shared';
+import type { AnalyticsGroupBy, LiveSession, SearchScope, SearchType, SessionSort } from '@claudescope/shared';
+import { LIVE_DEFAULT_WINDOW_MINUTES, digestToMarkdown } from '@claudescope/shared';
 import type { ApiClient } from './api-client.js';
 import {
   DEFAULT_LIMIT,
@@ -207,4 +207,58 @@ export async function queryDigest(client: ApiClient, args: DigestArgs): Promise<
   const res = await client.digest({ from: args.from, to: args.to, timeZone: args.timeZone });
   if (args.json) return json(res);
   return digestToMarkdown(res).trimEnd();
+}
+
+export interface LiveArgs {
+  windowMin?: number;
+  full?: boolean;
+  json?: boolean;
+}
+
+// Same wording as the web Live tab (web/src/pages/live/liveFormat.ts).
+function liveStateLabel(s: LiveSession): string {
+  switch (s.state) {
+    case 'idle':
+      return 'Idle';
+    case 'working':
+      return 'Working';
+    case 'tool':
+      return s.openTool?.name ? `Running ${s.openTool.name}` : 'Running tool';
+    case 'subagents':
+      return 'Subagents running';
+    case 'ended':
+      return 'Ended';
+    case 'unknown':
+      return 'Unknown';
+  }
+}
+
+function elapsed(ms: number, now: number): string {
+  const sec = Math.max(0, Math.floor((now - ms) / 1000));
+  if (sec < 60) return `${sec} s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} m ${sec % 60} s`;
+  return `${Math.floor(min / 60)} h ${min % 60} m`;
+}
+
+/** Sessions written to within the live window, with the state read off each transcript tail. */
+export async function queryLive(client: ApiClient, args: LiveArgs): Promise<string> {
+  const windowMin = args.windowMin ?? LIVE_DEFAULT_WINDOW_MINUTES;
+  const res = await client.live({ windowMin, detail: args.full && args.json ? 'full' : undefined });
+  if (args.json) return json(res);
+  const now = Date.now();
+  const finished = `${res.finished.length} recently finished`;
+  if (res.sessions.length === 0) return `No live sessions in the last ${res.windowMinutes} min.\n${finished}`;
+  const rows = res.sessions.map((s) => {
+    const since = s.state === 'tool' ? s.openTool?.sinceMs : s.stateSinceMs;
+    return [
+      liveStateLabel(s),
+      since === undefined ? '' : elapsed(since, now),
+      s.meta.connectorId,
+      clip(s.meta.projectDisplayName),
+      clip(s.meta.title),
+    ];
+  });
+  const more = res.truncated > 0 ? `\n+${res.truncated} more live sessions not shown` : '';
+  return `${table(['STATE', 'FOR', 'AGENT', 'PROJECT', 'TITLE'], rows)}${more}\n\n${finished}`;
 }

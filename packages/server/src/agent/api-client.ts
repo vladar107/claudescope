@@ -13,6 +13,8 @@ import type {
   DigestQuery,
   DigestResponse,
   HealthResponse,
+  LiveQuery,
+  LiveResponse,
   MemoryResponse,
   ProjectMemoryResponse,
   ProjectsResponse,
@@ -80,5 +82,9 @@ export class ApiClient {
 
   toolUsage(q: ToolUsageQuery): Promise<ToolUsageResponse> {
     return this.get('/api/analytics/tools', q as unknown as Params);
+  }
+
+  live(q: LiveQuery = {}): Promise<LiveResponse> {
+    return this.get('/api/live', q as Params);
   }
 }

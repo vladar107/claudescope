@@ -121,3 +121,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0094 | [Subagent definitions on the Extensions page](./0094-subagent-definitions.md) | done |
 | 0095 | [Live tab: active sessions, subagents, and agent-to-agent messages](./0095-live-tab.md) | done |
 | 0096 | [Back off failed-file retries](./0096-back-off-failed-file-retries.md) | done |
+| 0097 | [Live agents in Raycast](./0097-raycast-live-agents.md) | done |

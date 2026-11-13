@@ -267,7 +267,13 @@ claudescope session <id> --tail 20              # last 20 turns
 claudescope open --session <id> --around <uuid> # open that hit in the web app
 claudescope analytics --group-by day --timezone Europe/Amsterdam --json | jq '.rows[] | [.key, .costUsd]'
 claudescope digest --from 2026-06-23 --to 2026-06-29 --timezone Europe/Amsterdam
+claudescope live --window 5                     # what each agent is doing right now
 ```
+
+`live` is the one query that never starts the server: when it is not running it
+prints an error and exits with code 3, so a poller can't undo `claudescope stop`.
+`--full` keeps the last assistant text's newlines and returns up to 4000
+characters of it and of each open tool call's input.
 
 `--literal` matches the query as one case-insensitive substring over transcript
 text, failed tool-result bodies, tool names and skill names (newest first, no
