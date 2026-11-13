@@ -1380,6 +1380,17 @@ export interface LiveFinished {
   usageGranularity: AgentUsageGranularity;
 }
 
+/** Query for GET /api/live. */
+export interface LiveQuery {
+  /** One of {@link LIVE_WINDOW_MINUTES}; anything else uses the default. */
+  windowMin?: number;
+  /**
+   * `full` keeps `lastText`'s newlines and caps it, and every string of an
+   * `openTool.input`, at 4000 characters instead of 200. Any other value is ignored.
+   */
+  detail?: 'full';
+}
+
 /** GET /api/live — served with an ETag; a matching `If-None-Match` gets a 304. */
 export interface LiveResponse {
   windowMinutes: number;

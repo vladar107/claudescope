@@ -14,7 +14,7 @@
  *
  * Read-only query subcommands (search/sessions/session/projects/analytics)
  * proxy the daemon's HTTP API for terminals and scripts (`--json`); see
- * agent/query.ts.
+ * agent/query.ts. `live` is the one query that never starts the daemon.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -22,6 +22,7 @@ import { existsSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { LIVE_WINDOW_MINUTES } from '@claudescope/shared';
 import {
   APP_VERSION,
   CLAUDESCOPE_HOME,
@@ -54,6 +55,7 @@ import {
   detectedTimeZone,
   queryAnalytics,
   queryDigest,
+  queryLive,
   queryProjects,
   querySearch,
   querySession,
@@ -444,6 +446,29 @@ async function runQuery(prepare: () => (client: ApiClient) => Promise<string>): 
   }
 }
 
+/** Exit code of `live` when no daemon answers, so a poller can tell "stopped" from a failure. */
+const EXIT_NOT_RUNNING = 3;
+
+/** `claudescope live`: {@link runQuery} without {@link ensureDaemon}. A 5 s
+ *  poller (the Raycast extension) must never spawn a daemon — that would undo
+ *  `claudescope stop` — nor replace one on version skew, so a stopped, stale, or
+ *  unresponsive daemon is reported (exit {@link EXIT_NOT_RUNNING}) instead. */
+async function runLive(prepare: () => (client: ApiClient) => Promise<string>): Promise<void> {
+  try {
+    const fn = prepare();
+    const d = readDaemon();
+    if (!d || (await classifyExisting(d, isAlive, isHealthy)) !== 'healthy') {
+      console.error('✗ claudescope is not running (start it with: claudescope start)');
+      process.exitCode = EXIT_NOT_RUNNING;
+      return;
+    }
+    console.log(await fn(new ApiClient(`http://127.0.0.1:${d.port}`)));
+  } catch (err) {
+    console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+  }
+}
+
 /** Print brief usage for the pricing subcommand. */
 function pricingHelp(): void {
   console.log(`Usage: claudescope pricing <subcommand>
@@ -491,6 +516,9 @@ Query commands (read-only; start the background server on first use):
                    (tool|skill accept --project too; count calls, not tokens/cost)
   digest           Week-in-review Markdown [--from date] [--to date] [--timezone IANA]
                    (default: last 7 calendar days in the machine time zone)
+  live             Sessions written to recently, with what each is doing
+                   [--window 5|15|60] [--full] (with --json: last text keeps newlines, 4000-char caps)
+                   Never starts the server: exits 3 when it is not running.
   All query commands accept --json for the raw API response (ignores --redact).
 
 Options:
@@ -547,6 +575,8 @@ function parseCliArgs() {
         from: { type: 'string' },
         to: { type: 'string' },
         timezone: { type: 'string' },
+        window: { type: 'string' },
+        full: { type: 'boolean' },
       },
     });
   } catch (err) {
@@ -679,6 +709,17 @@ export async function main(): Promise<void> {
           json: values.json,
         };
         return (client) => queryAnalytics(client, args);
+      });
+      break;
+    case 'live':
+      await runLive(() => {
+        const window = enumFlag('window', values.window, LIVE_WINDOW_MINUTES.map(String));
+        const args = {
+          windowMin: window === undefined ? undefined : Number(window),
+          full: values.full,
+          json: values.json,
+        };
+        return (client) => queryLive(client, args);
       });
       break;
     case 'update':

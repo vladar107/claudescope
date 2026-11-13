@@ -534,3 +534,40 @@ describe('live activity, compactions and cost', () => {
     expect(s.costMinutes).toBeUndefined();
   });
 });
+
+describe('live detail=full', () => {
+  it('serves full text to detail=full and the capped form to default requests on either side of it', async () => {
+    const id = 'sessFull';
+    const text = '  first line\nsecond line\n\n' + 'y'.repeat(5000) + '\n';
+    const command = 'z'.repeat(5000);
+    const base = { sessionId: id, cwd: '/tmp/projLive', version: '2.1.0', isSidechain: false };
+    const t = (secsAgo: number) => new Date(Date.now() - secsAgo * 1000).toISOString();
+    writeFileSync(
+      join(projectsDir, 'enc-projLive', `${id}.jsonl`),
+      jsonl([
+        { ...base, type: 'user', uuid: 'f-u1', parentUuid: null, timestamp: t(20), message: { role: 'user', content: 'go' } },
+        { ...base, type: 'assistant', uuid: 'f-a1', parentUuid: 'f-u1', timestamp: t(10), message: { role: 'assistant', model: 'claude-opus-4-8', id: 'f-m1', content: [{ type: 'text', text }, { type: 'tool_use', id: 'toolu_f', name: 'Bash', input: { command } }], usage: { input_tokens: 1, output_tokens: 1 } } },
+      ]),
+    );
+    await reindex();
+    await vi.waitFor(async () => {
+      expect((await getLive()).sessions.map((s) => s.meta.id)).toContain(id);
+    });
+    const find = async (q: string) => (await getLive(q)).sessions.find((s) => s.meta.id === id)!;
+    const collapsed = `${text.replace(/\s+/g, ' ').trim().slice(0, 200)}…`;
+
+    const before = await find('');
+    expect(before.lastText).toBe(collapsed);
+    expect(before.openTool?.input).toEqual({ command: `${'z'.repeat(200)}…` });
+
+    const full = await find('?detail=full');
+    expect(full.lastText).toBe(`${text.trim().slice(0, 4000)}…`);
+    expect(full.lastText).toContain('first line\nsecond line\n\n');
+    expect(full.openTool?.input).toEqual({ command: `${'z'.repeat(4000)}…` });
+
+    const after = await find('');
+    expect(after.lastText).toBe(collapsed);
+    expect(after.openTool?.input).toEqual({ command: `${'z'.repeat(200)}…` });
+    expect((await find('?detail=bogus')).lastText).toBe(collapsed);
+  });
+});

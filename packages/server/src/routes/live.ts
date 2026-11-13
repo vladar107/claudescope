@@ -1,6 +1,7 @@
 /**
  * GET /api/live — sessions written to within the live window, each with a state
- * inferred from its transcript tail. GET /api/live/count — the same selection,
+ * inferred from its transcript tail (`detail=full` raises the text caps for the
+ * CLI and other non-browser pollers). GET /api/live/count — the same selection,
  * stat-only, for the nav badge: it never loads or parses a transcript.
  *
  * Selection is two-step. The `files` table narrows candidates cheaply (its
@@ -68,8 +69,9 @@ interface CacheEntry {
   derivedAtMs: number;
 }
 
-// Derived results only — never threads or transcript text.
-const cache = new Map<string, CacheEntry>();
+// Derived results only — never threads or transcript text. One map per
+// `detail` variant: their text caps differ, so an entry must never serve the other.
+const caches = { default: new Map<string, CacheEntry>(), full: new Map<string, CacheEntry>() };
 
 function windowMsFrom(raw: string | undefined): { windowMinutes: number; windowMs: number } {
   const n = Number(raw);
@@ -258,7 +260,9 @@ async function deriveFor(
   candidate: LiveCandidate,
   nowMs: number,
   windowMs: number,
+  full: boolean,
 ): Promise<LiveStateResult> {
+  const cache = full ? caches.full : caches.default;
   const hit = cache.get(candidate.id);
   if (hit) {
     const age = nowMs - hit.derivedAtMs;
@@ -279,6 +283,7 @@ async function deriveFor(
     nowMs,
     windowMs,
     endedAt,
+    full,
   });
   cache.set(candidate.id, {
     fingerprint: candidate.fingerprint,
@@ -309,16 +314,24 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.get<{ Querystring: { windowMin?: string } }>(
+  app.get<{ Querystring: { windowMin?: string; detail?: string } }>(
     '/api/live',
     async (req, reply) => {
       const { windowMinutes, windowMs } = windowMsFrom(req.query.windowMin);
+      const full = req.query.detail === 'full';
       const nowMs = Date.now();
       const snap = await getLiveSnapshot();
       const live = findLiveSessions(snap, nowMs, windowMs);
 
-      const liveIds = new Set(live.map((c) => c.id));
-      for (const id of cache.keys()) if (!liveIds.has(id)) cache.delete(id);
+      // Pruned against the widest window, not this request's: a narrow-window
+      // poller would otherwise evict what a wider-window client just derived.
+      const widestMs = Math.max(...LIVE_WINDOW_MINUTES) * 60_000;
+      const liveIds = new Set(
+        (windowMs === widestMs ? live : findLiveSessions(snap, nowMs, widestMs)).map((c) => c.id),
+      );
+      for (const cache of [caches.default, caches.full]) {
+        for (const id of cache.keys()) if (!liveIds.has(id)) cache.delete(id);
+      }
 
       const kept = live.slice(0, LIVE_CAP);
       const metas = new Map<string, SessionMeta>();
@@ -333,7 +346,7 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
         if (!meta) continue;
         let derived: LiveStateResult;
         try {
-          derived = await deriveFor(meta, candidate, nowMs, windowMs);
+          derived = await deriveFor(meta, candidate, nowMs, windowMs, full);
         } catch (err) {
           req.log.warn({ sessionId: candidate.id, err: (err as Error).name }, 'live state derivation failed');
           derived = UNKNOWN_STATE;

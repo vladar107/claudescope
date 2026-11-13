@@ -39,6 +39,8 @@ export interface LiveStateInput {
   windowMs: number;
   /** `SessionData.endedAt` — the declared end marker's timestamp. */
   endedAt?: string;
+  /** `detail=full`: `lastText` keeps its newlines, and it and tool-input strings get {@link FULL_TEXT_CAP}. */
+  full?: boolean;
 }
 
 export interface LiveStateResult {
@@ -48,7 +50,7 @@ export interface LiveStateResult {
   /** Set only when state is `tool`; a `subagents` state drops it (the open call is a spawn). */
   openTool?: LiveOpenTool;
   subagents: { running: number; done: number };
-  /** Last main-thread assistant text, collapsed and capped; absent when none. */
+  /** Last main-thread assistant text, collapsed (unless `full`) and capped; absent when none. */
   lastText?: string;
   /** Active runs first, then most recently written. */
   runs: LiveRun[];
@@ -111,18 +113,19 @@ const RUN_QUIET_MS = 90_000;
 
 const INPUT_STRING_CAP = 200;
 const LAST_TEXT_CAP = 200;
+const FULL_TEXT_CAP = 4000;
 const INPUT_DEPTH_CAP = 4;
 
-/** Copy of `value` with every string over the cap truncated; never mutates it. */
-function capInput(value: unknown, depth = 0): unknown {
-  if (typeof value === 'string') {
-    return value.length > INPUT_STRING_CAP ? `${value.slice(0, INPUT_STRING_CAP)}…` : value;
-  }
+const capText = (text: string, cap: number): string => (text.length > cap ? `${text.slice(0, cap)}…` : text);
+
+/** Copy of `value` with every string over `cap` truncated; never mutates it. */
+function capInput(value: unknown, cap: number, depth = 0): unknown {
+  if (typeof value === 'string') return capText(value, cap);
   if (value === null || typeof value !== 'object') return value;
   if (depth >= INPUT_DEPTH_CAP) return '…';
-  if (Array.isArray(value)) return value.map((v) => capInput(v, depth + 1));
+  if (Array.isArray(value)) return value.map((v) => capInput(v, cap, depth + 1));
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, capInput(v, depth + 1)]),
+    Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, capInput(v, cap, depth + 1)]),
   );
 }
 
@@ -146,16 +149,16 @@ function isLocalCommandTurn(text: string): boolean {
   return isSyntheticTurn(text);
 }
 
-function lastAssistantText(thread: ThreadItem[]): string | undefined {
+function lastAssistantText(thread: ThreadItem[], full: boolean): string | undefined {
   for (let i = thread.length - 1; i >= 0; i--) {
     const item = thread[i]!;
     if (item.role !== 'assistant') continue;
     for (let j = item.blocks.length - 1; j >= 0; j--) {
       const block = item.blocks[j]!;
       if (block.kind !== 'text') continue;
-      const collapsed = block.text.replace(/\s+/g, ' ').trim();
-      if (!collapsed) continue;
-      return collapsed.length > LAST_TEXT_CAP ? `${collapsed.slice(0, LAST_TEXT_CAP)}…` : collapsed;
+      const text = full ? block.text.trim() : block.text.replace(/\s+/g, ' ').trim();
+      if (!text) continue;
+      return capText(text, full ? FULL_TEXT_CAP : LAST_TEXT_CAP);
     }
   }
   return undefined;
@@ -175,7 +178,7 @@ interface Tail {
 }
 
 /** Tail rules for one thread, without subagents or end markers. */
-function tailOf(connectorId: string, thread: ThreadItem[]): Tail {
+function tailOf(connectorId: string, thread: ThreadItem[], inputCap: number): Tail {
   const last = thread[thread.length - 1];
   if (!last) return { state: 'unknown' };
 
@@ -199,7 +202,7 @@ function tailOf(connectorId: string, thread: ThreadItem[]): Tail {
         state: 'tool',
         openTool: {
           name: block.name,
-          input: capInput(block.input),
+          input: capInput(block.input, inputCap),
           ...(sinceMs !== undefined ? { sinceMs } : {}),
         },
       };
@@ -219,12 +222,13 @@ function tailOf(connectorId: string, thread: ThreadItem[]): Tail {
 }
 
 export function deriveLiveState(input: LiveStateInput): LiveStateResult {
-  const { connectorId, thread, runs, nowMs, windowMs, endedAt } = input;
+  const { connectorId, thread, runs, nowMs, windowMs, endedAt, full = false } = input;
+  const inputCap = full ? FULL_TEXT_CAP : INPUT_STRING_CAP;
 
   const liveRuns: LiveRun[] = runs.map((run) => {
     const lastMs = parseMs(run.thread[run.thread.length - 1]?.timestamp);
     const age = lastMs === undefined ? Infinity : nowMs - lastMs;
-    const tail = tailOf(connectorId, run.thread);
+    const tail = tailOf(connectorId, run.thread, inputCap);
     const active =
       age <= windowMs && (tail.state === 'tool' || (tail.state === 'working' && age <= RUN_QUIET_MS));
     return {
@@ -241,7 +245,7 @@ export function deriveLiveState(input: LiveStateInput): LiveStateResult {
   liveRuns.sort((a, b) => Number(b.active) - Number(a.active) || (b.lastItemMs ?? 0) - (a.lastItemMs ?? 0));
   const running = liveRuns.filter((r) => r.active).length;
   const subagents = { running, done: liveRuns.length - running };
-  const lastText = lastAssistantText(thread);
+  const lastText = lastAssistantText(thread, full);
   const extras = {
     runs: liveRuns,
     ...(lastText !== undefined ? { lastText } : {}),
@@ -260,7 +264,7 @@ export function deriveLiveState(input: LiveStateInput): LiveStateResult {
     return { state: 'ended', ...since, subagents, ...extras };
   }
 
-  const tail = tailOf(connectorId, thread);
+  const tail = tailOf(connectorId, thread, inputCap);
   const openIsSpawn = tail.openTool !== undefined && SUBAGENT_TOOL_NAMES.has(tail.openTool.name);
   const overridden =
     running > 0 && tail.state !== 'unknown' && (tail.state !== 'tool' || openIsSpawn);
