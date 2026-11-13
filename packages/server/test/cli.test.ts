@@ -513,17 +513,35 @@ describe('main — live never starts the daemon', () => {
 
   it.each([
     ['no record', false],
-    ['a recorded daemon that does not answer', true],
+    ['a recorded daemon whose process is gone', true],
   ])('exits 3 and spawns nothing with %s', async (_label, recorded) => {
     if (recorded) writeFileSync(DAEMON_FILE, JSON.stringify(record()));
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('ECONNREFUSED'))));
-    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw new Error('ESRCH');
+    });
     const { exitCode, errors } = await runMain('--json');
     expect(exitCode).toBe(3);
     expect(errors).toEqual(['✗ claudescope is not running (start it with: claudescope start)']);
     expect(spawn).not.toHaveBeenCalled();
     expect(kill.mock.calls.every(([, sig]) => sig === 0)).toBe(true);
     expect(existsSync(DAEMON_FILE)).toBe(recorded);
+  });
+
+  // A busy daemon misses the health probe. Reporting it as stopped would have a
+  // poller offer "start", and `start` terminates an alive-but-unhealthy daemon.
+  it('exits 4, not 3, when the daemon process is alive but does not answer', async () => {
+    writeFileSync(DAEMON_FILE, JSON.stringify(record()));
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('ETIMEDOUT'))));
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    const { exitCode, errors } = await runMain('--json');
+    expect(exitCode).toBe(4);
+    expect(errors).toEqual([
+      '✗ claudescope is not responding (it may be busy; if it stays that way: claudescope restart)',
+    ]);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(kill.mock.calls.every(([, sig]) => sig === 0)).toBe(true);
+    expect(existsSync(DAEMON_FILE)).toBe(true);
   });
 });
 
