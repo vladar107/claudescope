@@ -446,18 +446,29 @@ async function runQuery(prepare: () => (client: ApiClient) => Promise<string>): 
   }
 }
 
-/** Exit code of `live` when no daemon answers, so a poller can tell "stopped" from a failure. */
+/** Exit code of `live` when no daemon is running, so a poller can tell "stopped" from a failure. */
 const EXIT_NOT_RUNNING = 3;
+/** Exit code of `live` when the daemon's process is alive but does not answer.
+ *  Kept apart from {@link EXIT_NOT_RUNNING}: a poller that offered "start" here
+ *  would have `start` terminate a daemon that is merely busy. */
+const EXIT_NOT_RESPONDING = 4;
 
 /** `claudescope live`: {@link runQuery} without {@link ensureDaemon}. A 5 s
  *  poller (the Raycast extension) must never spawn a daemon — that would undo
- *  `claudescope stop` — nor replace one on version skew, so a stopped, stale, or
- *  unresponsive daemon is reported (exit {@link EXIT_NOT_RUNNING}) instead. */
+ *  `claudescope stop` — nor replace one on version skew, so a stopped or
+ *  stale daemon (exit {@link EXIT_NOT_RUNNING}) and an unresponsive one (exit
+ *  {@link EXIT_NOT_RESPONDING}) are reported instead. */
 async function runLive(prepare: () => (client: ApiClient) => Promise<string>): Promise<void> {
   try {
     const fn = prepare();
     const d = readDaemon();
-    if (!d || (await classifyExisting(d, isAlive, isHealthy)) !== 'healthy') {
+    const state = await classifyExisting(d, isAlive, isHealthy);
+    if (state === 'wedged') {
+      console.error('✗ claudescope is not responding (it may be busy; if it stays that way: claudescope restart)');
+      process.exitCode = EXIT_NOT_RESPONDING;
+      return;
+    }
+    if (!d || state !== 'healthy') {
       console.error('✗ claudescope is not running (start it with: claudescope start)');
       process.exitCode = EXIT_NOT_RUNNING;
       return;
@@ -518,7 +529,8 @@ Query commands (read-only; start the background server on first use):
                    (default: last 7 calendar days in the machine time zone)
   live             Sessions written to recently, with what each is doing
                    [--window 5|15|60] [--full] (with --json: last text keeps newlines, 4000-char caps)
-                   Never starts the server: exits 3 when it is not running.
+                   Never starts the server: exits 3 when it is not running,
+                   4 when it is running but not responding.
   All query commands accept --json for the raw API response (ignores --redact).
 
 Options:

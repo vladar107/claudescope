@@ -272,6 +272,7 @@ claudescope live --window 5                     # what each agent is doing right
 
 `live` is the one query that never starts the server: when it is not running it
 prints an error and exits with code 3, so a poller can't undo `claudescope stop`.
+A server that is running but not answering exits with code 4 instead.
 `--full` keeps the last assistant text's newlines and returns up to 4000
 characters of it and of each open tool call's input.
 
