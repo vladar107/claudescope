@@ -8,7 +8,7 @@ on:
   workflow_call:
     inputs:
       os:
-        description: Runner OS (e.g. ubuntu-latest, macos-14)
+        description: Runner OS (e.g. ubuntu-latest, macos-15)
         required: true
         type: string
 
