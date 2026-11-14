@@ -5,7 +5,7 @@
  *
  *   npm run screenshots
  *
- * Pipeline: seed a synthetic ALL-SIX-AGENTS demo dataset into a temp area, boot
+ * Pipeline: seed a synthetic ALL-EIGHT-AGENTS demo dataset into a temp area, boot
  * the built server against it (every agent source AND the index/home isolated to
  * the temp dir, so no real agent data is read and the real index is never
  * touched), then drive Chromium via Playwright to shoot each view at a fixed
@@ -17,8 +17,8 @@
 
 import { chromium } from 'playwright';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -37,6 +37,10 @@ const junieDir = join(work, 'junie', 'sessions');
 const piDir = join(work, 'pi', 'sessions');
 const opencodeDir = join(work, 'opencode');
 const copilotSessionsDir = join(work, 'copilot', 'session-state');
+const geminiDir = join(work, 'gemini');
+const antigravityCliDir = join(geminiDir, 'antigravity-cli');
+const antigravityDir = join(geminiDir, 'antigravity');
+const grokDir = join(work, 'grok', 'sessions');
 const home = join(work, '.state'); // CLAUDESCOPE_HOME (index/pricing); kept out of the agent-home dirs
 
 const THEMES = /** @type {const} */ (['light', 'dark']);
@@ -70,6 +74,13 @@ const VIEWS = [
   },
   { name: 'memory', path: '/memory', ready: '.tv-project-grid' },
 ];
+
+// The machine's real home path must never reach a captured page or API response.
+const realHome = homedir();
+const leaks = new Set();
+const checkLeak = (where, text) => {
+  if (text.includes(realHome)) leaks.add(where);
+};
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -113,7 +124,7 @@ async function waitForIndex(min = 5, timeoutMs = 30_000) {
 async function main() {
   mkdirSync(outDir, { recursive: true });
 
-  // 1. Seed the synthetic all-six-agents dataset under <work>.
+  // 1. Seed the synthetic all-eight-agents dataset under <work>.
   console.log('· seeding demo data');
   const seed = spawnSync('node', [join(root, 'scripts', 'demo-seed.mjs'), work], {
     stdio: 'inherit',
@@ -136,6 +147,23 @@ async function main() {
       PI_SESSIONS_DIR: piDir,
       OPENCODE_DATA_DIR: opencodeDir,
       COPILOT_SESSIONS_DIR: copilotSessionsDir,
+      ANTIGRAVITY_CLI_DIR: antigravityCliDir,
+      ANTIGRAVITY_DIR: antigravityDir,
+      GROK_SESSIONS_DIR: grokDir,
+      OPENCODE_CONFIG_DIR: join(work, '.config', 'opencode'),
+      // Any home-relative lookup (tilde display, ~/.agents/skills, XDG defaults)
+      // resolves inside the temp tree, never the real home.
+      HOME: work,
+      USERPROFILE: work,
+      XDG_CONFIG_HOME: join(work, '.config'),
+      XDG_DATA_HOME: join(work, '.local', 'share'),
+      XDG_STATE_HOME: join(work, '.local', 'state'),
+      XDG_CACHE_HOME: join(work, '.cache'),
+      // The json/fts extensions are a ~31 MB download; reuse the machine's cache
+      // (a directory of binaries, never rendered) instead of re-fetching into the temp home.
+      ...(existsSync(join(realHome, '.claudescope', 'duckdb-extensions'))
+        ? { DUCKDB_EXTENSION_DIR: join(realHome, '.claudescope', 'duckdb-extensions') }
+        : {}),
       CLAUDESCOPE_HOME: home,
       DUCKDB_PATH: join(work, 'index.duckdb'),
       OPEN_BROWSER: '0',
@@ -169,6 +197,11 @@ async function main() {
       }, theme);
 
       const page = await context.newPage();
+      page.on('response', async (res) => {
+        if (!res.url().startsWith(`${BASE}/api/`)) return;
+        const body = await res.text().catch(() => '');
+        checkLeak(`${theme} API ${new URL(res.url()).pathname}`, body);
+      });
       for (const view of VIEWS) {
         await page.goto(`${BASE}${view.path}`, { waitUntil: 'networkidle' });
         await page.waitForSelector(view.ready, { timeout: 15_000 }).catch(() => {
@@ -176,6 +209,7 @@ async function main() {
         });
         if (view.prepare) await view.prepare(page);
         await sleep(700); // let Shiki / charts settle
+        checkLeak(`${theme} page ${view.name}`, await page.content());
         const file = join(outDir, `${view.name}-${theme}.png`);
         await page.screenshot({ path: file });
         console.log(`  ✓ ${view.name}-${theme}.png`);
@@ -188,6 +222,9 @@ async function main() {
     rmSync(work, { recursive: true, force: true });
   }
 
+  if (leaks.size > 0) {
+    throw new Error(`real home path leaked into: ${[...leaks].join(', ')}`);
+  }
   console.log(`\nScreenshots written to ${outDir}`);
 }
 
