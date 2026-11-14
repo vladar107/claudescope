@@ -540,7 +540,8 @@ Options:
 
 State (index, pricing, logs, PID) lives in ${CLAUDESCOPE_HOME}
 (override with $CLAUDESCOPE_HOME). Source directories are per agent and
-configurable in the web UI's Settings page, or via env vars (see README).
+configurable in the web UI's Settings page, or via env vars
+(see https://github.com/vladar107/claudescope/blob/main/docs/configuration.md).
 Settings edited in the web UI persist to settings.json in the state dir
 (env vars always win over saved settings).
 CLAUDESCOPE_AUTO_RESTART=0 disables automatic daemon restarts on version skew.`);
