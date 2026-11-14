@@ -472,4 +472,4 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
 - **Release is maintainer-only** and tag-triggered (npm Trusted Publishing /
   OIDC). See `CONTRIBUTING.md`.
 
-See `CONTRIBUTING.md` for the full workflow and `README.md` for user-facing docs.
+See `CONTRIBUTING.md` for the full workflow, and `README.md` plus `docs/*.md` for user-facing docs.

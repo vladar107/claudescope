@@ -30,7 +30,7 @@ npm run screenshots # regenerate the README screenshots from synthetic demo data
 
 `npm run screenshots` seeds the synthetic demo data, boots the app, and captures
 every view in both light and dark themes via Playwright — run it when a UI change
-makes the README screenshots stale.
+makes the screenshots stale. The website uses copies of the same files.
 
 ## How it works
 
@@ -142,9 +142,14 @@ forget and silently render nothing in the UI.
    truncated input, cost dedup, threading edges — not happy-path glue.
 
 8. **★ Update every doc that enumerates the agents — keep them in sync:**
-   - [`README.md`](./README.md): the **Supported agents** table, the
-     **Configuration** env-var table, the **Usage notes** (any format quirk worth
-     calling out), and the **privacy + Security & privacy** source lists.
+   - [`README.md`](./README.md): the agent list in the intro and the
+     **What it can do** list.
+   - [`docs/agents.md`](./docs/agents.md): the **Supported agents** table and
+     **What each agent records** (any format quirk worth calling out).
+   - [`docs/configuration.md`](./docs/configuration.md): the env-var table.
+   - The website copy, if the agent list or a headline feature changed: it
+     lives in the `claudescope/` folder of the `vladar107/ramazaev.dev`
+     repository.
    - [`SECURITY.md`](./SECURITY.md): the **Filesystem → Reads** list of read-only
      source dirs.
    - [`CLAUDE.md`](./CLAUDE.md): the architecture/connector notes and the
