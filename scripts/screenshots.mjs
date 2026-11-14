@@ -19,7 +19,8 @@
 
 import { chromium } from 'playwright';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { build } from 'esbuild';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +31,9 @@ const PORT = Number(process.env.SCREENSHOT_PORT ?? 4399);
 const BASE = `http://127.0.0.1:${PORT}`;
 const outDir = join(root, 'docs', 'screenshots');
 
-const work = mkdtempSync(join(tmpdir(), 'claudescope-shots-'));
+// Canonical path: on macOS the tmpdir is behind a /var -> /private/var symlink, which
+// would make every seeded path look like a symlink in the UI.
+const work = realpathSync(mkdtempSync(join(tmpdir(), 'claudescope-shots-')));
 // Per-agent home layout — KEEP IN SYNC with scripts/demo-seed.mjs (seeds <work>).
 // Each connector's home is the parent of its sessions dir, so memory files
 // (CLAUDE.md / AGENTS.md / copilot-instructions.md) resolve to distinct homes.
@@ -107,6 +110,46 @@ const checkLeak = (where, text) => {
   if (text.includes(realHome)) leaks.add(where);
 };
 
+const rootPkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+// Same layout `npm run bundle` ships (server.js beside web/ and pricing.default.json),
+// kept under node_modules so the native @duckdb/node-api still resolves.
+const appDir = join(root, 'node_modules', '.cache', 'claudescope-shots');
+
+/**
+ * Bundle the server the way a release does, with the real package version baked in
+ * (a plain `tsc` build reports "0.0.0-dev"), so the sidebar label matches a release.
+ */
+async function bundleServer() {
+  rmSync(appDir, { recursive: true, force: true });
+  mkdirSync(appDir, { recursive: true });
+  await build({
+    entryPoints: { server: join(root, 'packages', 'server', 'src', 'index.ts') },
+    outdir: appDir,
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node22',
+    external: ['@duckdb/node-api'],
+    define: { __CLAUDESCOPE_VERSION__: JSON.stringify(rootPkg.version) },
+    banner: {
+      js: [
+        "import { createRequire as __cr } from 'node:module';",
+        'const require = __cr(import.meta.url);',
+      ].join('\n'),
+    },
+    logLevel: 'error',
+  });
+  cpSync(join(root, 'packages', 'web', 'dist'), join(appDir, 'web'), { recursive: true });
+  cpSync(join(root, 'packages', 'server', 'pricing.json'), join(appDir, 'pricing.default.json'));
+  // A non-dev build checks the registry for updates; answering from the 24h cache keeps
+  // the run offline and the sidebar free of an "update available" nudge.
+  mkdirSync(home, { recursive: true });
+  writeFileSync(
+    join(home, 'update-check.json'),
+    JSON.stringify({ lastCheck: Date.now(), latest: rootPkg.version }),
+  );
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function waitForHealth(timeoutMs = 30_000) {
@@ -169,7 +212,8 @@ async function main() {
   //    as are the index and home. Memory homes derive from each sessions dir's
   //    parent: CLAUDE_HOME → <work>/claude, CODEX_HOME → <work>/codex, etc.
   console.log('· starting server');
-  const server = spawn('node', [join(root, 'packages', 'server', 'dist', 'index.js')], {
+  await bundleServer();
+  const server = spawn('node', [join(appDir, 'server.js')], {
     env: {
       ...process.env,
       PORT: String(PORT),
