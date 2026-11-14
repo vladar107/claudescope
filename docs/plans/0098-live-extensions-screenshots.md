@@ -2,7 +2,7 @@
 
 - **Status:** done
 - **Date:** 2026-11-14
-- **PR:** <link, once opened>
+- **PR:** [#139](https://github.com/vladar107/claudescope/pull/139)
 
 ## Context
 
@@ -34,6 +34,16 @@ fails the run if the real home path reaches a page or API response.
   fixed file path, so a re-seed overwrites instead of adding a second session.
 - **Everything else is aged.** Every other seeded file gets an old mtime, so
   only the five live sessions fall inside the activity window.
+- **Release-like version label.** The run bundles the server with esbuild and the
+  root `package.json` version, as `npm run bundle` does, instead of running the
+  `tsc` build that reports `0.0.0-dev`. The update-check cache is pre-seeded, so
+  the run stays offline and shows no update nudge.
+- **Canonical temp root.** `realpathSync` on the temp dir, so seeded paths do not
+  look like symlinks into `/private/var`.
+- **The whole dataset is relative to seed time.** Fixed May and June dates are
+  shifted onto the last ~7 weeks (days stretched x1.5, time of day kept), and
+  the bulk sessions cover every day, so Analytics is continuous. Seeded files
+  are aged to two days ago, outside the Live window.
 - **The agent tree is the Live focus page** (`/live/live-agents`), seeded as an
   idle Claude Code session with a nested subagent, a background subagent,
   `SendMessage`, a task notification, and a hand-back row.
@@ -59,7 +69,5 @@ check of every PNG. `npm run typecheck`, `npm test`.
 
 ## Risks / open questions
 
-- The seeded live sessions are dated today, so Analytics gains one recent day
-  and Browse shows acme-web as active now.
-- Skill and plugin paths show the temp dir's realpath (truncated) in the
-  Extensions location column; it is not the real home.
+- The bundled server lives under `node_modules/.cache/claudescope-shots` so the
+  native DuckDB client resolves; it is rebuilt on every run.

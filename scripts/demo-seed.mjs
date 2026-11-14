@@ -41,7 +41,7 @@
  */
 
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { seedLive } from './demo-seed-live.mjs';
@@ -71,6 +71,27 @@ const grokDir = join(grokHome, 'sessions'); // GROK_SESSIONS_DIR
 for (const dir of [claudeHome, codexHome, junieHome, join(baseDir, 'pi'), opencodeDir, copilotHome, geminiHome, grokHome]) {
   rmSync(dir, { recursive: true, force: true });
 }
+
+// The dataset is authored on fixed dates (2026-05-15 .. 2026-06-17) and shifted at
+// seed time so it always ends a couple of days before today. Days are stretched
+// (x1.5) onto a ~7-week span; the time of day is kept, so a session's own shape
+// (gaps between turns) is untouched.
+const DAY = 86_400_000;
+const ORIG0 = Date.parse('2026-05-15T00:00:00.000Z');
+const ORIG_SPAN_DAYS = 34;
+const NEW0 = Math.floor(Date.now() / DAY) * DAY - 52 * DAY;
+const shift = (ms) => {
+  const d = ms - ORIG0;
+  const day = Math.floor(d / DAY);
+  return NEW0 + Math.round(day * 1.5) * DAY + (d - day * DAY);
+};
+const inOriginalRange = (ms) => ms >= ORIG0 && ms < ORIG0 + ORIG_SPAN_DAYS * DAY;
+const ISO_RE = /2026-0[56]-\d\d[T]\d\d:\d\d:\d\d(?:\.\d+)?Z/g;
+const shiftText = (text) =>
+  text.replace(ISO_RE, (m) => {
+    const ms = Date.parse(m);
+    return inOriginalRange(ms) ? new Date(shift(ms)).toISOString() : m;
+  });
 
 const jsonl = (events) => events.map((e) => JSON.stringify(e)).join('\n') + '\n';
 function write(rel, events) {
@@ -260,10 +281,10 @@ const TITLES = [
   'Batch the importer', 'Wire up request tracing', 'Dedupe the job queue',
 ];
 
-const BASE = Date.parse('2026-05-15T10:00:00.000Z');
+const BASE = shift(Date.parse('2026-05-15T10:00:00.000Z'));
 let bn = 0;
-for (let d = 0; d < 20; d++) {
-  const perDay = span(1, 4);
+for (let d = 0; d < 52; d++) {
+  const perDay = span(1, 3);
   for (let s = 0; s < perDay; s++) {
     const proj = pick(PROJECTS);
     const model = pick(MODELS);
@@ -466,7 +487,7 @@ Favor the smallest change that satisfies the task. After editing, run the
 relevant tests and summarize what changed and why.
 `,
 );
-const jms = (sec) => Date.UTC(2026, 5, 7, 10, 0, sec);
+const jms = (sec) => shift(Date.UTC(2026, 5, 7, 10, 0, sec));
 writeFileSync(
   join(junieDir, 'index.jsonl'),
   JSON.stringify({
@@ -615,7 +636,7 @@ ocDb.exec(`
   CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT);
 `);
 const OC_SID = 'ses_acmedemo01'; // ids never contain '#'
-const ocT = (s) => Date.UTC(2026, 5, 9, 10, 0, s);
+const ocT = (s) => shift(Date.UTC(2026, 5, 9, 10, 0, s));
 ocDb.prepare('INSERT INTO session VALUES (?,?,?,?,?,NULL)').run(OC_SID, '/home/dev/acme-web', 'Add an accent color token', ocT(0), ocT(9));
 const ocMsg = ocDb.prepare('INSERT INTO message VALUES (?,?,?,?,?)');
 ocMsg.run('ocu1', OC_SID, ocT(0), ocT(0), JSON.stringify({ role: 'user', time: { created: ocT(0) } }));
@@ -774,7 +795,7 @@ mkdirSync(join(geminiHome, 'antigravity'), { recursive: true });
 const GK_ID = 'grok-acme-0001';
 const gkDir = join(grokDir, encodeURIComponent('/home/dev/acme-web'), GK_ID);
 mkdirSync(gkDir, { recursive: true });
-const GK_BASE = Date.parse('2026-06-12T10:00:00.000Z');
+const GK_BASE = shift(Date.parse('2026-06-12T10:00:00.000Z'));
 const gkUpdate = (ms, update) => ({
   timestamp: Math.floor(ms / 1000),
   method: 'session/update',
@@ -1029,13 +1050,19 @@ put(
   put(join(root, 'skills', 'release-notes', 'SKILL.md'), skillMd('release-notes', 'Draft release notes from merged pull requests since the last tag.'));
 }
 
-// Everything above is historical: age every seeded file so only the sessions
-// seeded by seedLive() fall inside the Live tab's activity window.
-const OLD = new Date('2026-06-17T12:00:00.000Z');
-(function ageAll(dir) {
+// Shift the fixed ISO timestamps written above (ms-based sources already use
+// shift() directly), then age every file so only the sessions seeded by
+// seedLive() fall inside the Live tab's activity window.
+const OLD = new Date(Date.now() - 2 * DAY);
+(function finish(dir) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) ageAll(full);
+    if (statSync(full).isDirectory()) finish(full);
+    else if (/\.(jsonl|json|ya?ml|toml|md)$/.test(entry)) {
+      const text = readFileSync(full, 'utf8');
+      const shifted = shiftText(text);
+      if (shifted !== text) writeFileSync(full, shifted);
+    }
     utimesSync(full, OLD, OLD);
   }
 })(baseDir);
