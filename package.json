@@ -22,7 +22,7 @@
     "cli",
     "duckdb"
   ],
-  "homepage": "https://github.com/vladar107/claudescope#readme",
+  "homepage": "https://claudescope.ramazaev.dev",
   "bugs": "https://github.com/vladar107/claudescope/issues",
   "repository": {
     "type": "git",

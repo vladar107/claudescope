@@ -8,7 +8,7 @@ ClaudeScope's existing read-only query CLI.
 
 - A current Claude Code or Codex version with plugin support.
 - The `claudescope` CLI on `PATH`. Choose npm, Homebrew, or Nix from the
-  [ClaudeScope Quick Start](https://github.com/vladar107/claudescope#quick-start).
+  [ClaudeScope install guide](https://claudescope.ramazaev.dev/#install).
   npm requires Node.js 22.13+:
 
   ```bash
