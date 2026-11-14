@@ -9,7 +9,9 @@
  * the built server against it (every agent source AND the index/home isolated to
  * the temp dir, so no real agent data is read and the real index is never
  * touched), then drive Chromium via Playwright to shoot each view at a fixed
- * retina viewport. Output: docs/screenshots/{view}-{light,dark}.png.
+ * retina viewport. Output: docs/screenshots/{view}-{light,dark}.png for browse,
+ * session, search, analytics, efficiency, memory, live (all three lanes), agents
+ * (one session's agent tree), extensions, and files (Files changed tab).
  *
  * Requires a production build first (`npm run build`) and the Playwright
  * Chromium browser (`npx playwright install chromium`).
@@ -21,6 +23,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { seedLive } from './demo-seed-live.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const PORT = Number(process.env.SCREENSHOT_PORT ?? 4399);
@@ -73,6 +76,28 @@ const VIEWS = [
     },
   },
   { name: 'memory', path: '/memory', ready: '.tv-project-grid' },
+  {
+    // Lanes need sessions in every state at once; `fresh` re-seeds them relative
+    // to now just before the shot, so they hold however long the run has taken.
+    name: 'live',
+    path: '/live',
+    ready: '.tv-live__lanes',
+    fresh: true,
+    prepare: async (page) => {
+      // "Spend today" loads separately from the lanes; wait until it has a value.
+      await page
+        .waitForFunction(() => !/…/.test(document.querySelector('.tv-live__kpis')?.textContent ?? '…'), null, {
+          timeout: 10_000,
+        })
+        .catch(() => {});
+    },
+  },
+  // The focus view of one session: its agent tree and the messages between agents.
+  { name: 'agents', path: '/live/live-agents', ready: '.tv-focus__tree', fresh: true },
+  // One agent's full inventory: skills and subagents with usage, MCP servers, hooks, plugins.
+  { name: 'extensions', path: '/extensions/claude-code', ready: '.tv-skills__table' },
+  // A session that edited several files; the Files changed tab shows the first file's diff.
+  { name: 'files', path: '/sessions/sess-files?tab=changes', ready: '.tv-changeset' },
 ];
 
 // The machine's real home path must never reach a captured page or API response.
@@ -119,6 +144,13 @@ async function waitForIndex(min = 5, timeoutMs = 30_000) {
     await sleep(300);
   }
   console.warn(`  ! index did not reach ${min} projects in time; capturing anyway`);
+}
+
+/** Re-seed the live sessions relative to now and make the server index them. */
+async function refreshLive() {
+  seedLive(work);
+  const res = await fetch(`${BASE}/api/indexer/restart`, { method: 'POST' });
+  if (!res.ok) throw new Error(`indexer restart failed: ${res.status}`);
 }
 
 async function main() {
@@ -203,6 +235,7 @@ async function main() {
         checkLeak(`${theme} API ${new URL(res.url()).pathname}`, body);
       });
       for (const view of VIEWS) {
+        if (view.fresh) await refreshLive();
         await page.goto(`${BASE}${view.path}`, { waitUntil: 'networkidle' });
         await page.waitForSelector(view.ready, { timeout: 15_000 }).catch(() => {
           console.warn(`  ! ${view.name}: ready selector "${view.ready}" not found; capturing anyway`);

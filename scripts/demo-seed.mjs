@@ -41,9 +41,10 @@
  */
 
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { seedLive } from './demo-seed-live.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const baseDir = process.argv[2] ?? join(root, '.demo');
@@ -819,9 +820,231 @@ writeFileSync(
   ]),
 );
 
+
+// ── Session that edits several files (Files-changed tab) ────────────────────
+const F = { cwd: '/home/dev/acme-web', gitBranch: 'feat/dark-mode' };
+const TOKENS_TS = `export const lightTokens = {
+  bg: '#ffffff',
+  fg: '#111111',
+  accent: '#2563eb',
+};
+
+export const darkTokens = {
+  bg: '#0e1116',
+  fg: '#e6e8eb',
+  accent: '#60a5fa',
+};
+`;
+const TOGGLE_OLD = `export function ThemeToggle({ onToggle }) {
+  return <button onClick={onToggle}>Toggle</button>;
+}`;
+const TOGGLE_NEW = `export function ThemeToggle({ theme, onToggle }) {
+  return (
+    <button aria-label="Toggle theme" aria-pressed={theme === 'dark'} onClick={onToggle}>
+      {theme === 'dark' ? 'Light' : 'Dark'}
+    </button>
+  );
+}`;
+const CSS_OLD = `:root {
+  --tv-bg: #ffffff;
+  --tv-fg: #111111;
+}`;
+const CSS_NEW = `:root {
+  --tv-bg: #ffffff;
+  --tv-fg: #111111;
+  --tv-accent: #2563eb;
+}
+
+:root[data-theme='dark'] {
+  --tv-bg: #0e1116;
+  --tv-fg: #e6e8eb;
+  --tv-accent: #60a5fa;
+}`;
+write('home-dev-acme-web/sess-files.jsonl', [
+  { type: 'ai-title', sessionId: 'sess-files', aiTitle: 'Extract theme tokens into a shared module' },
+  user('sess-files', '2026-06-13T09:30:00.000Z', 'Pull the hard-coded theme colors into a shared tokens module, wire it into the toggle and the stylesheet, and add the dark palette.', F),
+  asst('sess-files', '2026-06-13T09:30:10.000Z', [
+    { type: 'text', text: "I'll create a tokens module, export both palettes, then update the toggle and the CSS variables." },
+    { type: 'tool_use', id: 'f-write', name: 'Write', input: { file_path: 'src/theme/tokens.ts', content: TOKENS_TS } },
+    { type: 'tool_use', id: 'f-index', name: 'Write', input: { file_path: 'src/theme/index.ts', content: "export * from './tokens';\n" } },
+  ], OPUS, usage(2000, 520, 96000, 10000), F),
+  user('sess-files', '2026-06-13T09:30:30.000Z', [
+    { type: 'tool_result', tool_use_id: 'f-write', content: 'File created successfully at: src/theme/tokens.ts' },
+    { type: 'tool_result', tool_use_id: 'f-index', content: 'File created successfully at: src/theme/index.ts' },
+  ], F),
+  asst('sess-files', '2026-06-13T09:30:50.000Z', [
+    { type: 'text', text: 'Now the toggle component and the stylesheet.' },
+    { type: 'tool_use', id: 'f-toggle', name: 'Edit', input: { file_path: 'src/ThemeToggle.tsx', old_string: TOGGLE_OLD, new_string: TOGGLE_NEW } },
+    { type: 'tool_use', id: 'f-css', name: 'Edit', input: { file_path: 'src/styles/global.css', old_string: CSS_OLD, new_string: CSS_NEW } },
+    { type: 'tool_use', id: 'f-settings', name: 'Edit', input: { file_path: 'src/settings.tsx', old_string: '<ThemeToggle theme={theme} onToggle={toggle} />', new_string: '<ThemeToggle theme={theme} onToggle={toggle} />\n      <p className="hint">Your choice is saved on this device.</p>' } },
+  ], OPUS, usage(900, 640, 108000, 4200), F),
+  user('sess-files', '2026-06-13T09:31:15.000Z', [
+    { type: 'tool_result', tool_use_id: 'f-toggle', content: 'The file src/ThemeToggle.tsx has been updated.' },
+    { type: 'tool_result', tool_use_id: 'f-css', content: 'The file src/styles/global.css has been updated.' },
+    { type: 'tool_result', tool_use_id: 'f-settings', content: 'The file src/settings.tsx has been updated.' },
+  ], F),
+  asst('sess-files', '2026-06-13T09:31:40.000Z', [
+    { type: 'text', text: 'Committing the change.' },
+    { type: 'tool_use', id: 'f-skill', name: 'Skill', input: { skill: 'commit' } },
+  ], OPUS, usage(600, 120, 115000, 1500), F),
+  user('sess-files', '2026-06-13T09:31:45.000Z', [{ type: 'tool_result', tool_use_id: 'f-skill', content: 'Launching skill: commit' }], F),
+  asst('sess-files', '2026-06-13T09:32:05.000Z', [
+    { type: 'text', text: '**Done.** The palettes live in `src/theme/tokens.ts`, the toggle is accessible, and the stylesheet defines both themes.' },
+  ], OPUS, usage(500, 130, 117000, 900), F),
+]);
+
+// Skill and subagent invocations spread over a few sessions so the Extensions
+// usage counts are non-zero. A Skill call's `input.skill` is what is counted.
+const skillCall = (id, skill) => ({ type: 'tool_use', id, name: 'Skill', input: { skill } });
+const agentCall = (id, description, subagentType) => ({
+  type: 'tool_use',
+  id,
+  name: 'Agent',
+  input: { description, subagent_type: subagentType, prompt: description },
+});
+const sk = { cwd: '/home/dev/acme-web', gitBranch: 'main' };
+for (const [sid, day, title, skills, agents] of [
+  ['sess-skills-a', '2026-06-14', 'Review and merge the pricing PRs', ['review-pr', 'review-pr', 'commit'], ['code-reviewer']],
+  ['sess-skills-b', '2026-06-15', 'Cover the cart reducer with tests', ['write-tests', 'write-tests', 'commit'], ['test-writer', 'code-reviewer']],
+  ['sess-skills-c', '2026-06-16', 'Cut the 1.4 release', ['acme-toolkit:release-notes', 'commit'], []],
+]) {
+  const events = [
+    { type: 'ai-title', sessionId: sid, aiTitle: title },
+    user(sid, `${day}T10:00:00.000Z`, title, sk),
+  ];
+  let t = 10;
+  for (const [i, name] of skills.entries()) {
+    events.push(
+      asst(sid, `${day}T10:00:${t}.000Z`, [{ type: 'text', text: `Loading the ${name} skill.` }, skillCall(`${sid}-s${i}`, name)], SONNET, usage(900, 120, 70000, 2000), sk),
+      user(sid, `${day}T10:00:${t + 5}.000Z`, [{ type: 'tool_result', tool_use_id: `${sid}-s${i}`, content: `Launching skill: ${name}` }], sk),
+    );
+    t += 10;
+  }
+  for (const [i, type] of agents.entries()) {
+    events.push(
+      asst(sid, `${day}T10:01:${10 + i * 10}.000Z`, [{ type: 'text', text: 'Delegating a focused pass.' }, agentCall(`${sid}-a${i}`, `Run the ${type} pass`, type)], SONNET, usage(800, 100, 72000, 1000), sk),
+      user(sid, `${day}T10:01:${15 + i * 10}.000Z`, [{ type: 'tool_result', tool_use_id: `${sid}-a${i}`, content: 'Pass complete; no blocking findings.' }], sk),
+    );
+  }
+  events.push(asst(sid, `${day}T10:03:00.000Z`, [{ type: 'text', text: 'All done.' }], SONNET, usage(500, 90, 74000, 600), sk));
+  write(`home-dev-acme-web/${sid}.jsonl`, events);
+}
+
+// ── Extensions: skills, subagents, MCP servers, hooks, plugins ──────────────
+// Read LIVE from each agent home (never indexed). Every value is a placeholder;
+// env/header values are reduced to their NAMES by the server anyway.
+const put = (file, body) => {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, typeof body === 'string' ? body : JSON.stringify(body, null, 2));
+};
+const skillMd = (name, description) => `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n\n${description}\n`;
+const agentMd = (name, description, model) =>
+  `---\nname: ${name}\ndescription: ${description}\nmodel: ${model}\n---\n\nYou are the ${name} agent. ${description}\n`;
+
+// Claude Code.
+for (const [name, description] of [
+  ['commit', 'Write a Conventional Commits message from the staged diff and commit.'],
+  ['review-pr', 'Review a pull request for bugs, missing tests, and style drift.'],
+  ['write-tests', 'Add focused tests for the code that just changed.'],
+  ['db-migrations', 'Write reversible SQL migrations and check them against the schema.'],
+]) {
+  put(join(claudeHome, 'skills', name, 'SKILL.md'), skillMd(name, description));
+}
+put(join(claudeHome, 'agents', 'code-reviewer.md'), agentMd('code-reviewer', 'Reviews a diff for correctness and maintainability.', 'sonnet'));
+put(join(claudeHome, 'agents', 'test-writer.md'), agentMd('test-writer', 'Writes and updates tests for changed code.', 'sonnet'));
+put(join(claudeHome, '.claude.json'), {
+  mcpServers: {
+    github: { type: 'http', url: 'https://mcp.example.com/github', headers: { Authorization: 'Bearer EXAMPLE_TOKEN' } },
+    filesystem: { type: 'stdio', command: 'npx', args: ['-y', '@example/mcp-filesystem', '/home/dev/acme-web'] },
+    playwright: { type: 'stdio', command: 'npx', args: ['@example/mcp-browser@latest'] },
+  },
+  projects: {
+    '/home/dev/acme-web': {
+      mcpServers: {
+        postgres: { type: 'stdio', command: 'npx', args: ['-y', '@example/mcp-postgres'], env: { DATABASE_URL: 'example', PGSSLMODE: 'example' } },
+      },
+    },
+  },
+});
+const pluginsRoot = join(claudeHome, 'plugins');
+const installs = {};
+for (const [name, version, description, enabled] of [
+  ['acme-toolkit', '1.4.0', 'Release tooling for the Acme repos: notes, changelog, and a release manager agent.', true],
+  ['docs-helper', '0.9.2', 'Keeps README and API docs in step with the code.', true],
+  ['legacy-lint', '0.3.0', 'Old lint rules, kept installed but switched off.', false],
+]) {
+  const root = join(pluginsRoot, 'cache', 'acme-marketplace', name, version);
+  put(join(root, '.claude-plugin', 'plugin.json'), { name, version, description });
+  installs[`${name}@acme-marketplace`] = [{ scope: 'user', installPath: root, version }];
+  if (name === 'acme-toolkit') {
+    put(join(root, 'skills', 'release-notes', 'SKILL.md'), skillMd('release-notes', 'Draft release notes from merged pull requests since the last tag.'));
+    put(join(root, 'skills', 'changelog', 'SKILL.md'), skillMd('changelog', 'Update CHANGELOG.md in Keep a Changelog format.'));
+    put(join(root, 'agents', 'release-manager.md'), agentMd('release-manager', 'Coordinates a release: version bump, notes, and tag.', 'opus'));
+    put(join(root, '.mcp.json'), { mcpServers: { releases: { type: 'http', url: 'https://mcp.example.com/releases' } } });
+    put(join(root, 'hooks', 'hooks.json'), { hooks: { PostToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo release-audit', timeout: 10 }] }] } });
+  }
+  if (name === 'docs-helper') {
+    put(join(root, 'skills', 'sync-docs', 'SKILL.md'), skillMd('sync-docs', 'Update docs affected by a code change.'));
+  }
+}
+put(join(pluginsRoot, 'installed_plugins.json'), { version: 2, plugins: installs });
+put(join(claudeHome, 'settings.json'), {
+  enabledPlugins: { 'acme-toolkit@acme-marketplace': true, 'docs-helper@acme-marketplace': true, 'legacy-lint@acme-marketplace': false },
+  hooks: {
+    PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: './.claude/hooks/block-force-push.sh', timeout: 5 }] }],
+    PostToolUse: [{ matcher: 'Edit|Write', hooks: [{ type: 'command', command: 'npx prettier --write "$CLAUDE_FILE_PATHS"', timeout: 30 }] }],
+    SessionStart: [{ hooks: [{ type: 'command', command: 'git status --short' }] }],
+    Stop: [{ hooks: [{ type: 'command', command: './scripts/notify-done.sh' }] }],
+  },
+});
+
+// Codex (the shared ~/.agents/skills dir sits beside the codex home).
+for (const [name, description] of [
+  ['db-migrations', 'Write reversible SQL migrations and check them against the schema.'],
+  ['terraform-style', 'Format and structure Terraform modules the way the team does.'],
+]) {
+  put(join(codexHome, 'skills', name, 'SKILL.md'), skillMd(name, description));
+}
+put(join(baseDir, '.agents', 'skills', 'incident-notes', 'SKILL.md'), skillMd('incident-notes', 'Capture a timeline and follow-ups during an incident.'));
+put(
+  join(codexHome, 'config.toml'),
+  `[mcp_servers.postgres]
+command = "npx"
+args = ["-y", "@example/mcp-postgres"]
+env = { DATABASE_URL = "example" }
+
+[mcp_servers.docs]
+url = "https://mcp.example.com/docs"
+bearer_token_env_var = "EXAMPLE_DOCS_TOKEN"
+`,
+);
+put(join(codexHome, 'hooks.json'), { hooks: { PreToolUse: [{ matcher: 'shell', hooks: [{ type: 'command', command: './scripts/audit-shell.sh', timeout: 10 }] }] } });
+put(
+  join(codexHome, 'agents', 'migration-reviewer.toml'),
+  `name = "migration-reviewer"\ndescription = "Reviews SQL migrations for reversibility and lock risk."\nmodel = "gpt-5.5"\ndeveloper_instructions = "Review the migration."\n`,
+);
+{
+  const root = join(codexHome, 'plugins', 'cache', 'acme-marketplace', 'acme-toolkit', '1.4.0');
+  put(join(root, '.codex-plugin', 'plugin.json'), { name: 'acme-toolkit', version: '1.4.0', description: 'Release tooling for the Acme repos.' });
+  put(join(root, 'skills', 'release-notes', 'SKILL.md'), skillMd('release-notes', 'Draft release notes from merged pull requests since the last tag.'));
+}
+
+// Everything above is historical: age every seeded file so only the sessions
+// seeded by seedLive() fall inside the Live tab's activity window.
+const OLD = new Date('2026-06-17T12:00:00.000Z');
+(function ageAll(dir) {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) ageAll(full);
+    utimesSync(full, OLD, OLD);
+  }
+})(baseDir);
+
+seedLive(baseDir);
+
 console.log(
   `Demo data written under ${baseDir}:\n` +
-    `  Claude   → ${outDir} (${bn} bulk + 3 detailed sessions) + global/project memory\n` +
+    `  Claude   → ${outDir} (${bn} bulk + detailed, files, skill and live sessions) + global/project memory\n` +
     `  Codex    → ${codexDir} (4 sessions) + AGENTS.md\n` +
     `  Junie    → ${junieDir} (1 session) + AGENTS.md\n` +
     `  pi       → ${piDir} (1 session)\n` +
