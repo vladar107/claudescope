@@ -21,15 +21,20 @@
  *   opencode/opencode.db             OPENCODE_DATA_DIR      (SQLite; no memory)
  *   copilot/session-state/           COPILOT_SESSIONS_DIR   (COPILOT_HOME = <base>/copilot)
  *   copilot/copilot-instructions.md  Copilot global memory
+ *   gemini/antigravity-cli/          ANTIGRAVITY_CLI_DIR    (memory: gemini/config/agents/AGENTS.md)
+ *   gemini/antigravity/              ANTIGRAVITY_DIR        (desktop app dir; left empty)
+ *   grok/sessions/                   GROK_SESSIONS_DIR      (no memory)
  *
- * Run the app against it (all six sources; memory homes derive from the dirs):
+ * Run the app against it (all eight sources; memory homes derive from the dirs):
  *   base=.demo \
  *   CLAUDE_PROJECTS_DIR=$base/claude/projects CODEX_SESSIONS_DIR=$base/codex/sessions \
  *   JUNIE_SESSIONS_DIR=$base/junie/sessions PI_SESSIONS_DIR=$base/pi/sessions \
  *   OPENCODE_DATA_DIR=$base/opencode COPILOT_SESSIONS_DIR=$base/copilot/session-state \
+ *   ANTIGRAVITY_CLI_DIR=$base/gemini/antigravity-cli ANTIGRAVITY_DIR=$base/gemini/antigravity \
+ *   GROK_SESSIONS_DIR=$base/grok/sessions \
  *   npm start
  *
- * `acme-web` is deliberately shared by ALL SIX agents (same cwd) so its project
+ * `acme-web` is deliberately shared by ALL EIGHT agents (same cwd) so its project
  * card shows every agent tag and the agent filter; the other projects are
  * single-agent. The per-source layout below is kept IN SYNC with
  * scripts/screenshots.mjs, which seeds into a temp <base> and sets these vars.
@@ -56,9 +61,13 @@ const junieDir = join(junieHome, 'sessions'); //  JUNIE_SESSIONS_DIR
 const piDir = join(baseDir, 'pi', 'sessions'); // PI_SESSIONS_DIR
 const opencodeDir = join(baseDir, 'opencode'); // OPENCODE_DATA_DIR (db at /opencode.db)
 const copilotSessionsDir = join(copilotHome, 'session-state'); // COPILOT_SESSIONS_DIR
+const geminiHome = join(baseDir, 'gemini');
+const antigravityCliDir = join(geminiHome, 'antigravity-cli'); // ANTIGRAVITY_CLI_DIR
+const grokHome = join(baseDir, 'grok');
+const grokDir = join(grokHome, 'sessions'); // GROK_SESSIONS_DIR
 
 // Wipe prior output (each agent's whole home) so reseeding is deterministic.
-for (const dir of [claudeHome, codexHome, junieHome, join(baseDir, 'pi'), opencodeDir, copilotHome]) {
+for (const dir of [claudeHome, codexHome, junieHome, join(baseDir, 'pi'), opencodeDir, copilotHome, geminiHome, grokHome]) {
   rmSync(dir, { recursive: true, force: true });
 }
 
@@ -600,13 +609,13 @@ const OC_PATCH = [
 ].join('\n');
 const ocDb = new DatabaseSync(join(opencodeDir, 'opencode.db'));
 ocDb.exec(`
-  CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, title TEXT, time_created INTEGER, time_updated INTEGER);
+  CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, title TEXT, time_created INTEGER, time_updated INTEGER, parent_id TEXT);
   CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT);
   CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT);
 `);
 const OC_SID = 'ses_acmedemo01'; // ids never contain '#'
 const ocT = (s) => Date.UTC(2026, 5, 9, 10, 0, s);
-ocDb.prepare('INSERT INTO session VALUES (?,?,?,?,?)').run(OC_SID, '/home/dev/acme-web', 'Add an accent color token', ocT(0), ocT(9));
+ocDb.prepare('INSERT INTO session VALUES (?,?,?,?,?,NULL)').run(OC_SID, '/home/dev/acme-web', 'Add an accent color token', ocT(0), ocT(9));
 const ocMsg = ocDb.prepare('INSERT INTO message VALUES (?,?,?,?,?)');
 ocMsg.run('ocu1', OC_SID, ocT(0), ocT(0), JSON.stringify({ role: 'user', time: { created: ocT(0) } }));
 ocMsg.run(
@@ -720,6 +729,96 @@ writeFileSync(
   `id: ${CP_UUID}\ncwd: ${CP_CWD}\ngit_root: ${CP_CWD}\nrepository: acme/acme-web\nbranch: feat/dark-mode\nname: Add an aria-label to the theme toggle\nuser_named: false\n`,
 );
 
+
+// ── Google Antigravity CLI session (shares acme-web) ────────────────────────
+// cwd lives out-of-band in history.jsonl; tokens are never recorded (zero cost).
+const AG_ID = 'a1a1a1a1-0000-4000-8000-00000000a001';
+const agTs = (s) => `2026-06-11T10:${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}Z`;
+const agStep = (i, source, type, extra = {}) => ({ step_index: i, source, type, status: 'DONE', created_at: agTs(i * 9), ...extra });
+const agLogs = join(antigravityCliDir, 'brain', AG_ID, '.system_generated', 'logs');
+mkdirSync(agLogs, { recursive: true });
+writeFileSync(
+  join(agLogs, 'transcript_full.jsonl'),
+  jsonl([
+    agStep(0, 'USER_EXPLICIT', 'USER_INPUT', {
+      content:
+        '<USER_REQUEST>\nAdd a loading skeleton to the settings page\n</USER_REQUEST>\n' +
+        '<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from None to Gemini 3.5 Flash (Medium).\n</USER_SETTINGS_CHANGE>',
+    }),
+    agStep(1, 'MODEL', 'PLANNER_RESPONSE', {
+      thinking: 'A skeleton component keeps the layout stable while settings load.',
+      content: "I'll create a `SettingsSkeleton` component and render it while the query is pending.",
+      tool_calls: [
+        { name: 'write_to_file', args: { TargetFile: '/home/dev/acme-web/src/SettingsSkeleton.tsx', CodeContent: 'export function SettingsSkeleton() {\n  return <div className="skeleton" aria-busy="true" />;\n}\n', Overwrite: true } },
+      ],
+    }),
+    agStep(2, 'MODEL', 'CODE_ACTION', { content: 'Created file file:///home/dev/acme-web/src/SettingsSkeleton.tsx with requested content.' }),
+    agStep(3, 'MODEL', 'PLANNER_RESPONSE', { content: 'Added `SettingsSkeleton`; the settings page now shows it while loading.' }),
+  ]),
+);
+writeFileSync(
+  join(antigravityCliDir, 'history.jsonl'),
+  jsonl([{ display: 'skeleton', timestamp: 1, workspace: '/home/dev/acme-web', conversationId: AG_ID }]),
+);
+mkdirSync(join(geminiHome, 'config', 'agents'), { recursive: true });
+writeFileSync(
+  join(geminiHome, 'config', 'agents', 'AGENTS.md'),
+  '# Global rules\n\n- Keep changes small and focused.\n- Prefer existing components over new ones.\n',
+);
+mkdirSync(join(geminiHome, 'antigravity'), { recursive: true });
+
+// ── xAI Grok CLI session (shares acme-web) ──────────────────────────────────
+// Facts are split across chat_history.jsonl (spine), updates.jsonl (timestamps +
+// per-turn usage) and summary.json (cwd, title).
+const GK_ID = 'grok-acme-0001';
+const gkDir = join(grokDir, encodeURIComponent('/home/dev/acme-web'), GK_ID);
+mkdirSync(gkDir, { recursive: true });
+const GK_BASE = Date.parse('2026-06-12T10:00:00.000Z');
+const gkUpdate = (ms, update) => ({
+  timestamp: Math.floor(ms / 1000),
+  method: 'session/update',
+  params: { sessionId: GK_ID, update, _meta: { eventId: `e-${ms}`, agentTimestampMs: ms } },
+});
+writeFileSync(
+  join(gkDir, 'summary.json'),
+  JSON.stringify({
+    info: { id: GK_ID, cwd: '/home/dev/acme-web' },
+    created_at: new Date(GK_BASE).toISOString(),
+    updated_at: new Date(GK_BASE + 90_000).toISOString(),
+    current_model_id: 'grok-4.5',
+    generated_title: 'Memoize the project list selector',
+  }),
+);
+writeFileSync(
+  join(gkDir, 'chat_history.jsonl'),
+  jsonl([
+    { type: 'user', prompt_index: 0, content: [{ type: 'text', text: '<user_query>\nThe project list re-renders on every keystroke. Memoize the selector.\n</user_query>' }] },
+    {
+      type: 'assistant',
+      content: "I'll wrap the selector in `createSelector` so it only recomputes when the projects change.",
+      model_id: 'grok-4.5',
+      tool_calls: [
+        { id: 'gk-edit', name: 'search_replace', arguments: JSON.stringify({ file_path: '/home/dev/acme-web/src/selectors.ts', old_string: 'export const selectProjects = (s) => s.projects.filter(Boolean);', new_string: 'export const selectProjects = createSelector([(s) => s.projects], (p) => p.filter(Boolean));' }) },
+      ],
+    },
+    { type: 'tool_result', tool_call_id: 'gk-edit', content: 'The file src/selectors.ts has been edited' },
+    { type: 'assistant', content: 'Done. The selector is memoized and the list no longer re-renders while typing.', model_id: 'grok-4.5' },
+  ]),
+);
+writeFileSync(
+  join(gkDir, 'updates.jsonl'),
+  jsonl([
+    gkUpdate(GK_BASE + 1000, { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Memoize the selector' }, _meta: { promptIndex: 0 } }),
+    gkUpdate(GK_BASE + 20_000, { sessionUpdate: 'tool_call', toolCallId: 'gk-edit', title: 'search_replace' }),
+    gkUpdate(GK_BASE + 60_000, {
+      sessionUpdate: 'turn_completed',
+      prompt_id: 'p-1',
+      stop_reason: 'end_turn',
+      usage: { inputTokens: 9800, outputTokens: 640, totalTokens: 10440, cachedReadTokens: 6000, reasoningTokens: 120, modelCalls: 2 },
+    }),
+  ]),
+);
+
 console.log(
   `Demo data written under ${baseDir}:\n` +
     `  Claude   → ${outDir} (${bn} bulk + 3 detailed sessions) + global/project memory\n` +
@@ -728,5 +827,7 @@ console.log(
     `  pi       → ${piDir} (1 session)\n` +
     `  opencode → ${opencodeDir}/opencode.db (1 session)\n` +
     `  Copilot  → ${copilotSessionsDir} (1 session) + copilot-instructions.md\n` +
-    `  acme-web is shared by all six agents.`,
+    `  Antigravity → ${antigravityCliDir} (1 session) + AGENTS.md\n` +
+    `  Grok     → ${grokDir} (1 session)\n` +
+    `  acme-web is shared by all eight agents.`,
 );
