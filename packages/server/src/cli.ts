@@ -12,7 +12,7 @@
  *   claudescope logs -f    # follow the server log
  *   claudescope update     # upgrade to the latest published version
  *
- * Read-only query subcommands (search/sessions/session/projects/analytics)
+ * Read-only query subcommands (search/sessions/session/projects/analytics/resolve)
  * proxy the daemon's HTTP API for terminals and scripts (`--json`); see
  * agent/query.ts. `live` is the one query that never starts the daemon.
  */
@@ -57,6 +57,7 @@ import {
   queryDigest,
   queryLive,
   queryProjects,
+  queryResolve,
   querySearch,
   querySession,
   querySessions,
@@ -523,10 +524,13 @@ Query commands (read-only; start the background server on first use):
                    [--max-tool-chars N] [--redact]
   projects         List projects
   analytics        Token/cost aggregates [--group-by project|model|day|agent|tool|skill]
-                   [--from date] [--to date] [--timezone IANA]
-                   (tool|skill accept --project too; count calls, not tokens/cost)
+                   [--project id] [--from date] [--to date] [--timezone IANA]
+                   (tool|skill count calls, not tokens/cost)
   digest           Week-in-review Markdown [--from date] [--to date] [--timezone IANA]
                    (default: last 7 calendar days in the machine time zone)
+  resolve          Which session a terminal belongs to [--session id] [--cwd path]
+                   (exact id, else the live/newest session of the project at or
+                   nearest above --cwd; exits 0 for every match, including none)
   live             Sessions written to recently, with what each is doing
                    [--window 5|15|60] [--full] (with --json: last text keeps newlines, 4000-char caps)
                    Never starts the server: exits 3 when it is not running,
@@ -565,7 +569,7 @@ function parseCliArgs() {
         yes: { type: 'boolean', short: 'y' },
         // parseArgs has no built-in negation, so the flag is literally `no-open`.
         'no-open': { type: 'boolean' },
-        // Query subcommand flags (search/sessions/session/projects/analytics).
+        // Query subcommand flags (search/sessions/session/projects/analytics/resolve).
         project: { type: 'string' },
         cwd: { type: 'string' },
         agent: { type: 'string' },
@@ -722,6 +726,21 @@ export async function main(): Promise<void> {
           json: values.json,
         };
         return (client) => queryAnalytics(client, args);
+      });
+      break;
+    case 'resolve':
+      await runQuery(() => {
+        if (values.session === undefined && values.cwd === undefined) {
+          throw new UsageError('usage: claudescope resolve [--session id] [--cwd path] [--json] (at least one of --session/--cwd)');
+        }
+        if (values.session !== undefined && values.session.length === 0) {
+          throw new UsageError('--session expects a non-empty session id');
+        }
+        if (values.cwd !== undefined && values.cwd.length === 0) {
+          throw new UsageError('--cwd expects a non-empty path');
+        }
+        const args = { session: values.session, cwd: values.cwd, json: values.json };
+        return (client) => queryResolve(client, args);
       });
       break;
     case 'live':

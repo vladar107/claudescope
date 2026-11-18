@@ -21,9 +21,11 @@ import type {
   SnippetFormat,
 } from '@claudescope/shared';
 import { getConnection, queryRows, sqlString } from '../db/duckdb.js';
-import { readRow } from '../db/row.js';
+import { readRow, type RowReader } from '../db/row.js';
 import { projectIdFromCwd } from '../data/project-id.js';
 import { projectFilter } from '../data/analytics-scope.js';
+import { DEFAULT_CONNECTOR_ID } from '../data/agent-capabilities.js';
+import { toIso } from './projects.js';
 import { collectMemory } from '../data/memory.js';
 import { enumParam } from '../params.js';
 import { makeSnippet } from './snippet.js';
@@ -32,6 +34,21 @@ import { makeSnippet } from './snippet.js';
 const MEMORY_LIMIT = 50;
 const SEARCH_TYPES = ['user', 'assistant', 'all'] as const;
 const SEARCH_SCOPES = ['sessions', 'all', 'memory'] as const;
+
+/** Session columns every transcript hit carries, read as `SessionMeta` names them. */
+const SESSION_COLUMNS = `s.connector_id AS connector_id,
+       s.ended_at AS ended_at,
+       s.total_cost_usd AS total_cost_usd`;
+
+function sessionFields(
+  rd: RowReader,
+): Pick<SearchResult, 'connectorId' | 'endedAt' | 'totalCostUsd'> {
+  return {
+    connectorId: rd.str('connector_id') || DEFAULT_CONNECTOR_ID,
+    endedAt: toIso(rd.req('ended_at')),
+    totalCostUsd: rd.num('total_cost_usd'),
+  };
+}
 
 /** Sessions (BM25) search. Empty unless scope includes sessions. */
 async function searchSessions(
@@ -63,6 +80,7 @@ async function searchSessions(
          e.text_content AS text_content,
          s.project_cwd AS project_cwd,
          s.title AS title,
+         ${SESSION_COLUMNS},
          ${
            identifierQuery
              ? `contains(lower(e.text_content), ${sqlString(q.toLowerCase())})`
@@ -90,6 +108,7 @@ async function searchSessions(
       score: rd.num('score'),
       messageUuid: rd.str('message_uuid'),
       role: rd.str('role'),
+      ...sessionFields(rd),
     };
   });
 }
@@ -133,6 +152,7 @@ async function searchLiteral(
        e.skill_names AS skill_names,
        s.project_cwd AS project_cwd,
        s.title AS title,
+       ${SESSION_COLUMNS},
        CASE
          WHEN contains(lower(coalesce(e.text_content, '')), ${lit}) THEN 'text'
          WHEN contains(lower(coalesce(e.tool_error_text, '')), ${lit}) THEN 'error'
@@ -169,6 +189,7 @@ async function searchLiteral(
       score: 0,
       messageUuid: rd.str('message_uuid'),
       role: rd.str('role'),
+      ...sessionFields(rd),
     };
   });
 }

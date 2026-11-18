@@ -1,12 +1,14 @@
 /**
  * Pure command construction for "continue session" — builds the copy-paste
  * command that reopens a session in its agent's own CLI. Side-effect-free and
- * fully unit-tested; the server only ever hands these strings to the UI to
- * display, never executes them.
+ * fully unit-tested; the server never executes these strings. The UI shows
+ * them for copying, and the herdr plugin types `resumeCommand` into a new
+ * pane's shell (it refuses commands containing control characters, which a
+ * line editor would act on as it types).
  *
  * Security note: the only free-form input is the session's own indexed `cwd`,
- * and `shQuote` neutralizes it — so even if the user copies and runs the
- * command, a hostile cwd can't break out of the `cd` argument.
+ * and `shQuote` neutralizes it — so whether the user copies the command or the
+ * plugin types it, a hostile cwd can't break out of the `cd` argument.
  */
 
 import type { ResumeInfo } from '@claudescope/shared';
