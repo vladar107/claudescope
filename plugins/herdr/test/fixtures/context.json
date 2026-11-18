@@ -1,0 +1,13 @@
+{
+  "workspace_id": "w1",
+  "workspace_label": "app",
+  "workspace_cwd": "/home/user/src/app",
+  "tab_id": "w1:t1",
+  "tab_label": "1",
+  "focused_pane_id": "w1:p1",
+  "focused_pane_cwd": "/home/user/src/app",
+  "focused_pane_agent": "claude",
+  "focused_pane_status": "working",
+  "invocation_source": "cli",
+  "correlation_id": "cli:plugin"
+}

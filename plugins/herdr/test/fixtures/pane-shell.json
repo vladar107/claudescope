@@ -1,0 +1,17 @@
+{
+  "id": "cli:pane:get",
+  "result": {
+    "pane": {
+      "cwd": "@APP_DIR@",
+      "focused": true,
+      "foreground_cwd": "@APP_DIR@/src",
+      "pane_id": "w1:p1",
+      "revision": 2,
+      "tab_id": "w1:t1",
+      "terminal_id": "term_0000000000000",
+      "terminal_title": "Fix login redirect",
+      "workspace_id": "w1"
+    },
+    "type": "pane_info"
+  }
+}

@@ -1,0 +1,54 @@
+id = "claudescope"
+name = "Claudescope"
+version = "0.1.0"
+min_herdr_version = "0.9.5"
+description = "Open a pane's agent session in Claudescope, search and resume past sessions, and see the project's cost"
+platforms = ["linux", "macos"]
+
+[[build]]
+command = ["sh", "bin/install-keys.sh", "--build"]
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "open-session"
+title = "Claudescope: open this pane's session"
+command = ["sh", "bin/open-session.sh"]
+
+[[actions]]
+id = "search"
+title = "Claudescope: search and resume sessions"
+command = ["sh", "bin/open-pane.sh", "search"]
+
+[[actions]]
+id = "cost"
+title = "Claudescope: project cost"
+command = ["sh", "bin/open-pane.sh", "cost"]
+
+[[actions]]
+id = "install-keys"
+title = "Claudescope: install key bindings"
+command = ["sh", "bin/install-keys.sh"]
+
+[[panes]]
+id = "search"
+title = "Claudescope search"
+placement = "popup"
+width = "90%"
+height = "80%"
+command = ["sh", "bin/search.sh"]
+
+[[panes]]
+id = "cost"
+title = "Claudescope cost"
+placement = "popup"
+width = "70%"
+height = "60%"
+command = ["sh", "bin/cost.sh"]
+
+[[panes]]
+id = "pick"
+title = "Claudescope: pick a session"
+placement = "popup"
+width = "80%"
+height = "50%"
+command = ["sh", "bin/pick.sh"]

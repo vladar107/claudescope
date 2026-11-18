@@ -1,0 +1,15 @@
+#!/bin/sh
+# Stub herdr: logs its argv (one <element> per argument); `pane get` answers
+# from pane-$STUB_PANE.json, `pane split` with a new pane w1:p9.
+{
+  printf 'herdr'
+  for a; do printf ' <%s>' "$a"; done
+  printf '\n'
+} >>"$STUB_LOG"
+
+case "$1 $2" in
+  "server reload-config") [ -n "${STUB_RELOAD_FAIL:-}" ] && exit 1 ;;
+  "pane get") sed -e "s|@APP_DIR@|$STUB_APP_DIR|g" "$STUB_FIXTURES/pane-${STUB_PANE:-agent}.json" ;;
+  "pane split") echo '{"id":"cli:pane:split","result":{"pane":{"pane_id":"w1:p9","tab_id":"w1:t1","workspace_id":"w1"},"type":"pane_info"}}' ;;
+esac
+exit 0
