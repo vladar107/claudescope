@@ -6,7 +6,8 @@
  * both per-row and for the totals. (This header used to document
  * `cache_read / (cache_read + input)`, which is NOT what the code computed:
  * `cache_write` belongs in the denominator too.) Optional inclusive date bounds
- * `from` / `to` filter on the event timestamp.
+ * `from` / `to` filter on the event timestamp; an optional `project` id narrows
+ * every grouping to that project's sessions.
  *
  * Token/cost SUMs and messageCount filter on `usage_canonical` so one billed API
  * call counts once (Claude Code writes a row per content block and copies usage
@@ -33,56 +34,57 @@ import { enumParam } from '../params.js';
 
 const ANALYTICS_GROUPS = ['project', 'model', 'day', 'agent'] as const;
 
+const WITH_SESSIONS = 'FROM events e JOIN sessions s ON e.session_id = s.id';
+
 /**
  * The grouping key expression plus the FROM clause it needs. Project grouping
  * joins through the sessions table so a session's events all roll up to its
  * canonical modal project_cwd — matching the project ids returned by
  * /api/projects — rather than fragmenting across mid-session sub-directory cwds.
+ * `withSessions` forces that join for the other groupings too, so a project
+ * filter on `s.project_cwd` selects exactly the events of that project's row.
  */
 function groupSource(
   groupBy: AnalyticsGroupBy,
   timeZone: string,
+  withSessions: boolean,
 ): { keyExpr: string; fromSql: string } {
+  const eventsOnly = withSessions ? WITH_SESSIONS : 'FROM events e';
   switch (groupBy) {
     case 'model':
-      return { keyExpr: "COALESCE(e.model, 'unknown')", fromSql: 'FROM events e' };
+      return { keyExpr: "COALESCE(e.model, 'unknown')", fromSql: eventsOnly };
     case 'day':
       return {
         keyExpr: `strftime(${localTimestampSql('e.ts', timeZone)}, '%Y-%m-%d')`,
-        fromSql: 'FROM events e',
+        fromSql: eventsOnly,
       };
     case 'agent':
-      return {
-        keyExpr: "COALESCE(s.connector_id, 'unknown')",
-        fromSql: 'FROM events e JOIN sessions s ON e.session_id = s.id',
-      };
+      return { keyExpr: "COALESCE(s.connector_id, 'unknown')", fromSql: WITH_SESSIONS };
     case 'project':
     default:
-      return {
-        keyExpr: "COALESCE(s.project_cwd, 'unknown')",
-        fromSql: 'FROM events e JOIN sessions s ON e.session_id = s.id',
-      };
+      return { keyExpr: "COALESCE(s.project_cwd, 'unknown')", fromSql: WITH_SESSIONS };
   }
 }
 
 export async function registerAnalyticsRoute(app: FastifyInstance): Promise<void> {
   app.get<{
-    Querystring: { groupBy?: string; from?: string; to?: string; timeZone?: string };
+    Querystring: { groupBy?: string; project?: string; from?: string; to?: string; timeZone?: string };
   }>('/api/analytics', async (req): Promise<AnalyticsResponse> => {
     const conn = await getConnection();
     const groupBy = enumParam(req.query.groupBy, 'groupBy', ANALYTICS_GROUPS, 'project');
     const timeZone = await analyticsTimeZone(conn, req.query.timeZone);
-    const { keyExpr, fromSql } = groupSource(groupBy, timeZone);
+    const project = req.query.project || undefined;
+    const { keyExpr, fromSql } = groupSource(groupBy, timeZone, project !== undefined);
 
-    // Bounds go through the shared scope helper (which validates them); this
+    // Scope goes through the shared helper (which validates the bounds); this
     // route filters the EVENT timestamp, not the session start, hence the `ts`
-    // override. No project filter here — only the bounds are shared.
+    // override, and the session's canonical project, hence the `cwd` one.
     const filters: string[] = [
       "e.type = 'assistant'",
       ...(await scopeFilters(
         conn,
-        { from: req.query.from, to: req.query.to, timeZone },
-        { ts: 'e.ts' },
+        { project, from: req.query.from, to: req.query.to, timeZone },
+        { cwd: 's.project_cwd', ts: 'e.ts' },
       )),
     ];
     const whereSql = `WHERE ${filters.join(' AND ')}`;

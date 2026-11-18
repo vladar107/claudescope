@@ -9,11 +9,11 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import type { SessionDetailResponse, SessionMeta } from '@claudescope/shared';
+import type { AnalyticsResponse, SearchResponse, SessionDetailResponse, SessionMeta } from '@claudescope/shared';
 
 // --- temp locations (decided before any server module is imported) ----------
 const work = mkdtempSync(join(tmpdir(), 'claudescope-cliq-'));
@@ -100,6 +100,13 @@ function writeFixtures(): void {
     join(subN, 'agent-inner.meta.json'),
     JSON.stringify({ agentType: 'general-purpose', description: 'Inner probe', toolUseId: 'tu_inner', parentAgentId: 'outer' }),
   );
+
+  // Back-date every transcript so none is in the live window (which reads file
+  // mtimes): `resolve` must then answer from the newest session, not timing.
+  const past = new Date('2026-01-05T00:00:00.000Z');
+  for (const f of readdirSync(projectsDir, { recursive: true, withFileTypes: true })) {
+    if (f.isFile()) utimesSync(join(f.parentPath, f.name), past, past);
+  }
 }
 
 let app: FastifyInstance;
@@ -209,5 +216,68 @@ describe('cli query subcommands', () => {
     expect(out).toMatch(/^KEY\s+AGENT\s+COUNT$/mu);
     expect(out).toContain('claude-code');
     expect(out).not.toContain('Total:');
+  });
+
+  it('search hits carry the session\'s agent, end time, and cost', async () => {
+    const metas = JSON.parse(await query.querySessions(client, { json: true })) as SessionMeta[];
+    const meta = metas.find((m) => m.id === 'sessQ1');
+    expect(meta?.totalCostUsd).toBeGreaterThan(0);
+    for (const literal of [false, true]) {
+      const res = JSON.parse(await query.querySearch(client, { query: 'needle', literal, json: true })) as SearchResponse;
+      const hit = res.sessions.find((h) => h.sessionId === 'sessQ1');
+      expect(hit).toMatchObject({ connectorId: 'claude-code', endedAt: '2026-01-02T10:00:05.000Z' });
+      expect(hit?.totalCostUsd).toBe(meta?.totalCostUsd);
+    }
+  });
+
+  it('analytics --project narrows project and day grouping to that project\'s row', async () => {
+    const all = JSON.parse(await query.queryAnalytics(client, { groupBy: 'project', json: true })) as AnalyticsResponse;
+    expect(all.rows.length).toBe(2);
+    for (const row of all.rows) {
+      for (const groupBy of ['project', 'day'] as const) {
+        const scoped = JSON.parse(
+          await query.queryAnalytics(client, { groupBy, project: row.key, json: true }),
+        ) as AnalyticsResponse;
+        expect(scoped.totals.totalTokens).toBe(row.totalTokens);
+        expect(scoped.totals.messageCount).toBe(row.messageCount);
+        expect(scoped.totals.costUsd).toBeCloseTo(row.costUsd, 10);
+      }
+    }
+    const unknown = JSON.parse(
+      await query.queryAnalytics(client, { groupBy: 'model', project: 'no-such-project', json: true }),
+    ) as AnalyticsResponse;
+    expect(unknown.rows).toEqual([]);
+  });
+
+  it('resolve: exact id, unknown id falling back to the folder, nearest ancestor, and no match', async () => {
+    const resolve = async (args: { session?: string; cwd?: string }) =>
+      JSON.parse(await query.queryResolve(client, { ...args, json: true })) as {
+        match: string;
+        project: { id: string; cwd: string; match: string } | null;
+        sessions: { meta: SessionMeta; live: boolean }[];
+      };
+
+    const byId = await resolve({ session: 'sessQ1', cwd: '/tmp/projN' });
+    expect(byId.match).toBe('id');
+    expect(byId.project).toMatchObject({ cwd: '/tmp/projQ', match: 'exact' });
+    expect(byId.sessions.map((s) => [s.meta.id, s.live])).toEqual([['sessQ1', false]]);
+
+    // An id the index does not know falls through to the folder, and a
+    // subdirectory (that does not even exist) resolves to its project.
+    const byFolder = await resolve({ session: 'not-a-session', cwd: '/tmp/projQ/packages/web/' });
+    expect(byFolder.match).toBe('recent');
+    expect(byFolder.project).toMatchObject({ cwd: '/tmp/projQ', match: 'ancestor' });
+    expect(byFolder.sessions.map((s) => [s.meta.id, s.live])).toEqual([['sessQ2', false]]);
+
+    expect(await resolve({ session: 'not-a-session' })).toEqual({ match: 'none', project: null, sessions: [] });
+    expect(await resolve({ cwd: '/claudescope-test-nowhere/deeper' })).toEqual({
+      match: 'none',
+      project: null,
+      sessions: [],
+    });
+
+    // Human output: one line per candidate, led by the match kind.
+    expect(await query.queryResolve(client, { session: 'sessQ1' })).toMatch(/^id\s+sessQ1\s+claude-code\s/u);
+    expect(await query.queryResolve(client, { cwd: '/claudescope-test-nowhere' })).toMatch(/^none\b/u);
   });
 });

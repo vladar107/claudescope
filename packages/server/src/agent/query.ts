@@ -1,5 +1,5 @@
 /**
- * CLI query subcommands (`claudescope search|sessions|session|projects|analytics`)
+ * CLI query subcommands (`claudescope search|sessions|session|projects|analytics|resolve`)
  * — read-only lookups against the daemon's HTTP API for terminals and scripts.
  *
  * Each command returns the string to print: an aligned table / compact Markdown
@@ -8,9 +8,20 @@
  * stderr (ensureDaemon), so stdout stays clean for piping.
  */
 
-import type { AnalyticsGroupBy, LiveSession, SearchScope, SearchType, SessionSort } from '@claudescope/shared';
+import { realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import type {
+  AnalyticsGroupBy,
+  LiveSession,
+  SearchScope,
+  SearchType,
+  SessionMeta,
+  SessionSort,
+} from '@claudescope/shared';
 import { LIVE_DEFAULT_WINDOW_MINUTES, digestToMarkdown } from '@claudescope/shared';
-import type { ApiClient } from './api-client.js';
+import { ApiError, type ApiClient } from './api-client.js';
+import { matchProject, resolveById, resolveByProject, type ResolveResult } from './resolve.js';
 import {
   DEFAULT_LIMIT,
   DEFAULT_MAX_TOOL_CHARS,
@@ -171,6 +182,7 @@ export async function queryAnalytics(client: ApiClient, args: AnalyticsArgs): Pr
 
   const res = await client.analytics({
     groupBy,
+    project: args.project,
     from: args.from,
     to: args.to,
     timeZone: args.timeZone,
@@ -261,4 +273,89 @@ export async function queryLive(client: ApiClient, args: LiveArgs): Promise<stri
   });
   const more = res.truncated > 0 ? `\n+${res.truncated} more live sessions not shown` : '';
   return `${table(['STATE', 'FOR', 'AGENT', 'PROJECT', 'TITLE'], rows)}${more}\n\n${finished}`;
+}
+
+export interface ResolveArgs {
+  /** Agent session id (e.g. a terminal multiplexer's record of the pane's agent). */
+  session?: string;
+  /** Working directory; matched to the project at or nearest above it. */
+  cwd?: string;
+  json?: boolean;
+}
+
+/**
+ * realpath that never throws: a path that does not exist (yet, or any more) is
+ * canonicalized through its deepest existing ancestor, so `/tmp/x/new` and a
+ * recorded `/private/tmp/x` still compare equal on macOS.
+ */
+function canonicalPath(p: string): string {
+  let rest = '';
+  let cur = p;
+  for (;;) {
+    try {
+      return rest ? join(realpathSync(cur), rest) : realpathSync(cur);
+    } catch {
+      const parent = dirname(cur);
+      if (parent === cur) return p;
+      rest = rest ? join(basename(cur), rest) : basename(cur);
+      cur = parent;
+    }
+  }
+}
+
+/** The session behind an id, or undefined when the index has no such session. */
+async function sessionById(client: ApiClient, id: string): Promise<SessionMeta | undefined> {
+  try {
+    // The smallest window: only `meta` is needed, not the thread.
+    return (await client.session(id, { limit: 0 })).meta;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return undefined;
+    throw err;
+  }
+}
+
+/**
+ * Which session a terminal belongs to: the exact `--session` id when the index
+ * knows it, else the project at (or nearest above) `--cwd` and its live
+ * session(s), else that project's newest session. Composes existing routes —
+ * the matching itself is the pure `agent/resolve.ts`. Every outcome, `none`
+ * included, is normal output; only daemon/HTTP failures throw.
+ */
+export async function resolveSession(client: ApiClient, args: ResolveArgs): Promise<ResolveResult> {
+  const exact = args.session ? await sessionById(client, args.session) : undefined;
+  if (!exact && !args.cwd) return { match: 'none', project: null, sessions: [] };
+
+  const [projects, live] = await Promise.all([client.projects(), client.live()]);
+  if (exact) return resolveById(exact, projects, live.sessions);
+
+  const cwd = args.cwd as string;
+  const project = matchProject(projects, isAbsolute(cwd) ? cwd : resolve(cwd), homedir(), canonicalPath);
+  if (!project) return resolveByProject(null, live.sessions);
+  const anyLive = live.sessions.some((l) => l.meta.projectId === project.id);
+  const recent = anyLive
+    ? undefined
+    : (await client.sessions({ project: project.id, sort: 'recent', limit: 1 }))[0];
+  return resolveByProject(project, live.sessions, recent);
+}
+
+export async function queryResolve(client: ApiClient, args: ResolveArgs): Promise<string> {
+  const res = await resolveSession(client, args);
+  if (args.json) return json(res);
+  if (res.sessions.length === 0) {
+    return res.project ? `none  no session in ${res.project.cwd}` : 'none  no session or project matches';
+  }
+  const lines = table(
+    ['MATCH', 'ID', 'AGENT', 'PROJECT', 'DATE', 'TITLE'],
+    res.sessions.map((c) => [
+      res.match,
+      c.meta.id,
+      c.meta.connectorId,
+      clip(c.meta.projectDisplayName),
+      day(c.meta.endedAt),
+      clip(c.meta.title),
+    ]),
+  ).split('\n');
+  // One line per candidate, prefixed by the match kind — no header row, so a
+  // shell caller can `cut`/`awk` the output without skipping a line.
+  return lines.slice(1).join('\n');
 }

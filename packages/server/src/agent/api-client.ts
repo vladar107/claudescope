@@ -31,6 +31,16 @@ import type {
 /** Query-param bag: undefined/empty values are omitted from the URL. */
 type Params = Record<string, string | number | boolean | undefined>;
 
+/** A non-2xx answer from the daemon; `status` lets a caller treat e.g. 404 as "not found". */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 export class ApiClient {
   constructor(readonly baseUrl: string) {}
 
@@ -40,7 +50,7 @@ export class ApiClient {
       if (v !== undefined && v !== '') url.searchParams.set(k, String(v));
     }
     const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-    if (!res.ok) throw new Error(`GET ${path} → ${res.status} ${res.statusText}`);
+    if (!res.ok) throw new ApiError(`GET ${path} → ${res.status} ${res.statusText}`, res.status);
     return (await res.json()) as T;
   }
 

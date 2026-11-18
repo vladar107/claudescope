@@ -94,6 +94,12 @@ export interface SearchResult {
   score: number;
   messageUuid: string;
   role: string;
+  /** Agent of the hit's session (as `SessionMeta.connectorId`). */
+  connectorId?: string;
+  /** End of the hit's session (as `SessionMeta.endedAt`). */
+  endedAt?: string;
+  /** Estimated cost of the hit's whole session (as `SessionMeta.totalCostUsd`). */
+  totalCostUsd?: number;
 }
 
 /** One row of an analytics aggregation, grouped per `groupBy`. */
@@ -223,6 +229,8 @@ export interface AnalyticsDateRangeQuery {
 /** GET /api/analytics query parameters; bounds filter event timestamps. */
 export interface AnalyticsQuery extends AnalyticsDateRangeQuery {
   groupBy: AnalyticsGroupBy;
+  /** Project id (from /api/projects): restrict every grouping to that project's sessions. */
+  project?: string;
 }
 
 /** GET /api/analytics/digest query parameters; bounds filter session start timestamps. */

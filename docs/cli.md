@@ -36,6 +36,8 @@ claudescope session <id> --around <uuid>        # open a search hit, windowed
 claudescope session <id> --tail 20              # last 20 turns
 claudescope open --session <id> --around <uuid> # open that hit in the web app
 claudescope analytics --group-by day --timezone Europe/Amsterdam --json | jq '.rows[] | [.key, .costUsd]'
+claudescope analytics --group-by model --project <id> --from 2026-06-01  # one project's spend
+claudescope resolve --session <id> --cwd "$PWD" --json  # which session is this terminal?
 claudescope digest --from 2026-06-23 --to 2026-06-29 --timezone Europe/Amsterdam
 claudescope live --window 5                     # what each agent is doing right now
 ```
@@ -52,15 +54,36 @@ ranking) — the way to find an error message the agent never restated in prose.
 
 `sessions --cwd <path>` resolves to the project for that working directory
 locally, without a separate `projects` lookup, and is exclusive with
-`--project`; `--branch <name>` filters to that git branch; `--q <text>` matches
-the title, branch, id, or model; `--limit/--offset` page the list (20 rows by
-default). `session` prints a
-pageable window of turns as Markdown (`--offset/--limit`, `--redact` to mask
+`--project`. It is an exact project match: a subdirectory of a project finds
+nothing (use `resolve --cwd` for the nearest ancestor project);
+`--branch <name>` filters to that git branch; `--q <text>` matches the title,
+branch, id, or model; `--limit/--offset` page the list (20 rows by default).
+`session` prints a pageable window of turns as Markdown (`--offset/--limit`, `--redact` to mask
 paths/secrets); `--tail N` prints only the last N turns and is exclusive with
 `--offset/--limit/--around`. `--json` returns the raw API response unredacted.
 `open` starts the daemon lazily and preserves its configured port; session ids
 and message anchors are URL-encoded before the browser opens. See
 `claudescope help` for the full flag list.
+
+`analytics --project <id>` restricts every grouping (project, model, day,
+agent, tool, skill) to that project's sessions; take the id from `projects` or
+from `resolve`.
+
+`resolve [--session <id>] [--cwd <path>]` answers "which session is this
+terminal running?" for editor and multiplexer integrations. At least one flag
+is required. A `--session` id the index knows wins (`match: "id"`), unless
+that session is not live while others in its project are: a terminal
+integration can keep reporting a pane's first session after the agent started
+a new one (Claude Code's `/clear`), so that gives `ambiguous` with the live
+sessions first and the id's session last. An unknown id falls back to `--cwd`. `--cwd` picks the project whose directory equals it,
+else the nearest ancestor project by whole path segments (after resolving
+symlinks such as macOS `/tmp` → `/private/tmp`); a project at your home
+directory or `/` never counts as an ancestor. Within that project, one live
+session gives `live`, several give `ambiguous` (newest first), and none gives
+the newest session as `recent`. With `--json` it prints
+`{ match, project: { id, cwd, match: "exact" | "ancestor" } | null, sessions: [{ meta, live }] }`
+where `match` is `id`, `live`, `recent`, `ambiguous`, or `none`. It exits 0
+for every match, `none` included, and non-zero only for usage or server errors.
 
 Analytics and digest date-only bounds are inclusive calendar days in the
 selected IANA time zone. The CLI defaults to the machine's time zone (falling
