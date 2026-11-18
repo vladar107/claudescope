@@ -1,7 +1,8 @@
 # Agent access
 
-Four ways to let a coding agent, or you, query Claudescope's index: an MCP
-server, a Claude Code and Codex plugin, Raycast, and the [CLI](cli.md).
+Five ways to let a coding agent, or you, query Claudescope's index: an MCP
+server, a Claude Code and Codex plugin, Raycast, a herdr plugin, and the
+[CLI](cli.md).
 
 ## MCP server
 
@@ -60,3 +61,14 @@ message in the web app. Commands: **Search ClaudeScope**, **ClaudeScope Recent
 Sessions**, and **Open ClaudeScope**. It needs Claudescope 0.17.0 or later on
 `PATH`; if it can't find the executable, set its absolute path in the extension
 preferences.
+
+## herdr
+
+The [herdr plugin](../plugins/herdr/README.md) adds three actions to
+[herdr](https://herdr.dev) panes: open the focused pane's agent session in
+Claudescope, search past sessions from every agent and resume one in a split,
+and show the project's cost. Install it with
+`herdr plugin install vladar107/claudescope/plugins/herdr`; the install binds
+them to `prefix+i`, `prefix+f`, and `prefix+m` (the plugin README shows how to
+change that). It needs a Claudescope with the `resolve` command and `jq`;
+`fzf` is optional.

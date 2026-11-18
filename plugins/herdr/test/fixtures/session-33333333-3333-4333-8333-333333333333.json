@@ -1,0 +1,23 @@
+{
+  "meta": {
+    "id": "33333333-3333-4333-8333-333333333333",
+    "projectId": "-home-user-src-app",
+    "projectDisplayName": "app",
+    "title": "Tidy CI config",
+    "startedAt": "@D3@T08:00:00.000Z",
+    "endedAt": "@D3@T08:00:00.000Z",
+    "messageCount": 6,
+    "toolCallCount": 3,
+    "totalTokens": 9000,
+    "totalCostUsd": 0.4,
+    "models": [
+      "m"
+    ],
+    "providers": [],
+    "sizeBytes": 1000,
+    "hasSidechain": false,
+    "connectorId": "junie"
+  },
+  "thread": [],
+  "subagents": []
+}

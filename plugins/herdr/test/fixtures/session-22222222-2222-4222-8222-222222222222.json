@@ -1,0 +1,27 @@
+{
+  "meta": {
+    "id": "22222222-2222-4222-8222-222222222222",
+    "projectId": "-home-user-src-app",
+    "projectDisplayName": "app",
+    "title": "Add retry to uploader",
+    "startedAt": "@D3@T10:00:00.000Z",
+    "endedAt": "@D3@T10:00:00.000Z",
+    "messageCount": 20,
+    "toolCallCount": 3,
+    "totalTokens": 250000,
+    "totalCostUsd": 4.1,
+    "models": [
+      "m"
+    ],
+    "providers": [],
+    "sizeBytes": 1000,
+    "hasSidechain": false,
+    "connectorId": "codex"
+  },
+  "thread": [],
+  "subagents": [],
+  "resume": {
+    "cwd": "@APP_DIR@",
+    "resumeCommand": "cd @APP_DIR@ && codex resume 22222222-2222-4222-8222-222222222222"
+  }
+}

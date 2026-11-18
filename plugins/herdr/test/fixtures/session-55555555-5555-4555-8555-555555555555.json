@@ -1,0 +1,27 @@
+{
+  "meta": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "projectId": "-home-user-src-app",
+    "projectDisplayName": "app",
+    "title": "Control char in cwd",
+    "startedAt": "@D20@T07:00:00.000Z",
+    "endedAt": "@D20@T07:00:00.000Z",
+    "messageCount": 4,
+    "toolCallCount": 3,
+    "totalTokens": 5000,
+    "totalCostUsd": 1.0,
+    "models": [
+      "m"
+    ],
+    "providers": [],
+    "sizeBytes": 1000,
+    "hasSidechain": false,
+    "connectorId": "claude-code"
+  },
+  "thread": [],
+  "subagents": [],
+  "resume": {
+    "cwd": "@APP_DIR@\u0015x",
+    "resumeCommand": "claude --resume 55555555-5555-4555-8555-555555555555"
+  }
+}

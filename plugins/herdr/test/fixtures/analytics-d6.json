@@ -1,0 +1,25 @@
+{
+  "rows": [
+    {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "totalTokens": 2100000,
+      "costUsd": 8.4,
+      "cacheHitRatio": 0,
+      "messageCount": 90,
+      "key": "-home-user-src-app"
+    }
+  ],
+  "totals": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 0,
+    "totalTokens": 2100000,
+    "costUsd": 8.4,
+    "cacheHitRatio": 0,
+    "messageCount": 90
+  }
+}

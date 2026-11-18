@@ -1,0 +1,40 @@
+[
+  {
+    "id": "77777777-7777-4777-8777-777777777777",
+    "projectId": "-home-user-src-app",
+    "projectDisplayName": "app",
+    "title": "TZ inside window",
+    "startedAt": "@K7@T12:00:00.123Z",
+    "endedAt": "@K7@T12:00:00.123Z",
+    "messageCount": 4,
+    "toolCallCount": 3,
+    "totalTokens": 5000,
+    "totalCostUsd": 1.0,
+    "models": [
+      "m"
+    ],
+    "providers": [],
+    "sizeBytes": 1000,
+    "hasSidechain": false,
+    "connectorId": "claude-code"
+  },
+  {
+    "id": "88888888-8888-4888-8888-888888888888",
+    "projectId": "-home-user-src-app",
+    "projectDisplayName": "app",
+    "title": "TZ outside window",
+    "startedAt": "@K7@T09:00:00Z",
+    "endedAt": "@K7@T09:00:00Z",
+    "messageCount": 4,
+    "toolCallCount": 3,
+    "totalTokens": 5000,
+    "totalCostUsd": 1.0,
+    "models": [
+      "m"
+    ],
+    "providers": [],
+    "sizeBytes": 1000,
+    "hasSidechain": false,
+    "connectorId": "claude-code"
+  }
+]

@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "projectId": "-home-user-src-app",
+    "projectDisplayName": "app",
+    "title": "Fix login redirect",
+    "startedAt": "@D0@T09:15:00.000Z",
+    "endedAt": "@D0@T09:15:00.000Z",
+    "messageCount": 48,
+    "toolCallCount": 3,
+    "totalTokens": 1234567,
+    "totalCostUsd": 2.1,
+    "models": [
+      "m"
+    ],
+    "providers": [],
+    "sizeBytes": 1000,
+    "hasSidechain": false,
+    "connectorId": "claude-code"
+  },
+  "thread": [],
+  "subagents": [],
+  "resume": {
+    "cwd": "@APP_DIR@",
+    "resumeCommand": "cd @APP_DIR@ && claude --resume 11111111-1111-4111-8111-111111111111",
+    "forkCommand": "cd @APP_DIR@ && claude --resume 11111111-1111-4111-8111-111111111111 --fork-session"
+  }
+}

@@ -1,0 +1,109 @@
+#!/bin/sh
+# Stub claudescope: logs its argv (one <element> per argument) and answers
+# from the contract fixtures. STUB_MATCH picks the resolve fixture,
+# STUB_LIVE_EXIT the `live` exit code, STUB_UNKNOWN an old CLI without resolve,
+# STUB_DELAY a per-call sleep (seconds) that makes the cost of sequential calls
+# visible, STUB_BARRIER="<dir>:<n>:<cmd> <cmd>…" a rendezvous: a listed command
+# only answers once n listed commands are running at the same time, so a test
+# that expects concurrency fails (exit 99, and a <dir>.failed marker) when the calls run one by one.
+# Without --project, `analytics` and `sessions --sort` answer with the
+# all-projects fixtures.
+line=claudescope
+for a; do line="$line <$a>"; done
+printf '%s\n' "$line" >>"$STUB_LOG"
+
+scoped=1
+for a; do
+  case $a in --project=*) scoped=0 ;; esac
+done
+[ "$scoped" = 1 ] && all=-all || all=
+
+# bar_count <dir>: how many commands have arrived.
+bar_count() {
+  bc_n=0
+  for bc_f in "$1"/*; do [ -e "$bc_f" ] && bc_n=$((bc_n + 1)); done
+  echo "$bc_n"
+}
+
+[ -n "${STUB_DELAY:-}" ] && sleep "$STUB_DELAY"
+if [ -n "${STUB_BARRIER:-}" ]; then
+  bar_dir=${STUB_BARRIER%%:*}
+  bar_rest=${STUB_BARRIER#*:}
+  bar_n=${bar_rest%%:*}
+  case " ${bar_rest#*:} " in
+    *" $1 "*)
+      : >"$bar_dir/$$"
+      bar_i=0
+      while [ "$(bar_count "$bar_dir")" -lt "$bar_n" ] && [ "$bar_i" -lt 30 ]; do
+        sleep 0.1
+        bar_i=$((bar_i + 1))
+      done
+      [ "$(bar_count "$bar_dir")" -ge "$bar_n" ] || {
+        : >"$bar_dir.failed"
+        exit 99
+      }
+      ;;
+  esac
+fi
+
+fixture() {
+  sed -e "s|@APP_DIR@|$STUB_APP_DIR|g" -e "s|@D0@|$STUB_D0|g" -e "s|@D3@|$STUB_D3|g" \
+    -e "s|@D20@|$STUB_D20|g" -e "s|@K7@|${STUB_K7:-}|g" "$STUB_FIXTURES/$1"
+}
+
+last=
+json=
+for a; do
+  last=$a
+  [ "$a" = --json ] && json=1
+done
+
+case $1 in
+  live)
+    if [ "${STUB_LIVE_EXIT:-0}" -ne 0 ]; then
+      echo "✗ claudescope is not running (start it with: claudescope start)" >&2
+      exit "$STUB_LIVE_EXIT"
+    fi
+    fixture live.json
+    ;;
+  resolve)
+    if [ -n "${STUB_UNKNOWN:-}" ]; then
+      printf 'Unknown command: resolve\n\n' >&2
+      echo "claudescope vX — local viewer for AI coding-agent transcripts"
+      exit 1
+    fi
+    fixture "resolve-${STUB_MATCH:-id}.json"
+    ;;
+  open) ;;
+  sessions)
+    case " $* " in
+      *" --sort "*) [ -z "${STUB_SESSIONS:-}" ] && STUB_SESSIONS=sessions$all.json ;;
+    esac
+    fixture "${STUB_SESSIONS:-sessions.json}"
+    ;;
+  search) fixture search.json ;;
+  session)
+    if [ -n "$json" ]; then
+      [ -r "$STUB_FIXTURES/session-$last.json" ] || {
+        echo "✗ session not found" >&2
+        exit 1
+      }
+      fixture "session-$last.json"
+    else
+      printf '## user\n\033]0;pwned\007hello \033[31mred\033[0m\ttabbed\n'
+    fi
+    ;;
+  analytics)
+    for a; do
+      case $a in
+        --from="$STUB_D0") fixture analytics"$all"-d0.json ;;
+        --from="$STUB_D6") fixture analytics"$all"-d6.json ;;
+        --from="$STUB_D29") fixture analytics"$all"-d29.json ;;
+      esac
+    done
+    ;;
+  *)
+    echo "Unknown command: $1" >&2
+    exit 1
+    ;;
+esac

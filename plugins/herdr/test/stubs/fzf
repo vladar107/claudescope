@@ -1,0 +1,30 @@
+#!/bin/sh
+# Stub fzf (real fzf needs a TTY): logs its argv, then takes the next answer
+# `key|session-id` from $STUB_FZF_ANSWERS and prints what fzf would — the
+# --expect key line (when asked for) and the row whose field 1 is that id.
+# No answers left → exit 130, as for Esc.
+{
+  printf 'fzf'
+  for a; do printf ' <%s>' "$a"; done
+  printf '\n'
+} >>"$STUB_LOG"
+
+[ "${1:-}" = --version ] && {
+  printf '%s (stub)\n' "${STUB_FZF_VERSION:-0.54.0}"
+  exit 0
+}
+
+rows=$(cat)
+answer=$(sed -n 1p "$STUB_FZF_ANSWERS" 2>/dev/null)
+[ -n "$answer" ] || exit 130
+sed 1d "$STUB_FZF_ANSWERS" >"$STUB_FZF_ANSWERS.next" && mv "$STUB_FZF_ANSWERS.next" "$STUB_FZF_ANSWERS"
+
+key=${answer%%|*}
+id=${answer#*|}
+tab=$(printf '\t')
+line=$(printf '%s\n' "$rows" | grep "^$id$tab" | head -n 1)
+[ -n "$line" ] || exit 1
+for a; do
+  case $a in --expect=*) printf '%s\n' "$key" ;; esac
+done
+printf '%s\n' "$line"
