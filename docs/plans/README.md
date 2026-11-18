@@ -124,3 +124,4 @@ decision, or a change worth explaining before doing. Skip it for one-line fixes.
 | 0097 | [Live agents in Raycast](./0097-raycast-live-agents.md) | done |
 | 0098 | [Screenshots for Live, agent tree, Extensions, and Files changed](./0098-live-extensions-screenshots.md) | done |
 | 0099 | [Slim README, reference docs, and the website](./0099-slim-readme-and-docs.md) | done |
+| 0100 | [herdr plugin: pane to session, search to resume, cost](./0100-herdr-plugin.md) | done |
