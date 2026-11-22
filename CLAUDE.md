@@ -164,6 +164,11 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   plan was written to **ephemeral** storage outside the repo (e.g.
   `~/.claude/plans/<name>.md`) — check there and copy it in, otherwise it's lost.
   See `docs/plans/README.md`.
+- **Project board:** finalising work includes updating its item on the
+  private Claudescope project (`gh project item-list 2 --owner vladar107`): set
+  `Status` to `Done` and rewrite the body as a shipped summary (PRs, release
+  version, plan file, a checklist of what landed, what was dropped and why).
+  Work left undone gets its own `Todo` item, not an open box on a `Done` one.
 
 ## Gotchas
 
