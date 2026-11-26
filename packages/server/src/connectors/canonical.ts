@@ -198,8 +198,10 @@ function columnsMap(names: readonly string[]): string {
  * the output shape is identical either way. `message_id` and
  * `forked_from_session_id` are always NULL — they exist for Claude Code's
  * usage-dedup election, and these formats accumulate usage once per call in
- * their normalizers instead. `usage_only` is coalesced to FALSE here so the
- * (rare) connector/row that sets it doesn't leave every other row NULL.
+ * their normalizers instead. `entrypoint` is always NULL too: no cache-backed
+ * format records the client a session ran from (`SURFACE_SIGNAL`). `usage_only`
+ * is coalesced to FALSE here so the (rare) connector/row that sets it doesn't
+ * leave every other row NULL.
  */
 export function canonicalProjectionSql(cachePath: string, opts: { provider: boolean }): string {
   const names = Object.keys(CANONICAL_COLUMNS).filter(
@@ -217,7 +219,8 @@ export function canonicalProjectionSql(cachePath: string, opts: { provider: bool
   return `
     SELECT
       ${selected.join(', ')},
-      CAST(NULL AS VARCHAR) AS message_id, CAST(NULL AS VARCHAR) AS forked_from_session_id
+      CAST(NULL AS VARCHAR) AS message_id, CAST(NULL AS VARCHAR) AS forked_from_session_id,
+      CAST(NULL AS VARCHAR) AS entrypoint
     FROM read_ndjson(${sqlString(cachePath)}, ${READ_OPTS}, ${columnsMap(names)})
     WHERE type IN ('user', 'assistant')`;
 }

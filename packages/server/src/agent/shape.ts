@@ -15,7 +15,7 @@ import type {
   ToolUsageResponse,
 } from '@claudescope/shared';
 import { orderSubagentRunsDepthFirst, redactText, threadItemsToMarkdown } from '@claudescope/shared';
-import { projectIdFromCwd } from '../data/project-id.js';
+import { projectCwdFromCwd, projectIdFromCwd } from '../data/project-id.js';
 
 /** Default hits/rows returned by the list-shaped tools/commands. */
 export const DEFAULT_LIMIT = 20;
@@ -80,11 +80,12 @@ export function resolveWindowArgs(args: WindowArgs): WindowArgs {
  * locally instead of listing projects first. An absolute path is used verbatim
  * (only trailing separators dropped): `resolve()` would rewrite a POSIX path on
  * Windows into a drive-lettered, backslashed form no session ever recorded.
- * Only a relative path is resolved against the process cwd.
+ * Only a relative path is resolved against the process cwd. A Claude Code
+ * worktree path folds into its repo, as the index does for `project_cwd`.
  */
 export function projectIdForCwd(cwd: string): string {
   const absolute = isAbsolute(cwd) ? cwd : resolve(cwd);
-  return projectIdFromCwd(absolute.replace(/(?<=.)[/\\]+$/, ''));
+  return projectIdFromCwd(projectCwdFromCwd(absolute.replace(/(?<=.)[/\\]+$/, '')));
 }
 
 /** The one-line totals summary appended to analytics output. */

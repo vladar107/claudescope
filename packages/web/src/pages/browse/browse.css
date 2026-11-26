@@ -143,6 +143,11 @@
   gap: var(--tv-space-2);
   margin-bottom: var(--tv-space-3);
 }
+.tv-agent-filter__caption {
+  align-self: center;
+  color: var(--tv-fg-muted);
+  font-size: var(--tv-fs-sm);
+}
 .tv-agent-filter__btn {
   display: inline-flex;
   align-items: center;

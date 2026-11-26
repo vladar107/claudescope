@@ -7,7 +7,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import type { AgentBreakdown, ProjectMeta } from '@claudescope/shared';
+import type { AgentBreakdown, ProjectMeta, SurfaceBreakdown } from '@claudescope/shared';
 import { getConnection, queryRows } from '../db/duckdb.js';
 import { readRow } from '../db/row.js';
 import { displayNameFromCwd, projectIdFromCwd } from '../data/project-id.js';
@@ -59,6 +59,24 @@ export async function registerProjectsRoute(app: FastifyInstance): Promise<void>
       agentsByCwd.set(cwd, list);
     }
 
+    const surfaceRows = await queryRows(
+      conn,
+      `SELECT project_cwd AS cwd, surface, count(*) AS session_count
+       FROM sessions
+       WHERE project_cwd IS NOT NULL AND surface IS NOT NULL
+       GROUP BY project_cwd, surface
+       ORDER BY count(*) DESC, surface`,
+    );
+
+    const surfacesByCwd = new Map<string, SurfaceBreakdown[]>();
+    for (const r of surfaceRows) {
+      const rd = readRow(r, 'projects.surfaces');
+      const cwd = rd.str('cwd');
+      const list = surfacesByCwd.get(cwd) ?? [];
+      list.push({ surface: rd.str('surface'), sessionCount: rd.num('session_count') });
+      surfacesByCwd.set(cwd, list);
+    }
+
     return rows.map((r): ProjectMeta => {
       const rd = readRow(r, 'projects');
       const cwd = rd.str('cwd');
@@ -73,6 +91,7 @@ export async function registerProjectsRoute(app: FastifyInstance): Promise<void>
         lastActive: toIso(rd.req('last_active')),
         connectorIds: agents.map((a) => a.connectorId),
         agents,
+        surfaces: surfacesByCwd.get(cwd) ?? [],
       };
     });
   });

@@ -60,7 +60,10 @@
 //      usage now price at exact-id-only fast rates instead of standard ones.
 // v27: events.subagent_names — the subagent_type of canonical Task/Agent spawns,
 //      for the subagent-usage breakdown on the Extensions page.
-export const SCHEMA_VERSION = 27;
+// v28: project_cwd votes on the cwd with Claude Code worktrees folded into their
+//      repo; sessions.cwd (the starting directory, for resume); custom-title wins
+//      over ai-title; events.entrypoint + sessions.surface ("started from").
+export const SCHEMA_VERSION = 28;
 
 /** All DDL statements, executed in order at startup. Idempotent. */
 export const SCHEMA_DDL: readonly string[] = [
@@ -133,6 +136,10 @@ export const SCHEMA_DDL: readonly string[] = [
      -- Comma-joined subagent_type of canonical Task/Agent spawns, one entry per
      -- spawn, shaped like skill_names.
      subagent_names  VARCHAR DEFAULT '',
+     -- Raw client the row was written from (Claude Code's entrypoint: cli,
+     -- claude-desktop, ...); NULL for agents that record none. Feeds
+     -- sessions.surface.
+     entrypoint      VARCHAR,
      -- FTS document key: hash(file_path, uuid), unique per row because
      -- (file_path, uuid) is — a fork/resume copy repeats the uuid, but in
      -- ANOTHER file. Keep it LAST: loadFile stages by column order.
@@ -170,7 +177,13 @@ export const SCHEMA_DDL: readonly string[] = [
      context_model  VARCHAR,
      -- Main-thread rows in the compactions table. 0 for agents with no marker: the API
      -- layer turns that into "unavailable" via the connector capability map.
-     compaction_count BIGINT DEFAULT 0
+     compaction_count BIGINT DEFAULT 0,
+     -- Raw directory the session started in (earliest main-thread cwd), which
+     -- resume runs from; project_cwd is the folded modal cwd used for grouping.
+     cwd           VARCHAR,
+     -- Raw client the session was started from (the earliest main-thread
+     -- events.entrypoint). NULL when the agent records none.
+     surface       VARCHAR
    )`,
 
   `CREATE TABLE IF NOT EXISTS pr_links (

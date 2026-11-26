@@ -82,6 +82,7 @@ export interface SessionsArgs {
   cwd?: string;
   agent?: string;
   branch?: string;
+  surface?: string;
   sort?: SessionSort;
   q?: string;
   limit?: number;
@@ -95,6 +96,7 @@ export async function querySessions(client: ApiClient, args: SessionsArgs): Prom
     project,
     agent: args.agent,
     branch: args.branch,
+    surface: args.surface,
     sort: args.sort,
     q: args.q,
     limit: args.limit ?? DEFAULT_LIMIT,

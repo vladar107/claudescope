@@ -223,6 +223,10 @@ function discover(): DiscoveredFile[] {
  * `speed` is `'fast'` iff `usage.speed = 'fast'` (premium fast-mode pricing,
  * currently Opus-only); any other value, including `'standard'`, normalizes to
  * NULL.
+ *
+ * `entrypoint` is the client the row was written from (`cli`, `claude-desktop`,
+ * `claude-vscode`, `sdk-*`); `rebuildSessions` derives `sessions.surface` from
+ * it. Read here rather than in an aux projection so the file is read once.
  */
 function eventsProjectionSql(filePath: string): string {
   const path = sqlString(filePath);
@@ -230,7 +234,7 @@ function eventsProjectionSql(filePath: string): string {
   const readFn = `read_ndjson(${readPath}, ${READ_OPTS}, columns={
     type:'VARCHAR', uuid:'VARCHAR', parentUuid:'VARCHAR', sessionId:'VARCHAR',
     timestamp:'VARCHAR', cwd:'VARCHAR', gitBranch:'VARCHAR', isSidechain:'BOOLEAN',
-    message:'JSON', forkedFrom:'JSON'
+    message:'JSON', forkedFrom:'JSON', entrypoint:'VARCHAR'
   })`;
 
   return `
@@ -264,18 +268,19 @@ function eventsProjectionSql(filePath: string): string {
       ${SUBAGENT_NAMES_EXPR} AS subagent_names,
       ${TEXT_CONTENT_EXPR} AS text_content,
       json_extract_string(message, '$.id') AS message_id,
-      json_extract_string(forkedFrom, '$.sessionId') AS forked_from_session_id
+      json_extract_string(forkedFrom, '$.sessionId') AS forked_from_session_id,
+      NULLIF(entrypoint, '') AS entrypoint
     FROM ${readFn}
     ${BLOCK_AGG_LATERAL}
     WHERE type IN ('user', 'assistant')`;
 }
 
-/** ai-title and pr-link projections (session-keyed) plus compactions (file-keyed). */
+/** Title (custom-title / ai-title) and pr-link projections (session-keyed) plus compactions (file-keyed). */
 function auxProjections(filePath: string): AuxProjections {
   const path = sqlString(filePath);
   const readPath = sqlPath(filePath);
   const readFn = `read_ndjson(${readPath}, ${READ_OPTS}, columns={
-    type:'VARCHAR', sessionId:'VARCHAR', aiTitle:'VARCHAR',
+    type:'VARCHAR', sessionId:'VARCHAR', aiTitle:'VARCHAR', customTitle:'VARCHAR',
     prNumber:'BIGINT', prRepository:'VARCHAR', prUrl:'VARCHAR'
   })`;
   // Compaction markers live on records the events projection filters out
@@ -286,12 +291,19 @@ function auxProjections(filePath: string): AuxProjections {
     compactMetadata:'JSON'
   })`;
   return {
-    // ai-title: latest non-null title in the file wins.
+    // The latest non-empty custom-title (a user rename) wins over the latest
+    // ai-title; an empty custom-title means the name was cleared, so the
+    // ai-title applies. Latest = file order, as for ai-title.
     titles: `
-      SELECT sessionId, last(aiTitle) AS title
+      SELECT sessionId,
+             COALESCE(
+               NULLIF(trim(last(customTitle) FILTER (WHERE type = 'custom-title' AND customTitle IS NOT NULL)), ''),
+               last(aiTitle) FILTER (WHERE type = 'ai-title' AND aiTitle IS NOT NULL)
+             ) AS title
       FROM ${readFn}
-      WHERE type = 'ai-title' AND sessionId IS NOT NULL AND aiTitle IS NOT NULL
-      GROUP BY sessionId`,
+      WHERE type IN ('ai-title', 'custom-title') AND sessionId IS NOT NULL
+      GROUP BY sessionId
+      HAVING title IS NOT NULL`,
     // pr-link: one PR per session, picked deterministically. pr-link records
     // carry no timestamp, and three independent last() aggregates could both flip
     // across reindexes and stitch fields from different rows. Keying all three on

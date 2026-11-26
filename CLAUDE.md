@@ -440,6 +440,12 @@ The CLI `update` command (`cli.ts`) detects the install method and defers to
   row). `uuid` repeats across fork copies, and the old fix — relaxing
   `scalar_subquery_error_on_multiple_rows` connection-wide — masked genuine
   multi-row scalar-subquery bugs everywhere; never reintroduce it.
+- **A worktree folds into its repo before the project vote.** `project_cwd`
+  is the modal cwd over ALL rows after folding `<repo>/.claude/worktrees/<name>`
+  into `<repo>` — a main-thread-only vote moves root sessions into
+  subdirectory projects. Resume uses `sessions.cwd`, the starting directory,
+  because Claude Code files a transcript under the slug of the directory it
+  started in. The TS and SQL folds share one pattern (`data/project-id.ts`).
 - **Sessions paging is stable by construction.** `GET /api/sessions` clamps
   `limit` (default 50, max 500), takes `offset`, and every sort order carries
   an `, id` tie-break so pages never overlap or skip on tied values. The

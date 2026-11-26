@@ -23,6 +23,7 @@ import { pruneNdjsonCaches } from '../connectors/ndjson-cache.js';
 import type { AgentConnector, DiscoveredFile } from '../connectors/types.js';
 import { loadPricing } from './pricing.js';
 import { cleanFallbackTitleCandidate } from './title.js';
+import { projectCwdSql } from './project-id.js';
 import { electCanonicalEdits, refreshFileEdits } from './file-edits.js';
 
 /** Tracks whether the initial index build has finished (server readiness). */
@@ -399,7 +400,7 @@ async function loadFile(
       ${costExpr} AS cost_usd,
       ev.text_content,
       ev.message_id, ev.forked_from_session_id, TRUE AS usage_canonical,
-      ev.tool_error_count, ev.tool_error_text, ev.skill_names, ev.subagent_names,
+      ev.tool_error_count, ev.tool_error_text, ev.skill_names, ev.subagent_names, ev.entrypoint,
       hash(ev.file_path, ev.uuid) AS doc_id
     FROM (
       ${connector.eventsProjectionSql(file.path)}
@@ -434,7 +435,7 @@ async function loadFile(
   await conn.run(`DELETE FROM events WHERE file_path = ${path}`);
   // Compactions are keyed by FILE, not by session (unlike titles/pr_links): a
   // subagent transcript shares its parent's session id, so a session-keyed
-  // delete here would drop the sibling file's rows on every parent reload.
+  // delete here would drop the sibling file's rows on every reload.
   await conn.run(`DELETE FROM compactions WHERE file_path = ${path}`);
   await conn.run(`INSERT INTO events SELECT * FROM ${stagedEvents}`);
   if (aux.titles) {
@@ -500,7 +501,11 @@ async function electCanonicalUsage(conn: DuckDBConnection): Promise<void> {
  * Recompute the derived `sessions` table from `events`, `titles`, `pr_links`,
  * and `compactions`. Cheap full recompute (no per-file partial maintenance
  * needed at this scale). `project_cwd` is the modal (most frequent) cwd of the
- * session's events — robust to subdirectory cwds appearing mid-session.
+ * session's events — robust to subdirectory cwds appearing mid-session — voted
+ * after folding Claude Code worktrees into their repo, so a session (or its
+ * `isolation: "worktree"` subagents) working in `<repo>/.claude/worktrees/<x>`
+ * groups under `<repo>`. `cwd` is the raw directory the session started in,
+ * which is where its agent resumes it from.
  */
 async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
   await conn.run('DELETE FROM sessions');
@@ -515,6 +520,8 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
       FROM files WHERE session_id IS NOT NULL GROUP BY session_id
     ),
     modal_cwd AS (
+      -- Votes over ALL rows, subagents included: a main-thread-only vote was
+      -- measured to move root sessions into subdirectory projects.
       SELECT session_id, cwd FROM (
         SELECT session_id, cwd,
                -- The trailing cwd is the tie-break, not decoration: on a count
@@ -523,8 +530,21 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
                -- evaluations of the SAME data, moving it (and its cost) between
                -- projects from one pass to the next.
                row_number() OVER (PARTITION BY session_id ORDER BY count(*) DESC, cwd) AS rn
-        FROM events WHERE cwd IS NOT NULL GROUP BY session_id, cwd
+        FROM (
+          SELECT session_id, ${projectCwdSql('cwd')} AS cwd FROM events WHERE cwd IS NOT NULL
+        ) GROUP BY session_id, cwd
       ) WHERE rn = 1
+    ),
+    start_cwd AS (
+      -- Claude Code files a transcript under the slug of the directory it
+      -- started in, so resume must run there, not in the folded/modal cwd.
+      -- Main-thread rows first; any row only when the main thread has none.
+      -- An aggregate, not a window sort: the tuple compares field by field
+      -- (false < true); ts IS NULL puts NULL-ts rows last explicitly, and two
+      -- NULL ts compare equal, so uuid still breaks the tie.
+      SELECT session_id, arg_min(cwd, (is_sidechain, ts IS NULL, ts, uuid)) AS cwd
+      FROM events WHERE cwd IS NOT NULL
+      GROUP BY session_id
     ),
     last_turn AS (
       -- Context at the session's last main-thread turn: the prompt size
@@ -553,6 +573,18 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
       -- but counting it would inflate the session's number confusingly.
       SELECT session_id, count(*) AS compaction_count
       FROM compactions WHERE NOT is_sidechain GROUP BY session_id
+    ),
+    session_surface AS (
+      -- The surface the session STARTED from, so a session resumed in another
+      -- client stays in one filter bucket; ties break on the value. Main-thread
+      -- rows only, and never a fork copy: it repeats the origin's entrypoint at
+      -- the origin's timestamps, so a CLI session forked in the desktop app
+      -- would otherwise read as started from cli. Same aggregate shape as
+      -- start_cwd.
+      SELECT session_id, arg_min(entrypoint, (ts IS NULL, ts, entrypoint)) AS surface
+      FROM events
+      WHERE entrypoint IS NOT NULL AND NOT is_sidechain AND forked_from_session_id IS NULL
+      GROUP BY session_id
     ),
     agg AS (
       SELECT
@@ -607,15 +639,19 @@ async function rebuildSessions(conn: DuckDBConnection): Promise<void> {
       sc.connector_id,
       lt.context_tokens,
       lt.context_model,
-      COALESCE(cc.compaction_count, 0) AS compaction_count
+      COALESCE(cc.compaction_count, 0) AS compaction_count,
+      stc.cwd,
+      ss.surface
     FROM agg a
     LEFT JOIN modal_cwd mc ON mc.session_id = a.session_id
+    LEFT JOIN start_cwd stc ON stc.session_id = a.session_id
     LEFT JOIN titles t ON t.session_id = a.session_id
     LEFT JOIN pr_links p ON p.session_id = a.session_id
     LEFT JOIN file_size fs ON fs.session_id = a.session_id
     LEFT JOIN session_connector sc ON sc.session_id = a.session_id
     LEFT JOIN last_turn lt ON lt.session_id = a.session_id
     LEFT JOIN compaction_counts cc ON cc.session_id = a.session_id
+    LEFT JOIN session_surface ss ON ss.session_id = a.session_id
   `);
 
   // git_branch: most recent non-null branch seen for the session.

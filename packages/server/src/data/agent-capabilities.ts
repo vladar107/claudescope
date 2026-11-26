@@ -297,6 +297,37 @@ export function connectorsWithoutSubagentInvocationSignal(): string[] {
   return [...NO_SUBAGENT_INVOCATION_SIGNAL];
 }
 
+/**
+ * Agents whose transcripts record the client a session was started from, so
+ * `sessions.surface` carries a real value: Claude Code stamps `entrypoint`
+ * (`cli`, `claude-desktop`, `claude-vscode`, `sdk-*`) on message rows. Every
+ * other agent reports the surface ABSENT, never a guessed `cli`. Every
+ * connector must sit in exactly one of the two sets, and only the first may
+ * project a non-NULL `events.entrypoint` (`connector-surface-signal.test.ts`).
+ */
+const SURFACE_SIGNAL = new Set(['claude-code']);
+const NO_SURFACE_SIGNAL = new Set([
+  'codex',
+  'junie',
+  'pi',
+  'opencode',
+  'copilot',
+  'antigravity',
+  'grok',
+]);
+
+export function hasSurfaceSignal(connectorId: string): boolean {
+  return SURFACE_SIGNAL.has(connectorId);
+}
+
+export function connectorsWithSurfaceSignal(): string[] {
+  return [...SURFACE_SIGNAL];
+}
+
+export function connectorsWithoutSurfaceSignal(): string[] {
+  return [...NO_SURFACE_SIGNAL];
+}
+
 /** Why an agent's subagent usage is unavailable (see {@link hasSubagentInvocationSignal}). */
 const SUBAGENT_USAGE_NOTES: Record<string, string> = {
   junie: "Junie's transcripts don't record which subagent it delegated to, so subagent usage is unavailable.",

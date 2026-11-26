@@ -181,17 +181,22 @@ export function createMcpServer(deps: McpDeps): McpServer {
           .optional()
           .describe('Agent connector id, e.g. claude-code, codex, junie, pi, opencode, copilot, antigravity'),
         branch: z.string().optional().describe('Exact git branch the session recorded, e.g. main'),
+        surface: z
+          .string()
+          .optional()
+          .describe('Claude Code client the session was started from, e.g. cli, claude-desktop, claude-vscode'),
         sort: z.enum(['recent', 'oldest', 'tokens', 'cost', 'messages']).optional(),
         q: z.string().optional().describe('Substring filter on the session title, git branch, id, or model'),
         limit: z.number().int().min(1).max(200).optional().describe(`Max rows (default ${DEFAULT_LIMIT})`),
         offset: z.number().int().min(0).optional().describe('Rows to skip (page with limit)'),
       }),
     },
-    guarded(async (client, args: { project?: string; cwd?: string; agent?: string; branch?: string; sort?: 'recent' | 'oldest' | 'tokens' | 'cost' | 'messages'; q?: string; limit?: number; offset?: number }) => {
+    guarded(async (client, args: { project?: string; cwd?: string; agent?: string; branch?: string; surface?: string; sort?: 'recent' | 'oldest' | 'tokens' | 'cost' | 'messages'; q?: string; limit?: number; offset?: number }) => {
       const rows = await client.sessions({
         project: args.project ?? (args.cwd ? projectIdForCwd(args.cwd) : undefined),
         agent: args.agent,
         branch: args.branch,
+        surface: args.surface,
         sort: args.sort,
         q: args.q,
         limit: args.limit ?? DEFAULT_LIMIT,
