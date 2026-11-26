@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import { RotateCcw } from 'lucide-react';
 import type { SessionMeta, SessionSort } from '@claudescope/shared';
 import { api, ApiError } from '../../api/client.js';
-import { AgentBadge, agentLabel, ErrorBox, formatCost, formatCount, LocalBadge, ModelChips, SearchField, Spinner } from '../../components';
+import { AgentBadge, agentLabel, ErrorBox, formatCost, formatCount, LocalBadge, ModelChips, SearchField, Spinner, SurfaceBadge, surfaceLabel } from '../../components';
 import { contextLevel, contextLabel, formatBytes, formatDateTime, timeAgo } from './format.js';
 import { useProjectContext } from './ProjectLayout.js';
 import { useDataVersionRefetch } from '../../status/useDataVersionRefetch.js';
@@ -47,6 +47,7 @@ export function SessionListPage() {
   const [filter, setFilter] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
   const [agent, setAgent] = useState<string | undefined>(undefined);
+  const [surface, setSurface] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -79,6 +80,7 @@ export function SessionListPage() {
           project: projectId,
           sort,
           agent,
+          surface,
           q: debouncedQ || undefined,
           limit: PAGE_SIZE,
           offset: 0,
@@ -96,7 +98,7 @@ export function SessionListPage() {
         setLoading(false);
       });
     return () => controller.abort();
-  }, [projectId, sort, agent, debouncedQ, reloadKey]);
+  }, [projectId, sort, agent, surface, debouncedQ, reloadKey]);
 
   function loadMore() {
     moreRef.current?.abort();
@@ -110,6 +112,7 @@ export function SessionListPage() {
           project: projectId,
           sort,
           agent,
+          surface,
           q: debouncedQ || undefined,
           limit: PAGE_SIZE,
           offset: rows.length,
@@ -145,6 +148,7 @@ export function SessionListPage() {
           project: projectId,
           sort,
           agent,
+          surface,
           q: debouncedQ || undefined,
           limit: Math.min(MAX_LIMIT, Math.max(PAGE_SIZE, rows.length)),
           offset: 0,
@@ -161,6 +165,15 @@ export function SessionListPage() {
   });
 
   const agents = project?.agents ?? [];
+  const surfaces = project?.surfaces ?? [];
+
+  useEffect(() => {
+    setSurface(undefined);
+  }, [projectId]);
+
+  useEffect(() => {
+    if (surface !== undefined && project && !surfaces.some((s) => s.surface === surface)) setSurface(undefined);
+  }, [project, surface, surfaces]);
   const hasMore = rows.length < total;
 
   return (
@@ -207,6 +220,31 @@ export function SessionListPage() {
             >
               {agentLabel(a.connectorId)}
               <span className="tv-agent-filter__count">{a.sessionCount}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Started-from filter — only meaningful when the project spans 2+ surfaces. */}
+      {surfaces.length > 1 ? (
+        <div className="tv-agent-filter" role="group" aria-label="Filter by started from">
+          <span className="tv-agent-filter__caption">Started from</span>
+          <button
+            type="button"
+            className={surface === undefined ? 'tv-agent-filter__btn is-active' : 'tv-agent-filter__btn'}
+            onClick={() => setSurface(undefined)}
+          >
+            All
+          </button>
+          {surfaces.map((s) => (
+            <button
+              key={s.surface}
+              type="button"
+              className={surface === s.surface ? 'tv-agent-filter__btn is-active' : 'tv-agent-filter__btn'}
+              onClick={() => setSurface(s.surface)}
+            >
+              {surfaceLabel(s.surface)}
+              <span className="tv-agent-filter__count">{s.sessionCount}</span>
             </button>
           ))}
         </div>
@@ -312,6 +350,7 @@ function SessionRow({ session }: { session: SessionMeta }) {
         {/* One tidy meta line: agent + models, then the numbers with cost bold. */}
         <div className="tv-session-row__meta-line">
           <AgentBadge connectorId={session.connectorId} />
+          <SurfaceBadge surface={session.surface} />
           <ModelChips models={session.models} />
           {session.hasLocalProvider ? <LocalBadge /> : null}
           <span className="tv-session-row__sep" aria-hidden="true">

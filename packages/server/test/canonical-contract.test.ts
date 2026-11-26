@@ -27,7 +27,7 @@ const { connectors } = await import('../src/connectors/registry.js');
 const { CANONICAL_COLUMNS } = await import('../src/connectors/canonical.js');
 
 /** Columns `loadFile` selects on top of the canonical set. */
-const EXTRA = ['message_id', 'forked_from_session_id'];
+const EXTRA = ['message_id', 'forked_from_session_id', 'entrypoint'];
 
 /**
  * Output column names of a projection's top-level SELECT list.

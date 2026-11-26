@@ -55,8 +55,11 @@ ranking) — the way to find an error message the agent never restated in prose.
 `sessions --cwd <path>` resolves to the project for that working directory
 locally, without a separate `projects` lookup, and is exclusive with
 `--project`. It is an exact project match: a subdirectory of a project finds
-nothing (use `resolve --cwd` for the nearest ancestor project);
-`--branch <name>` filters to that git branch; `--q <text>` matches the title,
+nothing (use `resolve --cwd` for the nearest ancestor project), except a Claude
+Code worktree (`<repo>/.claude/worktrees/<name>`), which belongs to `<repo>`;
+`--branch <name>` filters to that git branch; `--surface <value>` keeps
+Claude Code sessions started from that client (`cli`, `claude-desktop`,
+`claude-vscode`, `sdk-ts`, …); `--q <text>` matches the title,
 branch, id, or model; `--limit/--offset` page the list (20 rows by default).
 `session` prints a pageable window of turns as Markdown (`--offset/--limit`, `--redact` to mask
 paths/secrets); `--tail N` prints only the last N turns and is exclusive with

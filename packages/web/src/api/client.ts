@@ -123,6 +123,7 @@ export interface ListSessionsParams {
   sort?: SessionSort;
   q?: string;
   agent?: string;
+  surface?: string;
   limit?: number;
   offset?: number;
 }
@@ -193,6 +194,7 @@ export const api = {
         sort: params.sort,
         q: params.q,
         agent: params.agent,
+        surface: params.surface,
         limit: params.limit,
         offset: params.offset,
       })}`,

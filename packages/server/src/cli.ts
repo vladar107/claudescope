@@ -516,7 +516,7 @@ Query commands (read-only; start the background server on first use):
   search "<query>" Full-text search across transcripts and agent memory
                    [--project id] [--role user|assistant] [--scope sessions|memory|all] [--limit N]
                    [--literal] (exact substring, for errors/identifiers)
-  sessions         List sessions [--project id] [--cwd path] [--agent id] [--branch name]
+  sessions         List sessions [--project id] [--cwd path] [--agent id] [--branch name] [--surface name]
                    [--sort recent|oldest|tokens|cost|messages] [--q substr]
                    [--limit N] [--offset N]
   session <id>     One session as Markdown — a window of turns, pageable
@@ -574,6 +574,7 @@ function parseCliArgs() {
         cwd: { type: 'string' },
         agent: { type: 'string' },
         branch: { type: 'string' },
+        surface: { type: 'string' },
         role: { type: 'string' },
         scope: { type: 'string' },
         literal: { type: 'boolean' },
@@ -663,11 +664,15 @@ export async function main(): Promise<void> {
         if (values.branch !== undefined && values.branch.length === 0) {
           throw new UsageError('--branch expects a non-empty branch name');
         }
+        if (values.surface !== undefined && values.surface.length === 0) {
+          throw new UsageError('--surface expects a non-empty surface name');
+        }
         const args = {
           project: values.project,
           cwd: values.cwd,
           agent: values.agent,
           branch: values.branch,
+          surface: values.surface,
           sort: enumFlag('sort', values.sort, ['recent', 'oldest', 'tokens', 'cost', 'messages'] as const),
           q: values.q,
           limit: intFlag('limit', values.limit),

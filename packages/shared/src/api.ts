@@ -19,6 +19,13 @@ export interface AgentBreakdown {
   totalCostUsd: number;
 }
 
+/** Sessions of a project per client surface they were started from. */
+export interface SurfaceBreakdown {
+  /** Raw surface value, e.g. `cli` or `claude-desktop`. */
+  surface: string;
+  sessionCount: number;
+}
+
 /** Aggregated metadata for a project (a distinct real `cwd`). */
 export interface ProjectMeta {
   /** Stable id derived from the canonical cwd. */
@@ -35,6 +42,12 @@ export interface ProjectMeta {
   connectorIds: string[];
   /** Per-agent breakdown of the project totals, sorted by tokens desc. */
   agents: AgentBreakdown[];
+  /**
+   * Per-surface session counts, sorted by count desc then surface. Always an
+   * array, empty when no session in the project records a surface; sessions
+   * without one are not counted (see `SessionMeta.surface`).
+   */
+  surfaces: SurfaceBreakdown[];
 }
 
 /** Aggregated metadata for a single session. */
@@ -81,6 +94,12 @@ export interface SessionMeta {
    * compaction marker (opencode, Grok, Antigravity, Junie) — distinct from 0.
    */
   compactionCount?: number;
+  /**
+   * The raw client the session was started from (`cli`, `claude-desktop`,
+   * `claude-vscode`, `sdk-*`). Absent for agents that don't record one, and for
+   * sessions whose rows carry no such field.
+   */
+  surface?: string;
 }
 
 /** A single full-text search hit. */
@@ -143,6 +162,8 @@ export interface SessionsQuery {
   agent?: string;
   /** Exact match on the session's recorded git branch. */
   branch?: string;
+  /** Exact match on the session's surface (the Claude Code client it started from), e.g. `claude-desktop`. */
+  surface?: string;
   /** Max rows returned (default 50, max 500). */
   limit?: number;
   /** Rows to skip before the page (default 0). */

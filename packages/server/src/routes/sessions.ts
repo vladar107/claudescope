@@ -1,5 +1,5 @@
 /**
- * GET /api/sessions — one page of sessions: optional project/agent/branch
+ * GET /api/sessions — one page of sessions: optional project/agent/branch/surface
  * filters, a sort key, and a lightweight text query (`q`, matching the title,
  * git branch, session id, or model). Paged with `limit` (default 50, max 500)
  * and `offset`; the unpaged match count rides in the `X-Total-Count` header
@@ -34,6 +34,7 @@ import {
   DEFAULT_CONNECTOR_ID,
   hasCompactionSignal,
   hasPromptSizedUsage,
+  hasSurfaceSignal,
 } from '../data/agent-capabilities.js';
 import { connectorById } from '../connectors/registry.js';
 import { buildResumeInfo } from '../connectors/resume.js';
@@ -113,6 +114,10 @@ export function rowToSessionMeta(r: Record<string, unknown>): SessionMeta {
   if (gitBranch) meta.gitBranch = gitBranch;
   const prUrl = rd.str('pr_url');
   if (prUrl) meta.prUrl = prUrl;
+  if (hasSurfaceSignal(connectorId)) {
+    const surface = rd.str('surface');
+    if (surface) meta.surface = surface;
+  }
   return meta;
 }
 
@@ -124,12 +129,13 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
       q?: string;
       agent?: string;
       branch?: string;
+      surface?: string;
       limit?: string;
       offset?: string;
     };
   }>('/api/sessions', async (req, reply): Promise<SessionMeta[]> => {
     const conn = await getConnection();
-    const { project, sort, q, agent, branch } = req.query;
+    const { project, sort, q, agent, branch, surface } = req.query;
     const limit = clampInt(req.query.limit, DEFAULT_SESSIONS_LIMIT, 1, MAX_SESSIONS_LIMIT);
     const offset = clampInt(req.query.offset, 0, 0, MAX_SESSIONS_OFFSET);
 
@@ -139,6 +145,9 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
     }
     if (branch) {
       where.push(`git_branch = ${sqlString(branch)}`);
+    }
+    if (surface) {
+      where.push(`surface = ${sqlString(surface)}`);
     }
     // `project` is the slug id; resolution + the unknown-slug sentinel are shared
     // with /api/search and the analytics routes.
@@ -230,7 +239,9 @@ export async function registerSessionsRoutes(app: FastifyInstance): Promise<void
       let thread = assembleThread(mainEvents, assemble);
       let subagents = buildSubagentRuns(thread, subagentSources, assemble);
 
-      const cwd = readRow(row, 'sessions').str('project_cwd');
+      // The starting directory, not project_cwd: the agent finds the transcript
+      // by the directory it started in, and project_cwd folds worktrees away.
+      const cwd = readRow(row, 'sessions').str('cwd');
       const resume = buildResumeInfo(connectorById(meta.connectorId), id, cwd || null);
 
       const res: SessionDetailResponse = { meta, thread, subagents };
